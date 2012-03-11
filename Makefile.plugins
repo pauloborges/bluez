@@ -79,6 +79,9 @@ builtin_sources += profiles/scanparam/scan.c
 builtin_modules += deviceinfo
 builtin_sources += profiles/deviceinfo/deviceinfo.c
 
+builtin_modules += battery
+builtin_sources += profiles/battery/battery.c
+
 if EXPERIMENTAL
 builtin_modules += alert
 builtin_sources += profiles/alert/server.c
