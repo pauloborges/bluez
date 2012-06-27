@@ -2215,6 +2215,11 @@ void adapter_connect_list_add(struct btd_adapter *adapter,
 						btd_device_ref(device));
 	DBG("%s added to %s's connect_list", device_get_path(device),
 								adapter->name);
+
+	if (adapter->disc_sessions)
+		return;
+
+	mgmt_start_scanning(adapter->dev_id);
 }
 
 void adapter_connect_list_remove(struct btd_adapter *adapter,
