@@ -168,6 +168,7 @@ struct btd_device {
 
 	GIOChannel      *att_io;
 	guint		cleanup_id;
+	uint16_t	att_mtu;
 };
 
 static uint16_t uuid_list[] = {
@@ -1934,7 +1935,8 @@ static void att_connect_cb(GIOChannel *io, GError *gerr, gpointer user_data)
 		if (attcb->error)
 			attcb->error(gerr, user_data);
 
-		goto done;
+		g_free(attcb);
+		return;
 	}
 
 	attrib = g_attrib_new(io);
@@ -1962,9 +1964,6 @@ static void att_connect_cb(GIOChannel *io, GError *gerr, gpointer user_data)
 			bonding_request_free(device->bonding);
 		}
 	}
-
-done:
-	g_free(attcb);
 }
 
 static void att_error_cb(const GError *gerr, gpointer user_data)
@@ -1982,15 +1981,60 @@ static void att_error_cb(const GError *gerr, gpointer user_data)
 	DBG("Enabling automatic connections");
 }
 
-static void att_success_cb(gpointer user_data)
+static void exchange_mtu_cb(guint8 status, const guint8 *pdu, guint16 plen,
+							gpointer user_data)
 {
 	struct att_callbacks *attcb = user_data;
 	struct btd_device *device = attcb->user_data;
+	uint16_t rmtu;
 
-	if (device->attios == NULL)
-		return;
+	if (status) {
+		error("MTU exchange: %s", att_ecode2str(status));
+		goto done;
+	}
+
+	if (!dec_mtu_resp(pdu, plen, &rmtu)) {
+		error("MTU exchange: protocol error");
+		goto done;
+	}
+
+	device->att_mtu = MIN(rmtu, device->att_mtu);
+	if (g_attrib_set_mtu(device->attrib, device->att_mtu))
+		DBG("MTU exchange succeeded: %d", device->att_mtu);
+	else
+		DBG("MTU exchange failed");
 
 	g_slist_foreach(device->attios, attio_connected, device->attrib);
+
+done:
+	g_free(attcb);
+}
+
+static void exchange_mtu(gpointer user_data)
+{
+	struct att_callbacks *attcb = user_data;
+	struct btd_device *device = attcb->user_data;
+	GIOChannel *io;
+	uint16_t cid, imtu;
+
+	if (device->attios == NULL) {
+		g_free(attcb);
+		return;
+	}
+
+	/* Starting ATT MTU Exchange */
+	io = g_attrib_get_channel(device->attrib);
+	if (bt_io_get(io, NULL, BT_IO_OPT_IMTU, &imtu,
+			BT_IO_OPT_CID, &cid, BT_IO_OPT_INVALID)) {
+		gatt_exchange_mtu(device->attrib, imtu, exchange_mtu_cb,
+								attcb);
+		device->att_mtu = imtu;
+		DBG("MTU Exchange: Requesting %d", imtu);
+	} else {
+		g_slist_foreach(device->attios, attio_connected,
+							device->attrib);
+		g_free(attcb);
+	}
 }
 
 GIOChannel *device_att_connect(gpointer user_data)
@@ -2010,7 +2054,7 @@ GIOChannel *device_att_connect(gpointer user_data)
 
 	attcb = g_new0(struct att_callbacks, 1);
 	attcb->error = att_error_cb;
-	attcb->success = att_success_cb;
+	attcb->success = exchange_mtu;
 	attcb->user_data = device;
 
 	if (device_is_bredr(device)) {
