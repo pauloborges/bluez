@@ -42,6 +42,16 @@
 
 static gboolean suspend_supported = FALSE;
 
+static void suspend_callback(void)
+{
+	DBG("Suspending ...");
+}
+
+static void resume_callback(void)
+{
+	DBG("Resuming ...");
+}
+
 static int hog_device_probe(struct btd_device *device, GSList *uuids)
 {
 	const char *path = device_get_path(device);
@@ -71,7 +81,7 @@ static int hog_manager_init(void)
 {
 	int err;
 
-	err = suspend_init();
+	err = suspend_init(suspend_callback, resume_callback);
 	if (err < 0)
 		DBG("Suspend: %s(%d)", strerror(-err), -err);
 	else
