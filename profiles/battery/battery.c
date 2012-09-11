@@ -47,6 +47,7 @@ struct battery {
 };
 
 struct characteristic {
+	struct btd_battery	*devbatt;	/* device_battery pointer */
 	struct gatt_char	attr;		/* Characteristic */
 	struct battery		*batt;		/* Parent Battery Service */
 	GSList			*desc;		/* Descriptors */
@@ -78,6 +79,8 @@ static void char_free(gpointer user_data)
 	struct characteristic *c = user_data;
 
 	g_slist_free_full(c->desc, g_free);
+
+	btd_device_remove_battery(c->devbatt);
 
 	g_free(c);
 }
@@ -216,6 +219,8 @@ static void configure_battery_cb(GSList *characteristics, guint8 status,
 		batt->chars = g_slist_append(batt->chars, ch);
 
 		start = c->value_handle + 1;
+
+		ch->devbatt = btd_device_add_battery(ch->batt->dev);
 
 		if (l->next != NULL) {
 			struct gatt_char *c = l->next->data;
