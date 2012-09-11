@@ -50,6 +50,8 @@ struct characteristic {
 	struct gatt_char	attr;		/* Characteristic */
 	struct battery		*batt;		/* Parent Battery Service */
 	GSList			*desc;		/* Descriptors */
+	uint8_t			ns;		/* Battery Namespace */
+	uint16_t		description;	/* Battery description */
 };
 
 struct descriptor {
@@ -98,6 +100,53 @@ static void battery_free(gpointer user_data)
 	g_free(batt);
 }
 
+static void batterylevel_presentation_format_desc_cb(guint8 status,
+						const guint8 *pdu, guint16 len,
+						gpointer user_data)
+{
+	struct descriptor *desc = user_data;
+	uint8_t value[ATT_MAX_VALUE_LEN];
+	int vlen;
+
+	if (status != 0) {
+		error("Presentation Format desc read failed: %s",
+							att_ecode2str(status));
+		return;
+	}
+
+	vlen = dec_read_resp(pdu, len, value, sizeof(value));
+	if (vlen < 0) {
+		error("Presentation Format desc read failed: Protocol error");
+		return;
+	}
+
+	if (vlen < 7) {
+		error("Presentation Format desc read failed: Invalid range");
+		return;
+	}
+
+	desc->ch->ns = value[4];
+	desc->ch->description = att_get_u16(&value[5]);
+}
+
+static void process_batterylevel_desc(struct descriptor *desc)
+{
+	struct characteristic *ch = desc->ch;
+	char uuidstr[MAX_LEN_UUID_STR];
+	bt_uuid_t btuuid;
+
+	bt_uuid16_create(&btuuid, GATT_CHARAC_FMT_UUID);
+
+	if (bt_uuid_cmp(&desc->uuid, &btuuid) == 0) {
+		gatt_read_char(ch->batt->attrib, desc->handle,
+				batterylevel_presentation_format_desc_cb, desc);
+		return;
+	}
+
+	bt_uuid_to_string(&desc->uuid, uuidstr, MAX_LEN_UUID_STR);
+	DBG("Ignored descriptor %s characteristic %s", uuidstr,	ch->attr.uuid);
+}
+
 static void discover_desc_cb(guint8 status, const guint8 *pdu, guint16 len,
 							gpointer user_data)
 {
@@ -131,6 +180,7 @@ static void discover_desc_cb(guint8 status, const guint8 *pdu, guint16 len,
 			desc->uuid = att_get_uuid128(&value[2]);
 
 		ch->desc = g_slist_append(ch->desc, desc);
+		process_batterylevel_desc(desc);
 	}
 
 	att_data_list_free(list);
@@ -152,6 +202,9 @@ static void configure_battery_cb(GSList *characteristics, guint8 status,
 		struct gatt_char *c = l->data;
 		struct characteristic *ch;
 		uint16_t start, end;
+
+		if (g_strcmp0(c->uuid, BATTERY_LEVEL_UUID) != 0)
+			continue;
 
 		ch = g_new0(struct characteristic, 1);
 		ch->attr.handle = c->handle;
