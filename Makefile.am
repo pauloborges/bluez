@@ -183,7 +183,8 @@ endif
 if HOGPLUGIN
 builtin_modules += hog
 builtin_sources += profiles/input/hog_manager.c profiles/input/hog_device.h \
-			profiles/input/hog_device.c profiles/input/uhid_copy.h
+			profiles/input/hog_device.c profiles/input/uhid_copy.h \
+			profiles/input/suspend-dummy.c profiles/input/suspend.h
 endif
 
 if NETWORKPLUGIN
@@ -440,6 +441,9 @@ audio/telephony.c: audio/@TELEPHONY_DRIVER@
 	$(AM_V_GEN)$(LN_S) $(abs_top_builddir)/$< $@
 
 profiles/sap/sap.c: profiles/sap/@SAP_DRIVER@
+	$(AM_V_GEN)$(LN_S) $(abs_top_srcdir)/$< $@
+
+profiles/input/suspend.c: profiles/input/@HOG_SUSPEND_DRIVER@
 	$(AM_V_GEN)$(LN_S) $(abs_top_srcdir)/$< $@
 
 scripts/%.rules:

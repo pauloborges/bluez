@@ -37,24 +37,71 @@
 #include "plugin.h"
 #include "hcid.h"
 #include "device.h"
+#include "suspend.h"
 #include "hog_device.h"
+
+static gboolean suspend_supported = FALSE;
+static GSList *devices = NULL;
+
+static void set_suspend(gpointer data, gpointer user_data)
+{
+	struct hog_device *hogdev = data;
+	gboolean suspend = GPOINTER_TO_INT(user_data);
+
+	hog_device_set_control_point(hogdev, suspend);
+}
+
+static void suspend_callback(void)
+{
+	gboolean suspend = TRUE;
+
+	DBG("Suspending ...");
+
+	g_slist_foreach(devices, set_suspend, GINT_TO_POINTER(suspend));
+}
+
+static void resume_callback(void)
+{
+	gboolean suspend = FALSE;
+
+	DBG("Resuming ...");
+
+	g_slist_foreach(devices, set_suspend, GINT_TO_POINTER(suspend));
+}
 
 static int hog_device_probe(struct btd_device *device, GSList *uuids)
 {
 	const char *path = device_get_path(device);
+	struct hog_device *hogdev;
+	int err;
 
 	DBG("path %s", path);
 
-	return hog_device_register(device, path);
+	hogdev = hog_device_find(devices, path);
+	if (hogdev)
+		return -EALREADY;
+
+	hogdev = hog_device_register(device, path, &err);
+	if (hogdev == NULL)
+		return err;
+
+	devices = g_slist_append(devices, hogdev);
+
+	return 0;
 }
 
 static void hog_device_remove(struct btd_device *device)
 {
 	const gchar *path = device_get_path(device);
+	struct hog_device *hogdev;
 
 	DBG("path %s", path);
 
-	hog_device_unregister(path);
+	hogdev = hog_device_find(devices, path);
+	if (hogdev) {
+		devices = g_slist_remove(devices, hogdev);
+		hog_device_unregister(hogdev);
+	}
 }
 
 static struct btd_profile hog_profile = {
@@ -66,11 +113,22 @@ static struct btd_profile hog_profile = {
 
 static int hog_manager_init(void)
 {
+	int err;
+
+	err = suspend_init(suspend_callback, resume_callback);
+	if (err < 0)
+		DBG("Suspend: %s(%d)", strerror(-err), -err);
+	else
+		suspend_supported = TRUE;
+
 	return btd_profile_register(&hog_profile);
 }
 
 static void hog_manager_exit(void)
 {
+	if (suspend_supported)
+		suspend_exit();
+
 	btd_profile_register(&hog_profile);
 }
 

@@ -57,6 +57,7 @@
 #define HOG_REPORT_MAP_UUID	0x2A4B
 #define HOG_REPORT_UUID		0x2A4D
 #define HOG_PROTO_MODE_UUID	0x2A4E
+#define HOG_CONTROL_POINT_UUID	0x2A4C
 
 #define HOG_REPORT_TYPE_INPUT	1
 #define HOG_REPORT_TYPE_OUTPUT	2
@@ -84,6 +85,7 @@ struct hog_device {
 	uint16_t		bcdhid;
 	uint8_t			bcountrycode;
 	uint16_t		proto_mode_handle;
+	uint16_t		ctrlpt_handle;
 	uint8_t			flags;
 };
 
@@ -93,8 +95,6 @@ struct report {
 	struct gatt_char	*decl;
 	struct hog_device	*hogdev;
 };
-
-static GSList *devices = NULL;
 
 static gint report_handle_cmp(gconstpointer a, gconstpointer b)
 {
@@ -441,7 +441,8 @@ static void proto_mode_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 static void char_discovered_cb(GSList *chars, guint8 status, gpointer user_data)
 {
 	struct hog_device *hogdev = user_data;
-	bt_uuid_t report_uuid, report_map_uuid, info_uuid, proto_mode_uuid;
+	bt_uuid_t report_uuid, report_map_uuid, info_uuid, proto_mode_uuid,
+		  ctrlpt_uuid;
 	struct report *report;
 	GSList *l;
 	uint16_t info_handle = 0, proto_mode_handle = 0;
@@ -456,6 +457,7 @@ static void char_discovered_cb(GSList *chars, guint8 status, gpointer user_data)
 	bt_uuid16_create(&report_map_uuid, HOG_REPORT_MAP_UUID);
 	bt_uuid16_create(&info_uuid, HOG_INFO_UUID);
 	bt_uuid16_create(&proto_mode_uuid, HOG_PROTO_MODE_UUID);
+	bt_uuid16_create(&ctrlpt_uuid, HOG_CONTROL_POINT_UUID);
 
 	for (l = chars; l; l = g_slist_next(l)) {
 		struct gatt_char *chr, *next;
@@ -484,6 +486,8 @@ static void char_discovered_cb(GSList *chars, guint8 status, gpointer user_data)
 			info_handle = chr->value_handle;
 		else if (bt_uuid_cmp(&uuid, &proto_mode_uuid) == 0)
 			proto_mode_handle = chr->value_handle;
+		else if (bt_uuid_cmp(&uuid, &ctrlpt_uuid) == 0)
+			hogdev->ctrlpt_handle = chr->value_handle;
 	}
 
 	if (proto_mode_handle) {
@@ -629,7 +633,7 @@ static void attio_disconnected_cb(gpointer user_data)
 	hogdev->attrib = NULL;
 }
 
-static struct hog_device *find_device_by_path(GSList *list, const char *path)
+struct hog_device *hog_device_find(GSList *list, const char *path)
 {
 	for (; list; list = list->next) {
 		struct hog_device *hogdev = list->data;
@@ -691,31 +695,33 @@ static void hog_device_free(struct hog_device *hogdev)
 	g_free(hogdev);
 }
 
-int hog_device_register(struct btd_device *device, const char *path)
+struct hog_device *hog_device_register(struct btd_device *device,
+					const char *path, int *perr)
 {
-	struct hog_device *hogdev;
 	struct gatt_primary *prim;
+	struct hog_device *hogdev;
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_NVAL;
 	GIOChannel *io;
-
-	hogdev = find_device_by_path(devices, path);
-	if (hogdev)
-		return -EALREADY;
+	int err;
 
 	prim = load_hog_primary(device);
-	if (!prim)
-		return -EINVAL;
+	if (!prim) {
+		err = -EINVAL;
+		goto failed;
+	}
 
 	hogdev = hog_device_new(device, path);
-	if (!hogdev)
-		return -ENOMEM;
+	if (!hogdev) {
+		err = -ENOMEM;
+		goto failed;
+	}
 
 	hogdev->uhid_fd = open(UHID_DEVICE_FILE, O_RDWR | O_CLOEXEC);
 	if (hogdev->uhid_fd < 0) {
-		int err = -errno;
+		err = -errno;
 		error("Failed to open uHID device: %s", strerror(-err));
 		hog_device_free(hogdev);
-		return err;
+		goto failed;
 	}
 
 	io = g_io_channel_unix_new(hogdev->uhid_fd);
@@ -733,19 +739,18 @@ int hog_device_register(struct btd_device *device, const char *path)
 
 	device_set_auto_connect(device, TRUE);
 
-	devices = g_slist_append(devices, hogdev);
+	return hogdev;
 
-	return 0;
+failed:
+	if (perr)
+		*perr = err;
+
+	return NULL;
 }
 
-int hog_device_unregister(const char *path)
+int hog_device_unregister(struct hog_device *hogdev)
 {
-	struct hog_device *hogdev;
 	struct uhid_event ev;
-
-	hogdev = find_device_by_path(devices, path);
-	if (hogdev == NULL)
-		return -EINVAL;
 
 	btd_device_remove_attio_callback(hogdev->device, hogdev->attioid);
 
@@ -762,8 +767,26 @@ int hog_device_unregister(const char *path)
 	close(hogdev->uhid_fd);
 	hogdev->uhid_fd = -1;
 
-	devices = g_slist_remove(devices, hogdev);
 	hog_device_free(hogdev);
+
+	return 0;
+}
+
+int hog_device_set_control_point(struct hog_device *hogdev, gboolean suspend)
+{
+	uint8_t value = suspend ? 0x00 : 0x01;
+
+	if (hogdev->attrib == NULL)
+		return -ENOTCONN;
+
+	DBG("%s HID Control Point: %s", hogdev->path, suspend ?
+						"Suspend" : "Exit Suspend");
+
+	if (hogdev->ctrlpt_handle == 0)
+		return -ENOTSUP;
+
+	gatt_write_char(hogdev->attrib, hogdev->ctrlpt_handle, &value,
+					sizeof(value), NULL, NULL);
 
 	return 0;
 }
