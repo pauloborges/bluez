@@ -150,7 +150,7 @@ static void indication_cb(const uint8_t *pdu, uint16_t len, gpointer user_data)
 	/* Confirming indication received */
 	opdu = g_attrib_get_buffer(gas->attrib, &plen);
 	olen = enc_confirmation(opdu, plen);
-	g_attrib_send(gas->attrib, 0, opdu[0], opdu, olen, NULL, NULL, NULL);
+	g_attrib_send(gas->attrib, 0, opdu, olen, NULL, NULL, NULL);
 
 	if (gas->changed.start == start && gas->changed.end == end)
 		return;

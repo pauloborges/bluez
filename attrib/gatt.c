@@ -45,6 +45,21 @@ struct discover_primary {
 	void *user_data;
 };
 
+struct find_included {
+	GAttrib		*attrib;
+	int		refs;
+	int		err;
+	uint16_t	end_handle;
+	GSList		*includes;
+	gatt_cb_t	cb;
+	void		*user_data;
+};
+
+struct included_uuid_resolve {
+	struct find_included *fi;
+	struct gatt_included *included;
+};
+
 struct discover_char {
 	GAttrib *attrib;
 	bt_uuid_t *uuid;
@@ -60,6 +75,26 @@ static void discover_primary_free(struct discover_primary *dp)
 	g_attrib_unref(dp->attrib);
 	g_free(dp);
 }
+
+static struct find_included *find_included_ref(struct find_included *fi)
+{
+	g_atomic_int_inc(&fi->refs);
+
+	return fi;
+}
+
+static void find_included_unref(struct find_included *fi)
+{
+	if (g_atomic_int_dec_and_test(&fi->refs) == FALSE)
+		return;
+
+	fi->cb(fi->includes, fi->err, fi->user_data);
+
+	g_slist_free_full(fi->includes, g_free);
+	g_attrib_unref(fi->attrib);
+	g_free(fi);
+}
+
 
 static void discover_char_free(struct discover_char *dc)
 {
@@ -141,8 +176,7 @@ static void primary_by_uuid_cb(guint8 status, const guint8 *ipdu,
 	if (oplen == 0)
 		goto done;
 
-	g_attrib_send(dp->attrib, 0, buf[0], buf, oplen, primary_by_uuid_cb,
-								dp, NULL);
+	g_attrib_send(dp->attrib, 0, buf, oplen, primary_by_uuid_cb, dp, NULL);
 	return;
 
 done:
@@ -207,7 +241,7 @@ static void primary_all_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 		guint16 oplen = encode_discover_primary(end + 1, 0xffff, NULL,
 								buf, buflen);
 
-		g_attrib_send(dp->attrib, 0, buf[0], buf, oplen, primary_all_cb,
+		g_attrib_send(dp->attrib, 0, buf, oplen, primary_all_cb,
 								dp, NULL);
 
 		return;
@@ -245,7 +279,166 @@ guint gatt_discover_primary(GAttrib *attrib, bt_uuid_t *uuid, gatt_cb_t func,
 	} else
 		cb = primary_all_cb;
 
-	return g_attrib_send(attrib, 0, buf[0], buf, plen, cb, dp, NULL);
+	return g_attrib_send(attrib, 0, buf, plen, cb, dp, NULL);
+}
+
+static void resolve_included_uuid_cb(uint8_t status, const uint8_t *pdu,
+					uint16_t len, gpointer user_data)
+{
+	struct included_uuid_resolve *resolve = user_data;
+	struct find_included *fi = resolve->fi;
+	struct gatt_included *incl = resolve->included;
+	bt_uuid_t uuid;
+	unsigned int err = status;
+	size_t buflen;
+	uint8_t *buf;
+
+	if (err)
+		goto done;
+
+	buf = g_attrib_get_buffer(fi->attrib, &buflen);
+	if (dec_read_resp(pdu, len, buf, buflen) != 16) {
+		err = ATT_ECODE_IO;
+		goto done;
+	}
+
+	uuid = att_get_uuid128(buf);
+	bt_uuid_to_string(&uuid, incl->uuid, sizeof(incl->uuid));
+	fi->includes = g_slist_append(fi->includes, incl);
+
+done:
+	if (err)
+		g_free(incl);
+
+	if (fi->err == 0)
+		fi->err = err;
+
+	find_included_unref(fi);
+
+	g_free(resolve);
+}
+
+static guint resolve_included_uuid(struct find_included *fi,
+					struct gatt_included *incl)
+{
+	size_t buflen;
+	uint8_t *buf = g_attrib_get_buffer(fi->attrib, &buflen);
+	guint16 oplen = enc_read_req(incl->range.start, buf, buflen);
+	struct included_uuid_resolve *resolve;
+
+	resolve = g_new0(struct included_uuid_resolve, 1);
+	resolve->fi = find_included_ref(fi);
+	resolve->included = incl;
+
+	return g_attrib_send(fi->attrib, 0, buf, oplen,
+				resolve_included_uuid_cb, resolve, NULL);
+}
+
+static struct gatt_included *included_from_buf(const uint8_t *buf, gsize buflen)
+{
+	struct gatt_included *incl = g_new0(struct gatt_included, 1);
+
+	incl->handle = att_get_u16(&buf[0]);
+	incl->range.start = att_get_u16(&buf[2]);
+	incl->range.end = att_get_u16(&buf[4]);
+
+	if (buflen == 8) {
+		bt_uuid_t uuid128;
+		bt_uuid_t uuid16 = att_get_uuid16(&buf[6]);
+
+		bt_uuid_to_uuid128(&uuid16, &uuid128);
+		bt_uuid_to_string(&uuid128, incl->uuid, sizeof(incl->uuid));
+	}
+
+	return incl;
+}
+
+static void find_included_cb(uint8_t status, const uint8_t *pdu, uint16_t len,
+							gpointer user_data);
+
+static guint find_included(struct find_included *fi, uint16_t start)
+{
+	bt_uuid_t uuid;
+	size_t buflen;
+	uint8_t *buf = g_attrib_get_buffer(fi->attrib, &buflen);
+	guint16 oplen;
+
+	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
+	oplen = enc_read_by_type_req(start, fi->end_handle, &uuid,
+							buf, buflen);
+
+	find_included_ref(fi);
+
+	return g_attrib_send(fi->attrib, 0, buf, oplen, find_included_cb,
+								fi, NULL);
+}
+
+static void find_included_cb(uint8_t status, const uint8_t *pdu, uint16_t len,
+							gpointer user_data)
+{
+	struct find_included *fi = user_data;
+	uint16_t last_handle = fi->end_handle;
+	unsigned int err = status;
+	struct att_data_list *list;
+	int i;
+
+	if (err == ATT_ECODE_ATTR_NOT_FOUND)
+		err = 0;
+
+	if (status)
+		goto done;
+
+	list = dec_read_by_type_resp(pdu, len);
+	if (list == NULL) {
+		err = ATT_ECODE_IO;
+		goto done;
+	}
+
+	if (list->len != 6 && list->len != 8) {
+		err = ATT_ECODE_IO;
+		att_data_list_free(list);
+		goto done;
+	}
+
+	for (i = 0; i < list->num; i++) {
+		struct gatt_included *incl;
+
+		incl = included_from_buf(list->data[i], list->len);
+		last_handle = incl->handle;
+
+		/* 128 bit UUID, needs resolving */
+		if (list->len == 6) {
+			resolve_included_uuid(fi, incl);
+			continue;
+		}
+
+		fi->includes = g_slist_append(fi->includes, incl);
+	}
+
+	att_data_list_free(list);
+
+	if (last_handle < fi->end_handle)
+		find_included(fi, last_handle + 1);
+
+done:
+	if (fi->err == 0)
+		fi->err = err;
+
+	find_included_unref(fi);
+}
+
+unsigned int gatt_find_included(GAttrib *attrib, uint16_t start, uint16_t end,
+					gatt_cb_t func, gpointer user_data)
+{
+	struct find_included *fi;
+
+	fi = g_new0(struct find_included, 1);
+	fi->attrib = g_attrib_ref(attrib);
+	fi->end_handle = end;
+	fi->cb = func;
+	fi->user_data = user_data;
+
+	return find_included(fi, start);
 }
 
 static void char_discovered_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
@@ -314,8 +507,8 @@ static void char_discovered_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 		if (oplen == 0)
 			return;
 
-		g_attrib_send(dc->attrib, 0, buf[0], buf, oplen,
-						char_discovered_cb, dc, NULL);
+		g_attrib_send(dc->attrib, 0, buf, oplen, char_discovered_cb,
+								dc, NULL);
 
 		return;
 	}
@@ -353,7 +546,7 @@ guint gatt_discover_char(GAttrib *attrib, uint16_t start, uint16_t end,
 	dc->end = end;
 	dc->uuid = g_memdup(uuid, sizeof(bt_uuid_t));
 
-	return g_attrib_send(attrib, 0, buf[0], buf, plen, char_discovered_cb,
+	return g_attrib_send(attrib, 0, buf, plen, char_discovered_cb,
 								dc, NULL);
 }
 
@@ -369,8 +562,7 @@ guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, ATT_OP_READ_BY_TYPE_REQ,
-					buf, plen, func, user_data, NULL);
+	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
 }
 
 struct read_long_data {
@@ -429,8 +621,7 @@ static void read_blob_helper(guint8 status, const guint8 *rpdu, guint16 rlen,
 
 	plen = enc_read_blob_req(long_read->handle, long_read->size - 1,
 								buf, buflen);
-	id = g_attrib_send(long_read->attrib, long_read->id,
-				ATT_OP_READ_BLOB_REQ, buf, plen,
+	id = g_attrib_send(long_read->attrib, long_read->id, buf, plen,
 				read_blob_helper, long_read, read_long_destroy);
 
 	if (id != 0) {
@@ -466,9 +657,8 @@ static void read_char_helper(guint8 status, const guint8 *rpdu,
 	long_read->size = rlen;
 
 	plen = enc_read_blob_req(long_read->handle, rlen - 1, buf, buflen);
-	id = g_attrib_send(long_read->attrib, long_read->id,
-			ATT_OP_READ_BLOB_REQ, buf, plen, read_blob_helper,
-			long_read, read_long_destroy);
+	id = g_attrib_send(long_read->attrib, long_read->id, buf, plen,
+			read_blob_helper, long_read, read_long_destroy);
 
 	if (id != 0) {
 		g_atomic_int_inc(&long_read->ref);
@@ -504,12 +694,12 @@ guint gatt_read_char(GAttrib *attrib, uint16_t handle, uint16_t offset,
 	if (offset > 0) {
 		plen = enc_read_blob_req(long_read->handle, offset, buf,
 									buflen);
-		id = g_attrib_send(attrib, 0, ATT_OP_READ_BLOB_REQ, buf, plen,
-				read_blob_helper, long_read, read_long_destroy);
+		id = g_attrib_send(attrib, 0, buf, plen, read_blob_helper,
+						long_read, read_long_destroy);
 	} else {
 		plen = enc_read_req(handle, buf, buflen);
-		id = g_attrib_send(attrib, 0, ATT_OP_READ_REQ, buf, plen,
-				read_char_helper, long_read, read_long_destroy);
+		id = g_attrib_send(attrib, 0, buf, plen, read_char_helper,
+						long_read, read_long_destroy);
 	}
 
 	if (id == 0)
@@ -544,8 +734,7 @@ static guint execute_write(GAttrib *attrib, uint8_t flags,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, buf[0], buf, plen, func, user_data,
-									NULL);
+	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
 }
 
 static guint prepare_write(GAttrib *attrib, uint16_t handle, uint16_t offset,
@@ -594,7 +783,7 @@ static guint prepare_write(GAttrib *attrib, uint16_t handle, uint16_t offset,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, buf[0], buf, plen, prepare_write_cb,
+	return g_attrib_send(attrib, 0, buf, plen, prepare_write_cb,
 							user_data, NULL);
 }
 
@@ -618,7 +807,7 @@ guint gatt_write_char(GAttrib *attrib, uint16_t handle, uint8_t *value,
 			plen = enc_write_cmd(handle, value, vlen, buf,
 								buflen);
 
-		return g_attrib_send(attrib, 0, buf[0], buf, plen, func,
+		return g_attrib_send(attrib, 0, buf, plen, func,
 							user_data, NULL);
 	}
 
@@ -647,8 +836,7 @@ guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu, GAttribResultFunc func,
 
 	buf = g_attrib_get_buffer(attrib, &buflen);
 	plen = enc_mtu_req(mtu, buf, buflen);
-	return g_attrib_send(attrib, 0, ATT_OP_MTU_REQ, buf, plen, func,
-							user_data, NULL);
+	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
 }
 
 guint gatt_find_info(GAttrib *attrib, uint16_t start, uint16_t end,
@@ -663,8 +851,7 @@ guint gatt_find_info(GAttrib *attrib, uint16_t start, uint16_t end,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, ATT_OP_FIND_INFO_REQ, buf, plen, func,
-							user_data, NULL);
+	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
 }
 
 guint gatt_write_cmd(GAttrib *attrib, uint16_t handle, uint8_t *value, int vlen,
@@ -676,8 +863,7 @@ guint gatt_write_cmd(GAttrib *attrib, uint16_t handle, uint8_t *value, int vlen,
 
 	buf = g_attrib_get_buffer(attrib, &buflen);
 	plen = enc_write_cmd(handle, value, vlen, buf, buflen);
-	return g_attrib_send(attrib, 0, ATT_OP_WRITE_CMD, buf, plen, NULL,
-							user_data, notify);
+	return g_attrib_send(attrib, 0, buf, plen, NULL, user_data, notify);
 }
 
 static sdp_data_t *proto_seq_find(sdp_list_t *proto_list)
