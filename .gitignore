@@ -93,3 +93,6 @@ doc/xml
 doc/html
 src/bluetoothd.8
 src/bluetooth.service
+
+cscope.out
+*.swp
