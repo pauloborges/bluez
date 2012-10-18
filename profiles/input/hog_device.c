@@ -39,6 +39,8 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/uuid.h>
 
+#include <linux/input.h>
+
 #include <glib.h>
 
 #include "log.h"
@@ -87,6 +89,7 @@ struct hog_device {
 	uint16_t		proto_mode_handle;
 	uint16_t		ctrlpt_handle;
 	uint8_t			flags;
+	uint8_t			output_state;
 };
 
 struct report {
@@ -559,6 +562,41 @@ static void forward_report(struct hog_device *hogdev,
 						data, size, NULL, NULL);
 }
 
+static void forward_ev_report(struct hog_device *hogdev, struct uhid_event *ev)
+{
+	struct uhid_event built_ev;
+	int led;
+	int state;
+
+	memset(&built_ev, 0, sizeof(built_ev));
+
+	/* If it was a LED event (the only case covered by this code) */
+	if (ev->u.output_ev.type == EV_LED) {
+		led = ev->u.output_ev.code;
+		state = ev->u.output_ev.value;
+
+		built_ev.type = UHID_OUTPUT;
+
+		/* Should look into the device report map to make sure
+		   of the output report size */
+		built_ev.u.output.size = 1;
+		//built_ev.output.rtype = 0;
+
+		if (state)
+			hogdev->output_state |= 1 << led;
+		else
+			hogdev->output_state &= ~(1 << led);
+
+		built_ev.u.output.data[0] = hogdev->output_state;
+
+		DBG("Forwarding LED %d event %d to be sent to device",
+			led, state);
+
+		forward_report(hogdev, &built_ev);
+	} else
+		DBG("Unsupported event report");
+}
+
 static gboolean uhid_event_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
@@ -588,9 +626,10 @@ static gboolean uhid_event_cb(GIOChannel *io, GIOCondition cond,
 		forward_report(hogdev, &ev);
 		break;
 	case UHID_OUTPUT_EV:
-		DBG("uHID output event: type %d code %d value %d",
-			ev.u.output_ev.type, ev.u.output_ev.code,
-			ev.u.output_ev.value);
+		//DBG("uHID output event: type %d code %d value %d",
+		//	ev.u.output_ev.type, ev.u.output_ev.code,
+		//	ev.u.output_ev.value);
+		forward_ev_report(hogdev, &ev);
 		break;
 	default:
 		warn("unexpected uHID event");
@@ -656,6 +695,8 @@ static struct hog_device *hog_device_new(struct btd_device *device,
 
 	hogdev->path = g_strdup(path);
 	hogdev->device = btd_device_ref(device);
+
+	hogdev->output_state = 0;
 
 	return hogdev;
 }
