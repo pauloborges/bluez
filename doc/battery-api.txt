@@ -1,0 +1,24 @@
+BlueZ D-Bus Battery API description
+***********************************
+
+	Texas Instruments, Inc. <chen.ganir@ti.com>
+
+Device Battery hierarchy
+========================
+
+Service		org.bluez
+Interface	org.bluez.Battery1
+Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/BATTYYYY
+
+Methods		Refresh()
+
+			Refresh the battery level. If the battery level changed,
+			the Level signal will be sent with the new value.
+
+Properties	uint16 Level [readonly]
+
+			Battery level (0-100).
+
+		object Device [readonly]
+
+			Device object that owns the battery.
