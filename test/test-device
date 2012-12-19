@@ -27,6 +27,7 @@ if (len(args) < 1):
 	print("Usage: %s <command>" % (sys.argv[0]))
 	print("")
 	print("  list")
+	print("  batteries <address>")
 	print("  create <address>")
 	print("  remove <address|path>")
 	print("  connect <address> [profile]")
@@ -194,6 +195,20 @@ if (args[0] == "blocked"):
 			else:
 				value = dbus.Boolean(args[2])
 			props.Set("org.bluez.Device1", "Blocked", value)
+	sys.exit(0)
+
+if (args[0] == "batteries"):
+	if (len(args) < 2):
+		print("Need address parameter")
+	else:
+		BATT_INTERFACE = "org.bluez.Battery1"
+		objs = bluezutils.get_managed_objects()
+		device = bluezutils.find_device(args[1], options.dev_id)
+		batteries = [path for path, ifaces in objs.iteritems()
+			if (lambda obj: obj and obj.get("Device") ==
+			device.object_path)(ifaces.get(BATT_INTERFACE))]
+		for batt in batteries:
+			print(batt)
 	sys.exit(0)
 
 print("Unknown command")

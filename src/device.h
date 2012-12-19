@@ -23,8 +23,18 @@
  */
 
 #define DEVICE_INTERFACE	"org.bluez.Device1"
+#define BATTERY_INTERFACE	"org.bluez.Battery1"
 
 struct btd_device;
+struct btd_battery;
+
+typedef void (*refresh_battery_cb) (struct btd_battery *batt);
+
+typedef enum {
+	BATTERY_OPT_INVALID = 0,
+	BATTERY_OPT_LEVEL,
+	BATTERY_OPT_REFRESH_FUNC,
+} battery_option_t;
 
 struct btd_device *device_create(struct btd_adapter *adapter,
 				const char *address, uint8_t bdaddr_type);
@@ -116,3 +126,8 @@ void device_profile_connected(struct btd_device *dev,
 					struct btd_profile *profile, int err);
 void device_profile_disconnected(struct btd_device *dev,
 					struct btd_profile *profile, int err);
+
+struct btd_battery *btd_device_add_battery(struct btd_device *device);
+void btd_device_remove_battery(struct btd_battery *batt);
+gboolean btd_device_set_battery_opt(struct btd_battery *batt,
+						    battery_option_t opt1, ...);
