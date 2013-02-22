@@ -297,23 +297,16 @@ static void gatt_characteristic_cb(GSList *characteristics, guint8 status,
 	gatt_find_info(gas->attrib, start, end, gatt_descriptors_cb, gas);
 }
 
-static void exchange_mtu_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void exchange_mtu_cb(uint8_t status, uint16_t mtu, void *user_data)
 {
 	struct gas *gas = user_data;
-	uint16_t rmtu;
 
 	if (status) {
 		error("MTU exchange: %s", att_ecode2str(status));
 		return;
 	}
 
-	if (!dec_mtu_resp(pdu, plen, &rmtu)) {
-		error("MTU exchange: protocol error");
-		return;
-	}
-
-	gas->mtu = MIN(rmtu, gas->mtu);
+	gas->mtu = MIN(mtu, gas->mtu);
 	if (g_attrib_set_mtu(gas->attrib, gas->mtu))
 		DBG("MTU exchange succeeded: %d", gas->mtu);
 	else

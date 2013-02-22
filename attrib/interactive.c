@@ -720,19 +720,11 @@ static void cmd_sec_level(int argcp, char **argvp)
 	}
 }
 
-static void exchange_mtu_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void exchange_mtu_cb(uint8_t status, uint16_t mtu, void *user_data)
 {
-	uint16_t mtu;
-
 	if (status != 0) {
 		error("Exchange MTU Request failed: %s\n",
 						att_ecode2str(status));
-		return;
-	}
-
-	if (!dec_mtu_resp(pdu, plen, &mtu)) {
-		error("Protocol error\n");
 		return;
 	}
 
