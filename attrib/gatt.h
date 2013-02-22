@@ -54,6 +54,8 @@
 #define GATT_CLIENT_CHARAC_CFG_IND_BIT		0x0002
 
 typedef bool (*gatt_cb_t) (uint8_t status, GSList *l, void *user_data);
+typedef void (*gatt_exchange_mtu_cb_t) (uint8_t status, uint16_t mtu,
+							void *user_data);
 
 struct gatt_primary {
 	char uuid[MAX_LEN_UUID_STR + 1];
@@ -101,8 +103,8 @@ guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
 				bt_uuid_t *uuid, GAttribResultFunc func,
 				gpointer user_data);
 
-guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu, GAttribResultFunc func,
-							gpointer user_data);
+guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu,
+				gatt_exchange_mtu_cb_t func, void *user_data);
 
 gboolean gatt_parse_record(const sdp_record_t *rec,
 					uuid_t *prim_uuid, uint16_t *psm,

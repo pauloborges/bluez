@@ -891,16 +891,44 @@ guint gatt_write_char(GAttrib *attrib, uint16_t handle, uint8_t *value,
 	return prepare_write(long_write);
 }
 
-guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu, GAttribResultFunc func,
+struct gatt_exchange_mtu_data {
+	gatt_exchange_mtu_cb_t func;
+	void *user_data;
+};
+
+static void gatt_exchange_mtu_cb(guint8 status, const guint8 *pdu, guint16 plen,
 							gpointer user_data)
 {
+	struct gatt_exchange_mtu_data *data = user_data;
+	uint16_t rmtu = 0;
+
+	if (status != 0)
+		goto done;
+
+	if (dec_mtu_resp(pdu, plen, &rmtu) == 0)
+		status = ATT_ECODE_IO;
+
+done:
+	data->func(status, rmtu, data->user_data);
+}
+
+guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu,
+				gatt_exchange_mtu_cb_t func, void *user_data)
+{
+	struct gatt_exchange_mtu_data *data;
 	uint8_t *buf;
 	size_t buflen;
 	guint16 plen;
 
+	data = g_new0(struct gatt_exchange_mtu_data, 1);
+	data->func = func;
+	data->user_data = user_data;
+
 	buf = g_attrib_get_buffer(attrib, &buflen);
 	plen = enc_mtu_req(mtu, buf, buflen);
-	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
+
+	return g_attrib_send(attrib, 0, buf, plen, gatt_exchange_mtu_cb, data,
+									g_free);
 }
 
 guint gatt_discover_char_desc(GAttrib *attrib, uint16_t start, uint16_t end,
