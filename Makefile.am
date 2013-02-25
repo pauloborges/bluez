@@ -276,6 +276,15 @@ unit_tests += unit/test-lib
 unit_test_lib_SOURCES = unit/test-lib.c
 unit_test_lib_LDADD = lib/libbluetooth-private.la @GLIB_LIBS@
 
+unit_tests += unit/test-gatt
+
+unit_test_gatt_SOURCES = unit/test-gatt.c \
+				attrib/gatt.h attrib/gatt.c \
+				attrib/gattrib.h attrib/gattrib.c \
+				attrib/att.h attrib/att.c \
+				src/shared/util.c
+unit_test_gatt_LDADD = lib/libbluetooth-private.la @GLIB_LIBS@
+
 noinst_PROGRAMS += $(unit_tests)
 
 TESTS = $(unit_tests)
