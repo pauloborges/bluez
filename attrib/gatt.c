@@ -860,7 +860,7 @@ guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu,
 									g_free);
 }
 
-guint gatt_find_info(GAttrib *attrib, uint16_t start, uint16_t end,
+guint gatt_discover_char_desc(GAttrib *attrib, uint16_t start, uint16_t end,
 				GAttribResultFunc func, gpointer user_data)
 {
 	uint8_t *buf;
