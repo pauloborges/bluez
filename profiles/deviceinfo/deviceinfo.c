@@ -107,8 +107,8 @@ static void process_deviceinfo_char(struct characteristic *ch)
 							read_pnpid_cb, ch);
 }
 
-static void configure_deviceinfo_cb(GSList *characteristics, guint8 status,
-							gpointer user_data)
+static bool configure_deviceinfo_cb(uint8_t status, GSList *characteristics,
+								void *user_data)
 {
 	struct deviceinfo *d = user_data;
 	GSList *l;
@@ -116,7 +116,7 @@ static void configure_deviceinfo_cb(GSList *characteristics, guint8 status,
 	if (status != 0) {
 		error("Discover deviceinfo characteristics: %s",
 							att_ecode2str(status));
-		return;
+		return false;
 	}
 
 	for (l = characteristics; l; l = l->next) {
@@ -134,6 +134,8 @@ static void configure_deviceinfo_cb(GSList *characteristics, guint8 status,
 
 		process_deviceinfo_char(ch);
 	}
+
+	return true;
 }
 static void attio_connected_cb(GAttrib *attrib, gpointer user_data)
 {
