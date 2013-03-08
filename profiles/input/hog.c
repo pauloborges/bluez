@@ -283,8 +283,8 @@ static void discover_descriptor(GAttrib *attrib, uint16_t start, uint16_t end,
 								ddcb_data);
 }
 
-static void external_service_char_cb(GSList *chars, guint8 status,
-							gpointer user_data)
+static bool external_service_char_cb(uint8_t status, GSList *chars,
+								void *user_data)
 {
 	struct hog_device *hogdev = user_data;
 	struct gatt_primary *prim = hogdev->hog_primary;
@@ -294,7 +294,7 @@ static void external_service_char_cb(GSList *chars, guint8 status,
 	if (status != 0) {
 		const char *str = att_ecode2str(status);
 		DBG("Discover external service characteristic failed: %s", str);
-		return;
+		return false;
 	}
 
 	for (l = chars; l; l = g_slist_next(l)) {
@@ -315,6 +315,8 @@ static void external_service_char_cb(GSList *chars, guint8 status,
 		end = (next ? next->handle - 1 : prim->range.end);
 		discover_descriptor(hogdev->attrib, start, end, report);
 	}
+
+	return true;
 }
 
 static void external_report_reference_cb(guint8 status, const guint8 *pdu,
@@ -463,7 +465,7 @@ static void proto_mode_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 								hogdev->id);
 }
 
-static void char_discovered_cb(GSList *chars, guint8 status, gpointer user_data)
+static bool char_discovered_cb(uint8_t status, GSList *chars, void *user_data)
 {
 	struct hog_device *hogdev = user_data;
 	struct gatt_primary *prim = hogdev->hog_primary;
@@ -476,7 +478,7 @@ static void char_discovered_cb(GSList *chars, guint8 status, gpointer user_data)
 	if (status != 0) {
 		const char *str = att_ecode2str(status);
 		DBG("Discover all characteristics failed: %s", str);
-		return;
+		return false;
 	}
 
 	bt_uuid16_create(&report_uuid, HOG_REPORT_UUID);
@@ -529,6 +531,8 @@ static void char_discovered_cb(GSList *chars, guint8 status, gpointer user_data)
 	if (info_handle)
 		gatt_read_char(hogdev->attrib, info_handle, info_read_cb,
 									hogdev);
+
+	return true;
 }
 
 static void output_written_cb(guint8 status, const guint8 *pdu,

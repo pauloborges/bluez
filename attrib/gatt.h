@@ -53,7 +53,7 @@
 #define GATT_CLIENT_CHARAC_CFG_NOTIF_BIT	0x0001
 #define GATT_CLIENT_CHARAC_CFG_IND_BIT		0x0002
 
-typedef void (*gatt_cb_t) (GSList *l, guint8 status, gpointer user_data);
+typedef bool (*gatt_cb_t) (uint8_t status, GSList *l, void *user_data);
 typedef void (*gatt_exchange_mtu_cb_t) (uint8_t status, uint16_t mtu,
 							void *user_data);
 

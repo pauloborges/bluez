@@ -464,14 +464,14 @@ static void discover_measurement_ccc(struct heartrate *hr,
 	gatt_discover_char_desc(hr->attrib, start, end, discover_ccc_cb, hr);
 }
 
-static void discover_char_cb(GSList *chars, guint8 status, gpointer user_data)
+static bool discover_char_cb(uint8_t status, GSList *chars, void *user_data)
 {
 	struct heartrate *hr = user_data;
 
 	if (status) {
 		error("Discover HRS characteristics failed: %s",
 							att_ecode2str(status));
-		return;
+		return false;
 	}
 
 	for (; chars; chars = chars->next) {
@@ -498,6 +498,8 @@ static void discover_char_cb(GSList *chars, guint8 status, gpointer user_data)
 			hr->hrcp_val_handle = c->value_handle;
 		}
 	}
+
+	return true;
 }
 
 static void enable_measurement(gpointer data, gpointer user_data)

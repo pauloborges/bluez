@@ -271,8 +271,8 @@ done:
 	att_data_list_free(list);
 }
 
-static void gatt_characteristic_cb(GSList *characteristics, guint8 status,
-							gpointer user_data)
+static bool gatt_characteristic_cb(uint8_t status, GSList *characteristics,
+								void *user_data)
 {
 	struct gas *gas = user_data;
 	struct gatt_char *chr;
@@ -280,7 +280,7 @@ static void gatt_characteristic_cb(GSList *characteristics, guint8 status,
 
 	if (status) {
 		error("Discover Service Changed handle: %s", att_ecode2str(status));
-		return;
+		return false;
 	}
 
 	chr = characteristics->data;
@@ -290,12 +290,14 @@ static void gatt_characteristic_cb(GSList *characteristics, guint8 status,
 
 	if (start > end) {
 		error("Inconsistent database: Service Changed CCC missing");
-		return;
+		return false;
 	}
 
 	gas->changed_handle = chr->value_handle;
 	gatt_discover_char_desc(gas->attrib, start, end, gatt_descriptors_cb,
 									gas);
+
+	return true;
 }
 
 static void exchange_mtu_cb(uint8_t status, uint16_t mtu, void *user_data)
