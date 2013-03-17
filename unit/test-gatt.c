@@ -42,6 +42,7 @@ struct context {
 	GMainLoop *main_loop;
 	guint server_source;
 	GAttrib *attrib;
+	struct gatt_primary prim;
 };
 
 void btd_debug(const char *format, ...)
@@ -105,9 +106,85 @@ static gboolean handle_mtu_exchange(int fd)
 	return TRUE;
 }
 
+static gboolean handle_read_by_group(int fd, struct context *context)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
+	uint16_t pdu_len, start, end;
+	struct att_data_list *adl;
+	bt_uuid_t uuid, prim;
+	uint8_t *value;
+	ssize_t len;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert(len > 0);
+
+	pdu_len = dec_read_by_grp_req(pdu, len, &start, &end, &uuid);
+	g_assert(pdu_len == len);
+
+	bt_uuid16_create(&prim, GATT_PRIM_SVC_UUID);
+	g_assert(bt_uuid_cmp(&uuid, &prim) == 0);
+
+	adl = att_data_list_alloc(1, sizeof(uint16_t) * 3);
+	g_assert(adl != NULL);
+
+	value = adl->data[0];
+
+	if (start == 0x0001 && end == 0xffff) {
+		att_put_u16(0x0001, &value[0]);
+		att_put_u16(0x000f, &value[2]);
+		att_put_u16(0xaaaa, &value[4]);
+
+		context->prim.range.start = 0x0001;
+		context->prim.range.end = 0x000f;
+		strcpy(context->prim.uuid,
+					"0000aaaa-0000-1000-8000-00805f9b34fb");
+	} else if (start == 0x0010 && end == 0xffff) {
+		att_put_u16(0x0010, &value[0]);
+		att_put_u16(0x001f, &value[2]);
+		att_put_u16(0xbbbb, &value[4]);
+
+		context->prim.range.start = 0x0010;
+		context->prim.range.end = 0x001f;
+		strcpy(context->prim.uuid,
+					"0000bbbb-0000-1000-8000-00805f9b34fb");
+	} else if (start == 0x0020 && end == 0xffff) {
+		att_put_u16(0x0020, &value[0]);
+		/* Test "optimization" permitted by Core spec Erratum 4063. */
+		att_put_u16(0xffff, &value[2]);
+		att_put_u16(0xcccc, &value[4]);
+
+		context->prim.range.start = 0x0020;
+		context->prim.range.end = 0xffff;
+		strcpy(context->prim.uuid,
+					"0000cccc-0000-1000-8000-00805f9b34fb");
+	} else {
+		/* Signal end of attribute group (primary service) */
+		pdu_len = enc_error_resp(pdu[0], start,
+						ATT_ECODE_ATTR_NOT_FOUND,
+						pdu, sizeof(pdu));
+		g_assert(pdu_len == 5);
+
+		memset(&context->prim, 0, sizeof(context->prim));
+
+		goto done;
+	}
+
+	pdu_len = enc_read_by_grp_resp(adl, pdu, sizeof(pdu));
+	g_assert(pdu_len == sizeof(uint16_t) * 3 + 2);
+
+done:
+	att_data_list_free(adl);
+
+	len = write(fd, pdu, pdu_len);
+	g_assert(len == pdu_len);
+
+	return TRUE;
+}
+
 static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 							gpointer user_data)
 {
+	struct context *context = user_data;
 	uint8_t opcode;
 	ssize_t len;
 	int fd;
@@ -125,6 +202,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 	switch (opcode) {
 	case ATT_OP_MTU_REQ:
 		return handle_mtu_exchange(fd);
+	case ATT_OP_READ_BY_GROUP_REQ:
+		return handle_read_by_group(fd, context);
 	default:
 		g_assert_not_reached();
 	}
@@ -201,11 +280,48 @@ static void test_gatt_exchange_mtu(void)
 	execute_context(context);
 }
 
+static bool discover_primary_cb(uint8_t status, GSList *services,
+								void *user_data)
+{
+	struct context *context = user_data;
+	struct gatt_primary *prim;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
+		g_main_loop_quit(context->main_loop);
+		return false;
+	}
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert_cmpuint(g_slist_length(services), ==, 1);
+
+	prim = g_slist_nth_data(services, 0);
+
+	if (g_test_verbose() == TRUE)
+		printf("Got handle range 0x%04x-0x%04x\n", prim->range.start,
+							prim->range.end);
+
+	g_assert(memcmp(prim, &context->prim, sizeof(context->prim)) == 0);
+
+	return true;
+}
+
+static void test_gatt_discover_primary(void)
+{
+	struct context *context = create_context();
+
+	gatt_discover_primary(context->attrib, NULL, discover_primary_cb,
+								context);
+
+	execute_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
 
 	g_test_add_func("/gatt/gatt_exchange_mtu", test_gatt_exchange_mtu);
+	g_test_add_func("/gatt/gatt_discover_primary",
+						test_gatt_discover_primary);
 
 	return g_test_run();
 }
