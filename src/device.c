@@ -3228,17 +3228,15 @@ done:
 	return true;
 }
 
-static void find_included_services(struct browse_req *req, GSList *services)
+static void find_included_services(struct included_search *search,
+							GSList *services)
 {
-	struct btd_device *device = req->device;
-	struct included_search *search;
+	struct btd_device *device = search->req->device;
 	struct gatt_primary *prim;
 
 	if (services == NULL)
 		return;
 
-	search = g_new0(struct included_search, 1);
-	search->req = req;
 	search->services = g_slist_copy(services);
 	search->current = search->services;
 
@@ -3249,7 +3247,8 @@ static void find_included_services(struct browse_req *req, GSList *services)
 
 static bool primary_cb(uint8_t status, GSList *services, void *user_data)
 {
-	struct browse_req *req = user_data;
+	struct included_search *search = user_data;
+	struct browse_req *req = search->req;
 
 	if (status) {
 		struct btd_device *device = req->device;
@@ -3263,10 +3262,12 @@ static bool primary_cb(uint8_t status, GSList *services, void *user_data)
 
 		device->browse = NULL;
 		browse_request_free(req);
+		g_free(search);
+
 		return false;
 	}
 
-	find_included_services(req, services);
+	find_included_services(search, services);
 
 	return true;
 }
@@ -3452,13 +3453,25 @@ static void att_browse_error_cb(const GError *gerr, gpointer user_data)
 	browse_request_free(req);
 }
 
+static void discover_gatt_services(struct btd_device *device)
+{
+	struct included_search *search;
+
+	/* Do a "Discover All Primary Services" procedure, followed by
+	 * recursive "Find Included Services" on each found service (up to one
+	 * level).
+	 */
+	search = g_new0(struct included_search, 1);
+	search->req = device->browse;
+	gatt_discover_primary(device->attrib, NULL, primary_cb, search);
+}
+
 static void att_browse_cb(gpointer user_data)
 {
 	struct att_callbacks *attcb = user_data;
 	struct btd_device *device = attcb->user_data;
 
-	gatt_discover_primary(device->attrib, NULL, primary_cb,
-							device->browse);
+	discover_gatt_services(device);
 }
 
 static int device_browse_primary(struct btd_device *device, DBusMessage *msg,
@@ -3478,7 +3491,7 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg,
 	device->browse = req;
 
 	if (device->attrib) {
-		gatt_discover_primary(device->attrib, NULL, primary_cb, req);
+		discover_gatt_services(device);
 		goto done;
 	}
 
