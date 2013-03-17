@@ -3233,11 +3233,16 @@ static void find_included_services(struct included_search *search,
 {
 	struct btd_device *device = search->req->device;
 	struct gatt_primary *prim;
+	GSList *l;
 
 	if (services == NULL)
 		return;
 
-	search->services = g_slist_copy(services);
+	for (l = services; l != NULL; l = g_slist_next(l)) {
+		prim = l->data;
+		search->services = g_slist_append(search->services,
+						g_memdup(prim, sizeof(*prim)));
+	}
 	search->current = search->services;
 
 	prim = search->current->data;
@@ -3262,6 +3267,7 @@ static bool primary_cb(uint8_t status, GSList *services, void *user_data)
 
 		device->browse = NULL;
 		browse_request_free(req);
+		g_slist_free_full(search->services, g_free);
 		g_free(search);
 
 		return false;
