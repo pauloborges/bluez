@@ -3196,36 +3196,25 @@ done:
 	return true;
 }
 
-static void find_included_services(struct included_search *search,
-							GSList *services)
-{
-	struct btd_device *device = search->req->device;
-	struct gatt_primary *prim;
-	GSList *l;
-
-	if (services == NULL)
-		return;
-
-	for (l = services; l != NULL; l = g_slist_next(l)) {
-		prim = l->data;
-		search->services = g_slist_append(search->services,
-						g_memdup(prim, sizeof(*prim)));
-	}
-	search->current = search->services;
-
-	prim = search->current->data;
-	gatt_find_included(device->attrib, prim->range.start, prim->range.end,
-					find_included_cb, search);
-}
-
 static bool primary_cb(uint8_t status, GSList *services, void *user_data)
 {
 	struct included_search *search = user_data;
 	struct browse_req *req = search->req;
+	struct btd_device *device = req->device;
+	struct gatt_primary *prim;
+	GSList *l;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
+		search->current = search->services;
+		prim = search->current->data;
+		gatt_find_included(device->attrib, prim->range.start,
+					prim->range.end, find_included_cb,
+					search);
+
+		return false;
+	}
 
 	if (status) {
-		struct btd_device *device = req->device;
-
 		if (req->msg) {
 			DBusMessage *reply;
 			reply = btd_error_failed(req->msg,
@@ -3241,7 +3230,11 @@ static bool primary_cb(uint8_t status, GSList *services, void *user_data)
 		return false;
 	}
 
-	find_included_services(search, services);
+	for (l = services; l != NULL; l = g_slist_next(l)) {
+		prim = l->data;
+		search->services = g_slist_append(search->services,
+						g_memdup(prim, sizeof(*prim)));
+	}
 
 	return true;
 }
