@@ -73,7 +73,7 @@ struct discover_char {
 
 static void discover_primary_free(struct discover_primary *dp)
 {
-	g_slist_free(dp->primaries);
+	g_slist_free_full(dp->primaries, g_free);
 	g_attrib_unref(dp->attrib);
 	g_free(dp);
 }
@@ -151,13 +151,14 @@ static void primary_by_uuid_cb(guint8 status, const guint8 *ipdu,
 	struct discover_primary *dp = user_data;
 	GSList *ranges, *last;
 	struct att_range *range;
+	uint16_t last_handle;
 	uint8_t *buf;
 	guint16 oplen;
 	int err = 0;
 	size_t buflen;
 
 	if (status) {
-		err = status == ATT_ECODE_ATTR_NOT_FOUND ? 0 : status;
+		err = status;
 		goto done;
 	}
 
@@ -169,12 +170,40 @@ static void primary_by_uuid_cb(guint8 status, const guint8 *ipdu,
 
 	last = g_slist_last(ranges);
 	range = last->data;
+	last_handle = range->end;
 
-	if (range->end == 0xffff)
+	/* From the Core spec: "It is permitted to end the sub-procedure early
+	 * if a desired primary service is found prior to discovering all the
+	 * primary services of the specified service UUID supported on the
+	 * server."
+	 *
+	 * In other words, this callback will receive the partial list of
+	 * discovered services, and if it returns false, the procedure is
+	 * interrupted.
+	 */
+	if (dp->cb(err, dp->primaries, dp->user_data)) {
+		g_slist_free_full(dp->primaries, g_free);
+		dp->primaries = NULL;
+	} else {
+		discover_primary_free(dp);
+		return;
+	}
+
+	if (last_handle == 0xffff) {
+		/* From Core spec ESR06: "This sub-procedure is complete when
+		 * the Error Response is received and the Error Code is set to
+		 * <<Attribute Not Found>> or when the End Group Handle in the
+		 * [Find by Type] Response is 0xFFFF."
+		 *
+		 * To avoid the caller having to check for the second case, we
+		 * set the error code artificially here.
+		 */
+		err = ATT_ECODE_ATTR_NOT_FOUND;
 		goto done;
+	}
 
 	buf = g_attrib_get_buffer(dp->attrib, &buflen);
-	oplen = encode_discover_primary(range->end + 1, 0xffff, &dp->uuid,
+	oplen = encode_discover_primary(last_handle + 1, 0xffff, &dp->uuid,
 								buf, buflen);
 
 	if (oplen == 0)
@@ -197,7 +226,7 @@ static void primary_all_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 	uint16_t start, end;
 
 	if (status) {
-		err = status == ATT_ECODE_ATTR_NOT_FOUND ? 0 : status;
+		err = status;
 		goto done;
 	}
 
@@ -240,6 +269,22 @@ static void primary_all_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 	att_data_list_free(list);
 	err = 0;
 
+	/* From the Core spec: "It is permitted to end the sub-procedure early
+	 * if a desired primary service is found prior to discovering all the
+	 * primary services on the server."
+	 *
+	 * In other words, this callback will receive the partial list of
+	 * discovered services, and if it returns false, the procedure is
+	 * interrupted.
+	 */
+	if (dp->cb(err, dp->primaries, dp->user_data)) {
+		g_slist_free_full(dp->primaries, g_free);
+		dp->primaries = NULL;
+	} else {
+		discover_primary_free(dp);
+		return;
+	}
+
 	if (end != 0xffff) {
 		size_t buflen;
 		uint8_t *buf = g_attrib_get_buffer(dp->attrib, &buflen);
@@ -250,6 +295,16 @@ static void primary_all_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 								dp, NULL);
 
 		return;
+	} else {
+		/* From Core spec ESR06: "This sub-procedure is complete when
+		 * the Error Response is received and the Error Code is set to
+		 * <<Attribute Not Found>> or when the End Group Handle in the
+		 * Read by Type Group Response is 0xFFFF."
+		 *
+		 * To avoid the caller having to check for the second case, we
+		 * set the error code artificially here.
+		 */
+		err = ATT_ECODE_ATTR_NOT_FOUND;
 	}
 
 done:
