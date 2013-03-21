@@ -66,21 +66,37 @@ static void destroy_command_hook(gpointer data, gpointer user_data)
 	g_free(hook);
 }
 
+static void remove_command_hook(GList **lhooks,
+					struct hciemu_command_hook *hook)
+{
+	*lhooks = g_list_remove(*lhooks, hook);
+	g_free(hook);
+}
+
 static void master_command_callback(uint16_t opcode,
 				const void *data, uint8_t len,
 				btdev_callback callback, void *user_data)
 {
 	struct hciemu *hciemu = user_data;
-	GList *list;
+	GList *list, *next;
 
 	btdev_command_default(callback);
 
 	for (list = g_list_first(hciemu->post_command_hooks); list;
-						list = g_list_next(list)) {
+								list = next) {
 		struct hciemu_command_hook *hook = list->data;
 
-		if (hook->function)
-			hook->function(opcode, data, len, hook->user_data);
+		next = g_list_next(list);
+
+		if (hook->function) {
+			int ret;
+
+			ret = hook->function(opcode, data, len,
+							hook->user_data);
+			if (!ret)
+				remove_command_hook(&hciemu->post_command_hooks,
+									hook);
+		}
 	}
 }
 

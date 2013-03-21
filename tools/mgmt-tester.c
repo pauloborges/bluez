@@ -2300,7 +2300,7 @@ static void command_generic_callback(uint8_t status, uint16_t length,
 	test_condition_complete(data);
 }
 
-static void command_hci_callback(uint16_t opcode, const void *param,
+static bool command_hci_callback(uint16_t opcode, const void *param,
 					uint8_t length, void *user_data)
 {
 	struct test_data *data = user_data;
@@ -2309,21 +2309,23 @@ static void command_hci_callback(uint16_t opcode, const void *param,
 	tester_print("HCI Command 0x%04x length %u", opcode, length);
 
 	if (opcode != test->expect_hci_command)
-		return;
+		return true;
 
 	if (length != test->expect_hci_len) {
 		tester_warn("Invalid parameter size for HCI command");
 		tester_test_failed();
-		return;
+		return false;
 	}
 
 	if (memcmp(param, test->expect_hci_param, length) != 0) {
 		tester_warn("Unexpected HCI command parameter value");
 		tester_test_failed();
-		return;
+		return false;
 	}
 
 	test_condition_complete(data);
+
+	return true;
 }
 
 static void test_command_generic(const void *test_data)
