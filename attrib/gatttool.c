@@ -260,11 +260,10 @@ done:
 		g_main_loop_quit(event_loop);
 }
 
-static void char_read_by_uuid_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static bool char_read_by_uuid_cb(uint8_t status, GSList *values,
+								void *user_data)
 {
-	struct att_data_list *list;
-	int i;
+	GSList *l;
 
 	if (status != 0) {
 		g_printerr("Read characteristics by UUID failed: %s\n",
@@ -272,25 +271,19 @@ static void char_read_by_uuid_cb(guint8 status, const guint8 *pdu,
 		goto done;
 	}
 
-	list = dec_read_by_type_resp(pdu, plen);
-	if (list == NULL)
-		goto done;
+	for (l = values; l; l = g_slist_next(l)) {
+		size_t i;
+		struct gatt_att *att_data = l->data;
 
-	for (i = 0; i < list->num; i++) {
-		uint8_t *value = list->data[i];
-		int j;
-
-		g_print("handle: 0x%04x \t value: ", att_get_u16(value));
-		value += 2;
-		for (j = 0; j < list->len - 2; j++, value++)
-			g_print("%02x ", *value);
+		printf("\nhandle: 0x%04x \t value: ", att_data->handle);
+		for (i = 0; i < att_data->size; i++)
+			g_print("%02x ", att_data->value[i]);
 		g_print("\n");
 	}
 
-	att_data_list_free(list);
-
 done:
 	g_main_loop_quit(event_loop);
+	return true;
 }
 
 static gboolean characteristics_read(gpointer user_data)

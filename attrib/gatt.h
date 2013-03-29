@@ -84,6 +84,12 @@ struct gatt_char_desc {
 	bt_uuid_t uuid;
 };
 
+struct gatt_att {
+	uint16_t handle;
+	uint8_t *value;
+	size_t size;
+};
+
 guint gatt_discover_primary(GAttrib *attrib, bt_uuid_t *uuid, gatt_cb_t func,
 							gpointer user_data);
 
@@ -108,8 +114,8 @@ guint gatt_write_cmd(GAttrib *attrib, uint16_t handle, uint8_t *value, int vlen,
 				GDestroyNotify notify, gpointer user_data);
 
 guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
-				bt_uuid_t *uuid, GAttribResultFunc func,
-				gpointer user_data);
+						bt_uuid_t *uuid, gatt_cb_t func,
+						gpointer user_data);
 
 guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu,
 				gatt_exchange_mtu_cb_t func, void *user_data);
