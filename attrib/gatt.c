@@ -587,10 +587,56 @@ guint gatt_discover_char(GAttrib *attrib, uint16_t start, uint16_t end,
 								dc, NULL);
 }
 
-guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
-					bt_uuid_t *uuid, GAttribResultFunc func,
-					gpointer user_data)
+struct read_char_by_uuid {
+	gatt_cb_t func;
+	void *user_data;
+};
+
+static void gatt_att_free(gpointer data)
 {
+	struct gatt_att *gatt_att = data;
+
+	g_free(gatt_att->value);
+	g_free(gatt_att);
+}
+
+static void read_char_by_uuid_cb(uint8_t status, const uint8_t *pdu,
+						uint16_t plen, void *user_data)
+{
+	struct read_char_by_uuid *rd = user_data;
+	struct att_data_list *att_list = NULL;
+	GSList *gatt_list = NULL;
+	int i;
+
+	if (status != 0)
+		goto done;
+
+	att_list = dec_read_by_type_resp(pdu, plen);
+	if (att_list == NULL) {
+		status = ATT_ECODE_IO;
+		goto done;
+	}
+
+	for (i = 0; i < att_list->num; i++) {
+		uint8_t *data = att_list->data[i];
+		struct gatt_att *gatt_att = g_new0(struct gatt_att, 1);
+		gatt_att->handle = att_get_u16(&data[0]);
+		gatt_att->size = att_list->len - 2;
+		gatt_att->value = g_memdup(&data[2], gatt_att->size);
+		gatt_list = g_slist_prepend(gatt_list, gatt_att);
+	}
+
+done:
+	att_data_list_free(att_list);
+	rd->func(status, gatt_list, rd->user_data);
+	g_slist_free_full(gatt_list, gatt_att_free);
+}
+
+guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
+						bt_uuid_t *uuid, gatt_cb_t func,
+						gpointer user_data)
+{
+	struct read_char_by_uuid *data;
 	size_t buflen;
 	uint8_t *buf = g_attrib_get_buffer(attrib, &buflen);
 	guint16 plen;
@@ -599,7 +645,12 @@ guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
+	data = g_new0(struct read_char_by_uuid, 1);
+	data->func = func;
+	data->user_data = user_data;
+
+	return g_attrib_send(attrib, 0, buf, plen, read_char_by_uuid_cb, data,
+									g_free);
 }
 
 struct read_long_data {

@@ -321,39 +321,36 @@ static void char_read_cb(uint8_t status, const uint8_t *value, size_t vlen,
 	g_string_free(s, TRUE);
 }
 
-static void char_read_by_uuid_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static bool char_read_by_uuid_cb(uint8_t status, GSList *values,
+								void *user_data)
 {
-	struct att_data_list *list;
-	int i;
 	GString *s;
+	GSList *l;
 
 	if (status != 0) {
 		error("Read characteristics by UUID failed: %s\n",
 							att_ecode2str(status));
-		return;
+		return false;
 	}
 
-	list = dec_read_by_type_resp(pdu, plen);
-	if (list == NULL)
-		return;
-
 	s = g_string_new(NULL);
-	for (i = 0; i < list->num; i++) {
-		uint8_t *value = list->data[i];
-		int j;
+
+	for (l = values; l; l = g_slist_next(l)) {
+		size_t i;
+		struct gatt_att *att_data = l->data;
 
 		g_string_printf(s, "handle: 0x%04x \t value: ",
-							att_get_u16(value));
-		value += 2;
-		for (j = 0; j < list->len - 2; j++, value++)
-			g_string_append_printf(s, "%02x ", *value);
+							att_data->handle);
+
+		for (i = 0; i < att_data->size; i++)
+			g_string_append_printf(s, "%02x ", att_data->value[i]);
 
 		rl_printf("%s\n", s->str);
 	}
 
-	att_data_list_free(list);
 	g_string_free(s, TRUE);
+
+	return true;
 }
 
 static void cmd_exit(int argcp, char **argvp)

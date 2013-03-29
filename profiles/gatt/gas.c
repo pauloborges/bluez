@@ -141,38 +141,30 @@ static int read_ctp_handle(struct btd_device *device, uint16_t uuid,
 	return err;
 }
 
-static void gap_appearance_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static bool gap_appearance_cb(uint8_t status, GSList *values, void *user_data)
 {
 	struct gas *gas = user_data;
-	struct att_data_list *list =  NULL;
+	struct gatt_att *gatt_att = values->data;
 	uint16_t app;
-	uint8_t *atval;
 
 	if (status != 0) {
 		error("Read characteristics by UUID failed: %s",
 				att_ecode2str(status));
-		return;
+		return false;
 	}
 
-	list = dec_read_by_type_resp(pdu, plen);
-	if (list == NULL)
-		return;
-
-	if (list->len != 4) {
+	if (gatt_att->size != 2) {
 		error("GAP Appearance value: invalid data");
-		goto done;
+		return false;
 	}
 
-	atval = list->data[0] + 2; /* skip handle value */
-	app = att_get_u16(atval);
+	app = att_get_u16(gatt_att->value);
 
 	DBG("GAP Appearance: 0x%04x", app);
 
 	device_set_appearance(gas->device, app);
 
-done:
-	att_data_list_free(list);
+	return false;
 }
 
 static void indication_cb(const uint8_t *pdu, uint16_t len, gpointer user_data)
