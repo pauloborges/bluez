@@ -142,8 +142,7 @@ static void report_value_cb(const uint8_t *pdu, uint16_t len,
 						hogdev->id, hogdev->uhid_fd);
 }
 
-static void report_ccc_written_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static void report_ccc_written_cb(uint8_t status, void *user_data)
 {
 	struct report *report = user_data;
 	struct hog_device *hogdev = report->hogdev;
@@ -516,8 +515,7 @@ static bool char_discovered_cb(uint8_t status, GSList *chars, void *user_data)
 	return true;
 }
 
-static void output_written_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static void output_written_cb(uint8_t status, void *user_data)
 {
 	if (status != 0) {
 		error("Write output report failed: %s", att_ecode2str(status));

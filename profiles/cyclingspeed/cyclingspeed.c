@@ -274,8 +274,7 @@ static void destroy_csc(gpointer user_data)
 	g_free(csc);
 }
 
-static void char_write_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void char_write_cb(uint8_t status, void *user_data)
 {
 	char *msg = user_data;
 
@@ -310,8 +309,7 @@ static gboolean controlpoint_timeout(gpointer user_data)
 	return FALSE;
 }
 
-static void controlpoint_write_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void controlpoint_write_cb(uint8_t status, void *user_data)
 {
 	struct controlpoint_req *req = user_data;
 

@@ -83,8 +83,7 @@ static void refresh_value_cb(const uint8_t *pdu, uint16_t len,
 		write_scan_params(scan->attrib, scan->iwhandle);
 }
 
-static void ccc_written_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static void ccc_written_cb(uint8_t status, void *user_data)
 {
 	struct scan *scan = user_data;
 

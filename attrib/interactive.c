@@ -635,17 +635,11 @@ static void cmd_read_uuid(int argcp, char **argvp)
 									NULL);
 }
 
-static void char_write_req_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void char_write_req_cb(uint8_t status, void *user_data)
 {
 	if (status != 0) {
 		error("Characteristic Write Request failed: "
 						"%s\n", att_ecode2str(status));
-		return;
-	}
-
-	if (!dec_write_resp(pdu, plen) && !dec_exec_write_resp(pdu, plen)) {
-		error("Protocol error\n");
 		return;
 	}
 
