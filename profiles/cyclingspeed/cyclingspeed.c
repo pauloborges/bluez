@@ -357,25 +357,17 @@ static void read_supported_locations(struct csc *csc)
 					controlpoint_write_cb, req);
 }
 
-static void read_feature_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void read_feature_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
 	struct csc *csc = user_data;
-	uint8_t value[2];
-	ssize_t vlen;
 
 	if (status) {
 		error("CSC Feature read failed: %s", att_ecode2str(status));
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, value, sizeof(value));
-	if (vlen < 0) {
-		error("Protocol error");
-		return;
-	}
-
-	if (vlen != sizeof(value)) {
+	if (vlen != 2) {
 		error("Invalid value length for CSC Feature");
 		return;
 	}
@@ -387,31 +379,23 @@ static void read_feature_cb(guint8 status, const guint8 *pdu, guint16 len,
 		read_supported_locations(csc);
 }
 
-static void read_location_cb(guint8 status, const guint8 *pdu,
-						guint16 len, gpointer user_data)
+static void read_location_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
 	struct csc *csc = user_data;
-	uint8_t value;
-	ssize_t vlen;
 
 	if (status) {
 		error("Sensor Location read failed: %s", att_ecode2str(status));
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, &value, sizeof(value));
-	if (vlen < 0) {
-		error("Protocol error");
-		return;
-	}
-
-	if (vlen != sizeof(value)) {
+	if (vlen != 1) {
 		error("Invalid value length for Sensor Location");
 		return;
 	}
 
 	csc->has_location = TRUE;
-	csc->location = value;
+	csc->location = value[0];
 
 	g_dbus_emit_property_changed(btd_get_dbus_connection(),
 					device_get_path(csc->dev),

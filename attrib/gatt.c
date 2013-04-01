@@ -645,8 +645,8 @@ guint gatt_read_char_by_uuid(GAttrib *attrib, uint16_t start, uint16_t end,
 
 struct read_long_data {
 	GAttrib *attrib;
-	GAttribResultFunc func;
-	gpointer user_data;
+	gatt_read_char_cb_t func;
+	void *user_data;
 	guint8 *buffer;
 	guint16 size;
 	guint16 handle;
@@ -710,8 +710,11 @@ static void read_blob_helper(guint8 status, const guint8 *rpdu, guint16 rlen,
 	status = ATT_ECODE_IO;
 
 done:
-	long_read->func(status, long_read->buffer, long_read->size,
-							long_read->user_data);
+	if (status != 0)
+		long_read->func(status, NULL, 0, long_read->user_data);
+	else
+		long_read->func(status, long_read->buffer + 1,
+				long_read->size - 1, long_read->user_data);
 }
 
 static void read_char_helper(guint8 status, const guint8 *rpdu,
@@ -747,11 +750,18 @@ static void read_char_helper(guint8 status, const guint8 *rpdu,
 	status = ATT_ECODE_IO;
 
 done:
-	long_read->func(status, rpdu, rlen, long_read->user_data);
+	if (dec_read_resp(rpdu, rlen, NULL, 0) < 0)
+		status = ATT_ECODE_INVALID_PDU;
+
+	if (status != 0)
+		long_read->func(status, NULL, 0, long_read->user_data);
+	else
+		long_read->func(status, rpdu + 1, rlen - 1,
+							long_read->user_data);
 }
 
-guint gatt_read_char(GAttrib *attrib, uint16_t handle, GAttribResultFunc func,
-							gpointer user_data)
+guint gatt_read_char(GAttrib *attrib, uint16_t handle, gatt_read_char_cb_t func,
+							void *user_data)
 {
 	uint8_t *buf;
 	size_t buflen;

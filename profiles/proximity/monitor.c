@@ -236,24 +236,15 @@ static int write_alert_level(struct monitor *monitor)
 	return 0;
 }
 
-static void tx_power_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void tx_power_read_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
-	uint8_t value[TX_POWER_SIZE];
-	ssize_t vlen;
-
 	if (status != 0) {
 		DBG("Tx Power Level read failed: %s", att_ecode2str(status));
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, plen, value, sizeof(value));
-	if (vlen < 0) {
-		DBG("Protocol error");
-		return;
-	}
-
-	if (vlen != 1) {
+	if (vlen != TX_POWER_SIZE) {
 		DBG("Invalid length for TX Power value: %zd", vlen);
 		return;
 	}

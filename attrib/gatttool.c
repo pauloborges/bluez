@@ -239,12 +239,10 @@ static gboolean characteristics(gpointer user_data)
 	return FALSE;
 }
 
-static void char_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void char_read_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
-	uint8_t value[plen];
-	ssize_t vlen;
-	int i;
+	unsigned int i;
 
 	if (status != 0) {
 		g_printerr("Characteristic value/descriptor read failed: %s\n",
@@ -252,11 +250,6 @@ static void char_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 		goto done;
 	}
 
-	vlen = dec_read_resp(pdu, plen, value, sizeof(value));
-	if (vlen < 0) {
-		g_printerr("Protocol error\n");
-		goto done;
-	}
 	g_print("Characteristic value/descriptor: ");
 	for (i = 0; i < vlen; i++)
 		g_print("%02x ", value[i]);
