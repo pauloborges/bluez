@@ -172,8 +172,8 @@ static void write_ccc(uint16_t handle, gpointer user_data)
 					report_ccc_written_cb, report);
 }
 
-static void report_reference_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static void report_reference_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data)
 {
 	struct report *report = user_data;
 
@@ -183,18 +183,18 @@ static void report_reference_cb(guint8 status, const guint8 *pdu,
 		return;
 	}
 
-	if (plen != 3) {
+	if (vlen != 2) {
 		error("Malformed ATT read response");
 		return;
 	}
 
-	report->id = pdu[1];
-	report->type = pdu[2];
-	DBG("Report ID: 0x%02x Report type: 0x%02x", pdu[1], pdu[2]);
+	report->id = value[0];
+	report->type = value[1];
+	DBG("Report ID: 0x%02x Report type: 0x%02x", value[0], value[1]);
 }
 
-static void external_report_reference_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data);
+static void external_report_reference_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data);
 
 
 static void discover_descriptor_cb(guint8 status, const guint8 *pdu,
@@ -319,8 +319,8 @@ static bool external_service_char_cb(uint8_t status, GSList *chars,
 	return true;
 }
 
-static void external_report_reference_cb(guint8 status, const guint8 *pdu,
-					guint16 plen, gpointer user_data)
+static void external_report_reference_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data)
 {
 	struct hog_device *hogdev = user_data;
 	uint16_t uuid16;
@@ -332,12 +332,12 @@ static void external_report_reference_cb(guint8 status, const guint8 *pdu,
 		return;
 	}
 
-	if (plen != 3) {
+	if (vlen != 2) {
 		error("Malformed ATT read response");
 		return;
 	}
 
-	uuid16 = att_get_u16(&pdu[1]);
+	uuid16 = att_get_u16(&value[0]);
 	DBG("External report reference read, external report characteristic "
 						"UUID: 0x%04x", uuid16);
 	bt_uuid16_create(&uuid, uuid16);
@@ -345,24 +345,16 @@ static void external_report_reference_cb(guint8 status, const guint8 *pdu,
 					external_service_char_cb, hogdev);
 }
 
-static void report_map_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void report_map_read_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data)
 {
 	struct hog_device *hogdev = user_data;
-	uint8_t value[HOG_REPORT_MAP_MAX_SIZE];
 	struct uhid_event ev;
 	uint16_t vendor_src, vendor, product, version;
-	ssize_t vlen;
-	int i;
+	unsigned int i;
 
 	if (status != 0) {
 		error("Report Map read failed: %s", att_ecode2str(status));
-		return;
-	}
-
-	vlen = dec_read_resp(pdu, plen, value, sizeof(value));
-	if (vlen < 0) {
-		error("ATT protocol error");
 		return;
 	}
 
@@ -399,19 +391,17 @@ static void report_map_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 	ev.u.create.version = version;
 	ev.u.create.country = hogdev->bcountrycode;
 	ev.u.create.bus = BUS_BLUETOOTH;
-	ev.u.create.rd_data = value;
+	ev.u.create.rd_data = (uint8_t *) value;
 	ev.u.create.rd_size = vlen;
 
 	if (write(hogdev->uhid_fd, &ev, sizeof(ev)) < 0)
 		error("Failed to create uHID device: %s", strerror(errno));
 }
 
-static void info_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void info_read_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
 	struct hog_device *hogdev = user_data;
-	uint8_t value[HID_INFO_SIZE];
-	ssize_t vlen;
 
 	if (status != 0) {
 		error("HID Information read failed: %s",
@@ -419,8 +409,7 @@ static void info_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, plen, value, sizeof(value));
-	if (vlen != 4) {
+	if (vlen != HID_INFO_SIZE) {
 		error("ATT protocol error");
 		return;
 	}
@@ -433,12 +422,10 @@ static void info_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 			hogdev->bcdhid, hogdev->bcountrycode, hogdev->flags);
 }
 
-static void proto_mode_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void proto_mode_read_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data)
 {
 	struct hog_device *hogdev = user_data;
-	uint8_t value;
-	ssize_t vlen;
 
 	if (status != 0) {
 		error("Protocol Mode characteristic read failed: %s",
@@ -446,13 +433,7 @@ static void proto_mode_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, plen, &value, sizeof(value));
-	if (vlen < 0) {
-		error("ATT protocol error");
-		return;
-	}
-
-	if (value == HOG_PROTO_MODE_BOOT) {
+	if (value[0] == HOG_PROTO_MODE_BOOT) {
 		uint8_t nval = HOG_PROTO_MODE_REPORT;
 
 		DBG("HoG device 0x%04X is operating in Boot Procotol Mode",
@@ -460,7 +441,7 @@ static void proto_mode_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 
 		gatt_write_char(hogdev->attrib, hogdev->proto_mode_handle, &nval,
 						sizeof(nval), NULL, NULL);
-	} else if (value == HOG_PROTO_MODE_REPORT)
+	} else if (value[0] == HOG_PROTO_MODE_REPORT)
 		DBG("HoG device 0x%04X is operating in Report Protocol Mode",
 								hogdev->id);
 }

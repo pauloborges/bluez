@@ -222,12 +222,10 @@ static void destroy_heartrate_adapter(gpointer user_data)
 	g_free(hradapter);
 }
 
-static void read_sensor_location_cb(guint8 status, const guint8 *pdu,
-						guint16 len, gpointer user_data)
+static void read_sensor_location_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data)
 {
 	struct heartrate *hr = user_data;
-	uint8_t value;
-	ssize_t vlen;
 
 	if (status != 0) {
 		error("Body Sensor Location read failed: %s",
@@ -235,19 +233,13 @@ static void read_sensor_location_cb(guint8 status, const guint8 *pdu,
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, &value, sizeof(value));
-	if (vlen < 0) {
-		error("Protocol error");
-		return;
-	}
-
-	if (vlen != sizeof(value)) {
+	if (vlen != 1) {
 		error("Invalid length for Body Sensor Location");
 		return;
 	}
 
 	hr->has_location = TRUE;
-	hr->location = value;
+	hr->location = value[0];
 }
 
 static void char_write_cb(guint8 status, const guint8 *pdu, guint16 len,

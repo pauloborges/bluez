@@ -86,25 +86,17 @@ static int cmp_device(gconstpointer a, gconstpointer b)
 	return -1;
 }
 
-static void read_pnpid_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void read_pnpid_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
 	struct characteristic *ch = user_data;
-	uint8_t value[PNP_ID_SIZE];
-	ssize_t vlen;
 
 	if (status != 0) {
 		error("Error reading PNP_ID value: %s", att_ecode2str(status));
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, value, sizeof(value));
-	if (vlen < 0) {
-		error("Error reading PNP_ID: Protocol error");
-		return;
-	}
-
-	if (vlen < 7) {
+	if (vlen < PNP_ID_SIZE) {
 		error("Error reading PNP_ID: Invalid pdu length received");
 		return;
 	}

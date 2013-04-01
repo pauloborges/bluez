@@ -56,6 +56,8 @@
 typedef bool (*gatt_cb_t) (uint8_t status, GSList *l, void *user_data);
 typedef void (*gatt_exchange_mtu_cb_t) (uint8_t status, uint16_t mtu,
 							void *user_data);
+typedef void (*gatt_read_char_cb_t) (uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data);
 
 struct gatt_primary {
 	char uuid[MAX_LEN_UUID_STR + 1];
@@ -86,8 +88,8 @@ guint gatt_discover_char(GAttrib *attrib, uint16_t start, uint16_t end,
 					bt_uuid_t *uuid, gatt_cb_t func,
 					gpointer user_data);
 
-guint gatt_read_char(GAttrib *attrib, uint16_t handle, GAttribResultFunc func,
-							gpointer user_data);
+guint gatt_read_char(GAttrib *attrib, uint16_t handle, gatt_read_char_cb_t func,
+							void *user_data);
 
 guint gatt_write_char(GAttrib *attrib, uint16_t handle, uint8_t *value,
 					size_t vlen, GAttribResultFunc func,

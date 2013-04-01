@@ -476,13 +476,11 @@ static void interval_ind_handler(const uint8_t *pdu, uint16_t len,
 		g_attrib_send(t->attrib, 0, opdu, olen, NULL, NULL, NULL);
 }
 
-static void valid_range_desc_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void valid_range_desc_cb(uint8_t status, const uint8_t *value,
+						size_t vlen, void *user_data)
 {
 	struct thermometer *t = user_data;
-	uint8_t value[VALID_RANGE_DESC_SIZE];
 	uint16_t max, min;
-	ssize_t vlen;
 
 	if (status != 0) {
 		DBG("Valid Range descriptor read failed: %s",
@@ -490,13 +488,7 @@ static void valid_range_desc_cb(guint8 status, const guint8 *pdu, guint16 len,
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, value, sizeof(value));
-	if (vlen < 0) {
-		DBG("Protocol error\n");
-		return;
-	}
-
-	if (vlen < 4) {
+	if (vlen < VALID_RANGE_DESC_SIZE) {
 		DBG("Invalid range received");
 		return;
 	}
@@ -636,12 +628,10 @@ static void discover_desc(struct thermometer *t, struct gatt_char *c,
 	gatt_discover_char_desc(t->attrib, start, end, discover_desc_cb, ch);
 }
 
-static void read_temp_type_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void read_temp_type_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
 	struct thermometer *t = user_data;
-	uint8_t value[TEMPERATURE_TYPE_SIZE];
-	ssize_t vlen;
 
 	if (status != 0) {
 		DBG("Temperature Type value read failed: %s",
@@ -649,13 +639,7 @@ static void read_temp_type_cb(guint8 status, const guint8 *pdu, guint16 len,
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, value, sizeof(value));
-	if (vlen < 0) {
-		DBG("Protocol error.");
-		return;
-	}
-
-	if (vlen != 1) {
+	if (vlen != TEMPERATURE_TYPE_SIZE) {
 		DBG("Invalid length for Temperature type");
 		return;
 	}
@@ -664,13 +648,11 @@ static void read_temp_type_cb(guint8 status, const guint8 *pdu, guint16 len,
 	t->type = value[0];
 }
 
-static void read_interval_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void read_interval_cb(uint8_t status, const uint8_t *value, size_t vlen,
+								void *user_data)
 {
 	struct thermometer *t = user_data;
-	uint8_t value[MEASUREMENT_INTERVAL_SIZE];
 	uint16_t interval;
-	ssize_t vlen;
 
 	if (status != 0) {
 		DBG("Measurement Interval value read failed: %s",
@@ -678,13 +660,7 @@ static void read_interval_cb(guint8 status, const guint8 *pdu, guint16 len,
 		return;
 	}
 
-	vlen = dec_read_resp(pdu, len, value, sizeof(value));
-	if (vlen < 0) {
-		DBG("Protocol error\n");
-		return;
-	}
-
-	if (vlen < 2) {
+	if (vlen < MEASUREMENT_INTERVAL_SIZE) {
 		DBG("Invalid Interval received");
 		return;
 	}
