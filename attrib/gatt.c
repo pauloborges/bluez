@@ -754,17 +754,38 @@ guint gatt_read_char(GAttrib *attrib, uint16_t handle, gatt_read_char_cb_t func,
 
 struct write_long_data {
 	GAttrib *attrib;
-	GAttribResultFunc func;
-	gpointer user_data;
+	gatt_write_char_cb_t func;
+	void *user_data;
 	guint16 handle;
 	uint16_t offset;
 	uint8_t *value;
 	size_t vlen;
 };
 
-static guint execute_write(GAttrib *attrib, uint8_t flags,
-				GAttribResultFunc func, gpointer user_data)
+struct gatt_write_char_data {
+	gatt_write_char_cb_t func;
+	void *user_data;
+};
+
+static void execute_write_cb(guint8 status, const guint8 *pdu, guint16 plen,
+							gpointer user_data)
 {
+	struct gatt_write_char_data *data = user_data;
+
+	if (status != 0)
+		goto done;
+
+	if (dec_exec_write_resp(pdu, plen) == 0)
+		status = ATT_ECODE_IO;
+
+done:
+	data->func(status, data->user_data);
+}
+
+static guint execute_write(GAttrib *attrib, uint8_t flags,
+				gatt_write_char_cb_t func, void *user_data)
+{
+	struct gatt_write_char_data *data;
 	uint8_t *buf;
 	size_t buflen;
 	guint16 plen;
@@ -774,7 +795,12 @@ static guint execute_write(GAttrib *attrib, uint8_t flags,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
+	data = g_new0(struct gatt_write_char_data, 1);
+	data->func = func;
+	data->user_data = user_data;
+
+	return g_attrib_send(attrib, 0, buf, plen, execute_write_cb, data,
+									g_free);
 }
 
 static guint prepare_write(struct write_long_data *long_write);
@@ -785,7 +811,7 @@ static void prepare_write_cb(guint8 status, const guint8 *rpdu, guint16 rlen,
 	struct write_long_data *long_write = user_data;
 
 	if (status != 0) {
-		long_write->func(status, rpdu, rlen, long_write->user_data);
+		long_write->func(status, long_write->user_data);
 		return;
 	}
 
@@ -823,8 +849,24 @@ static guint prepare_write(struct write_long_data *long_write)
 									NULL);
 }
 
-guint gatt_write_char(GAttrib *attrib, uint16_t handle, uint8_t *value,
-			size_t vlen, GAttribResultFunc func, gpointer user_data)
+static void gatt_write_char_cb(guint8 status, const guint8 *pdu, guint16 plen,
+							gpointer user_data)
+{
+	struct gatt_write_char_data *data = user_data;
+
+	if (status != 0)
+		goto done;
+
+	if (dec_write_resp(pdu, plen) == 0)
+		status = ATT_ECODE_IO;
+
+done:
+	data->func(status, data->user_data);
+}
+
+guint gatt_write_char(GAttrib *attrib, uint16_t handle, const uint8_t *value,
+					size_t vlen, gatt_write_char_cb_t func,
+					void *user_data)
 {
 	uint8_t *buf;
 	size_t buflen;
@@ -835,14 +877,20 @@ guint gatt_write_char(GAttrib *attrib, uint16_t handle, uint8_t *value,
 	/* Use Write Request if payload fits on a single transfer, including 3
 	 * bytes for the header. */
 	if (vlen <= buflen - 3) {
+		struct gatt_write_char_data *data;
+
 		uint16_t plen;
 
 		plen = enc_write_req(handle, value, vlen, buf, buflen);
 		if (plen == 0)
 			return 0;
 
-		return g_attrib_send(attrib, 0, buf, plen, func, user_data,
-									NULL);
+		data = g_new0(struct gatt_write_char_data, 1);
+		data->func = func;
+		data->user_data = user_data;
+
+		return g_attrib_send(attrib, 0, buf, plen, gatt_write_char_cb,
+								data, g_free);
 	}
 
 	/* Write Long Characteristic Values */

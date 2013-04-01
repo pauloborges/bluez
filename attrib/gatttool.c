@@ -346,17 +346,11 @@ error:
 	return FALSE;
 }
 
-static void char_write_req_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void char_write_req_cb(uint8_t status, void *user_data)
 {
 	if (status != 0) {
 		g_printerr("Characteristic Write Request failed: "
 						"%s\n", att_ecode2str(status));
-		goto done;
-	}
-
-	if (!dec_write_resp(pdu, plen) && !dec_exec_write_resp(pdu, plen)) {
-		g_printerr("Protocol error\n");
 		goto done;
 	}
 

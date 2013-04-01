@@ -505,8 +505,7 @@ static void valid_range_desc_cb(uint8_t status, const uint8_t *value,
 	change_property(t, "Minimum", &min);
 }
 
-static void write_ccc_cb(guint8 status, const guint8 *pdu,
-						guint16 len, gpointer user_data)
+static void write_ccc_cb(uint8_t status, void *user_data)
 {
 	char *msg = user_data;
 
@@ -735,19 +734,13 @@ static bool configure_thermometer_cb(uint8_t status, GSList *characteristics,
 	return true;
 }
 
-static void write_interval_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void write_interval_cb(uint8_t status, void *user_data)
 {
 	struct tmp_interval_data *data = user_data;
 
 	if (status != 0) {
 		error("Interval Write Request failed %s",
 							att_ecode2str(status));
-		goto done;
-	}
-
-	if (!dec_write_resp(pdu, len)) {
-		error("Interval Write Request: protocol error");
 		goto done;
 	}
 

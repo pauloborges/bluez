@@ -205,8 +205,7 @@ static void indication_cb(const uint8_t *pdu, uint16_t len, gpointer user_data)
 	btd_device_gatt_set_service_changed(gas->device, start, end);
 }
 
-static void ccc_written_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void ccc_written_cb(uint8_t status, void *user_data)
 {
 	struct gas *gas = user_data;
 

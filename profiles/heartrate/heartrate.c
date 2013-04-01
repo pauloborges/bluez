@@ -242,8 +242,7 @@ static void read_sensor_location_cb(uint8_t status, const uint8_t *value,
 	hr->location = value[0];
 }
 
-static void char_write_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static void char_write_cb(uint8_t status, void *user_data)
 {
 	char *msg = user_data;
 

@@ -166,8 +166,7 @@ static uint8_t str2level(const char *level)
 	return ALERT_NONE;
 }
 
-static void linkloss_written(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static void linkloss_written(uint8_t status, void *user_data)
 {
 	struct monitor *monitor = user_data;
 	struct btd_device *device = monitor->device;
@@ -176,11 +175,6 @@ static void linkloss_written(guint8 status, const guint8 *pdu, guint16 plen,
 	if (status != 0) {
 		error("Link Loss Write Request failed: %s",
 							att_ecode2str(status));
-		return;
-	}
-
-	if (!dec_write_resp(pdu, plen)) {
-		error("Link Loss Write Request: protocol error");
 		return;
 	}
 
