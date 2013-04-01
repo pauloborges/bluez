@@ -381,41 +381,31 @@ static void notify_handler(const uint8_t *pdu, uint16_t len, gpointer user_data)
 	process_measurement(hr, pdu + 3, len - 3);
 }
 
-static void discover_ccc_cb(guint8 status, const guint8 *pdu,
-						guint16 len, gpointer user_data)
+static bool discover_ccc_cb(uint8_t status, GSList *descs, void *user_data)
 {
 	struct heartrate *hr = user_data;
-	struct att_data_list *list;
-	uint8_t format;
-	int i;
+	GSList *l;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return true;
 
 	if (status != 0) {
 		error("Discover Heart Rate Measurement descriptors failed: %s",
 							att_ecode2str(status));
-		return;
+		return true;
 	}
 
-	list = dec_find_info_resp(pdu, len, &format);
-	if (list == NULL)
-		return;
-
-	if (format != ATT_FIND_INFO_RESP_FMT_16BIT)
-		goto done;
-
-	for (i = 0; i < list->num; i++) {
-		uint8_t *value;
-		uint16_t handle, uuid;
+	for (l = descs; l != NULL; l = g_slist_next(l)) {
+		struct gatt_char_desc *desc = l->data;
 		char *msg;
 		uint8_t attr_val[2];
+		bt_uuid_t uuid;
 
-		value = list->data[i];
-		handle = att_get_u16(value);
-		uuid = att_get_u16(value + 2);
-
-		if (uuid != GATT_CLIENT_CHARAC_CFG_UUID)
+		bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+		if (bt_uuid_cmp(&desc->uuid, &uuid) != 0)
 			continue;
 
-		hr->measurement_ccc_handle = handle;
+		hr->measurement_ccc_handle = desc->handle;
 
 		if (g_slist_length(hr->hradapter->watchers) == 0) {
 			att_put_u16(0x0000, attr_val);
@@ -425,14 +415,13 @@ static void discover_ccc_cb(guint8 status, const guint8 *pdu,
 			msg = g_strdup("Enable measurement");
 		}
 
-		gatt_write_char(hr->attrib, handle, attr_val,
+		gatt_write_char(hr->attrib, desc->handle, attr_val,
 					sizeof(attr_val), char_write_cb, msg);
 
 		break;
 	}
 
-done:
-	att_data_list_free(list);
+	return true;
 }
 
 static void discover_measurement_ccc(struct heartrate *hr,

@@ -112,35 +112,36 @@ static void ccc_written_cb(uint8_t status, void *user_data)
 				refresh_value_cb, scan, NULL);
 }
 
-static void discover_descriptor_cb(guint8 status, const guint8 *pdu,
-					guint16 len, gpointer user_data)
+static bool discover_descriptor_cb(uint8_t status, GSList *descs,
+								void *user_data)
 {
 	struct scan *scan = user_data;
-	struct att_data_list *list;
-	uint8_t *ptr;
-	uint16_t uuid16, handle;
-	uint8_t value[2];
-	uint8_t format;
+	GSList *l;
 
-	list = dec_find_info_resp(pdu, len, &format);
-	if (list == NULL)
-		return;
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return true;
 
-	if (format != ATT_FIND_INFO_RESP_FMT_16BIT)
-		goto done;
+	if (status != 0) {
+		error("Discover all GATT characteristic descriptors failed: %s",
+							att_ecode2str(status));
+		return true;
+	}
 
-	ptr = list->data[0];
-	handle = att_get_u16(ptr);
-	uuid16 = att_get_u16(&ptr[2]);
+	for (l = descs; l != NULL; l = g_slist_next(l)) {
+		struct gatt_char_desc *desc = l->data;
+		uint8_t value[2];
+		bt_uuid_t uuid;
 
-	if (uuid16 != GATT_CLIENT_CHARAC_CFG_UUID)
-		goto done;
+		bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+		if (bt_uuid_cmp(&desc->uuid, &uuid) != 0)
+			continue;
 
-	att_put_u16(GATT_CLIENT_CHARAC_CFG_NOTIF_BIT, value);
-	gatt_write_char(scan->attrib, handle, value, sizeof(value),
-						ccc_written_cb, user_data);
-done:
-	att_data_list_free(list);
+		att_put_u16(GATT_CLIENT_CHARAC_CFG_NOTIF_BIT, value);
+		gatt_write_char(scan->attrib, desc->handle, value,
+				sizeof(value), ccc_written_cb, user_data);
+	}
+
+	return true;
 }
 
 static bool refresh_discovered_cb(uint8_t status, GSList *chars,

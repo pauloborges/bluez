@@ -948,9 +948,92 @@ guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu,
 									g_free);
 }
 
-guint gatt_discover_char_desc(GAttrib *attrib, uint16_t start, uint16_t end,
-				GAttribResultFunc func, gpointer user_data)
+struct discover_char_desc_data {
+	GAttrib *attrib;
+	uint16_t end;
+	gatt_cb_t func;
+	gpointer user_data;
+};
+
+static void gatt_discover_char_desc_cb(guint8 status, const guint8 *pdu,
+					guint16 plen, gpointer user_data)
 {
+	struct discover_char_desc_data *data = user_data;
+	struct att_data_list *list;
+	GSList *char_descs = NULL;
+	uint16_t last_handle = 0xffff;
+	bool continue_discovery;
+	uint8_t format;
+	unsigned int i;
+
+	if (status != 0)
+		goto done;
+
+	list = dec_find_info_resp(pdu, plen, &format);
+	if (list == NULL) {
+		status = ATT_ECODE_IO;
+		goto done;
+	}
+
+	for (i = 0; i < list->num; i++) {
+		uint8_t *value = list->data[i];
+		struct gatt_char_desc *desc;
+
+		desc = g_new0(struct gatt_char_desc, 1);
+		desc->handle = att_get_u16(value);
+		last_handle = desc->handle;
+
+		if (format == ATT_FIND_INFO_RESP_FMT_16BIT)
+			desc->uuid = att_get_uuid16(&value[2]);
+		else
+			desc->uuid = att_get_uuid128(&value[2]);
+
+		char_descs = g_slist_append(char_descs, desc);
+	}
+
+	att_data_list_free(list);
+
+	/* From the Core spec: "It is permitted to end the sub-procedure early
+	 * if a desired Characteristic Descriptor is found prior to discovering
+	 * all the characteristic descriptors of the specified characteristic."
+	 *
+	 * In other words, this callback will receive the partial list of
+	 * discovered descriptors, and if it returns false, the procedure is
+	 * interrupted.
+	 */
+	continue_discovery = data->func(status, char_descs, data->user_data);
+	g_slist_free_full(char_descs, g_free);
+
+	if (!continue_discovery)
+		goto data_free;
+
+	if (last_handle != 0xffff && last_handle < data->end) {
+		uint8_t *buf;
+		size_t buflen;
+		uint16_t plen;
+
+		buf = g_attrib_get_buffer(data->attrib, &buflen);
+		plen = enc_find_info_req(last_handle + 1, data->end, buf,
+									buflen);
+		g_attrib_send(data->attrib, 0, buf, plen,
+					gatt_discover_char_desc_cb, data, NULL);
+
+		return;
+	} else
+		/* Procedure has finished */
+		status = ATT_ECODE_ATTR_NOT_FOUND;
+
+done:
+	data->func(status, NULL, data->user_data);
+data_free:
+	g_attrib_unref(data->attrib);
+	g_free(data);
+}
+
+guint gatt_discover_char_desc(GAttrib *attrib, uint16_t start, uint16_t end,
+					gatt_cb_t func, gpointer user_data)
+{
+	struct discover_char_desc_data *data;
 	uint8_t *buf;
 	size_t buflen;
 	guint16 plen;
@@ -960,7 +1043,14 @@ guint gatt_discover_char_desc(GAttrib *attrib, uint16_t start, uint16_t end,
 	if (plen == 0)
 		return 0;
 
-	return g_attrib_send(attrib, 0, buf, plen, func, user_data, NULL);
+	data = g_new0(struct discover_char_desc_data, 1);
+	data->attrib = g_attrib_ref(attrib);
+	data->end = end;
+	data->func = func;
+	data->user_data = user_data;
+
+	return g_attrib_send(attrib, 0, buf, plen, gatt_discover_char_desc_cb,
+								data, NULL);
 }
 
 guint gatt_write_cmd(GAttrib *attrib, uint16_t handle, uint8_t *value, int vlen,

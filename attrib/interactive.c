@@ -277,46 +277,28 @@ static bool char_cb(uint8_t status, GSList *characteristics, void *user_data)
 	return true;
 }
 
-static void char_desc_cb(guint8 status, const guint8 *pdu, guint16 plen,
-							gpointer user_data)
+static bool char_desc_cb(uint8_t status, GSList *descs, void *user_data)
 {
-	struct att_data_list *list;
-	guint8 format;
-	uint16_t handle = 0xffff;
-	int i;
+	GSList *l;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return false;
 
 	if (status != 0) {
 		rl_printf("Discover descriptors finished: %s\n",
 						att_ecode2str(status));
-		return;
+		return false;
 	}
 
-	list = dec_find_info_resp(pdu, plen, &format);
-	if (list == NULL)
-		return;
-
-	for (i = 0; i < list->num; i++) {
+	for (l = descs; l != NULL; l = g_slist_next(l)) {
+		struct gatt_char_desc *desc = l->data;
 		char uuidstr[MAX_LEN_UUID_STR];
-		uint8_t *value;
-		bt_uuid_t uuid;
 
-		value = list->data[i];
-		handle = att_get_u16(value);
-
-		if (format == 0x01)
-			uuid = att_get_uuid16(&value[2]);
-		else
-			uuid = att_get_uuid128(&value[2]);
-
-		bt_uuid_to_string(&uuid, uuidstr, MAX_LEN_UUID_STR);
-		rl_printf("handle: 0x%04x, uuid: %s\n", handle, uuidstr);
+		bt_uuid_to_string(&desc->uuid, uuidstr, sizeof(uuidstr));
+		rl_printf("handle: 0x%04x, uuid: %s\n", desc->handle, uuidstr);
 	}
 
-	att_data_list_free(list);
-
-	if (handle != 0xffff && handle < end)
-		gatt_discover_char_desc(attrib, handle + 1, end, char_desc_cb,
-									NULL);
+	return true;
 }
 
 static void char_read_cb(uint8_t status, const uint8_t *value, size_t vlen,
