@@ -400,42 +400,32 @@ static void read_location_cb(uint8_t status, const uint8_t *value, size_t vlen,
 					CYCLINGSPEED_INTERFACE, "Location");
 }
 
-static void discover_desc_cb(guint8 status, const guint8 *pdu,
-					guint16 len, gpointer user_data)
+static bool discover_desc_cb(uint8_t status, GSList *descs, void *user_data)
 {
 	struct characteristic *ch = user_data;
-	struct att_data_list *list = NULL;
-	uint8_t format;
-	int i;
+	GSList *l;
 
 	if (status != 0) {
-		error("Discover %s descriptors failed: %s", ch->uuid,
+		if (status != ATT_ECODE_ATTR_NOT_FOUND)
+			error("Discover %s descriptors failed: %s", ch->uuid,
 							att_ecode2str(status));
-		goto done;
+
+		g_free(ch);
+		return true;
 	}
 
-	list = dec_find_info_resp(pdu, len, &format);
-	if (list == NULL)
-		goto done;
-
-	if (format != ATT_FIND_INFO_RESP_FMT_16BIT)
-		goto done;
-
-	for (i = 0; i < list->num; i++) {
-		uint8_t *value;
-		uint16_t handle, uuid;
+	for (l = descs; l != NULL; l = g_slist_next(l)) {
+		struct gatt_char_desc *desc = l->data;
 		uint8_t attr_val[2];
+		bt_uuid_t uuid;
 		char *msg;
 
-		value = list->data[i];
-		handle = att_get_u16(value);
-		uuid = att_get_u16(value + 2);
-
-		if (uuid != GATT_CLIENT_CHARAC_CFG_UUID)
+		bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+		if (bt_uuid_cmp(&desc->uuid, &uuid) != 0)
 			continue;
 
 		if (g_strcmp0(ch->uuid, CSC_MEASUREMENT_UUID) == 0) {
-			ch->csc->measurement_ccc_handle = handle;
+			ch->csc->measurement_ccc_handle = desc->handle;
 
 			if (g_slist_length(ch->csc->cadapter->watchers) == 0) {
 				att_put_u16(0x0000, attr_val);
@@ -453,17 +443,14 @@ static void discover_desc_cb(guint8 status, const guint8 *pdu,
 			break;
 		}
 
-		gatt_write_char(ch->csc->attrib, handle, attr_val,
+		gatt_write_char(ch->csc->attrib, desc->handle, attr_val,
 					sizeof(attr_val), char_write_cb, msg);
 
 		/* We only want CCC, can break here */
 		break;
 	}
 
-done:
-	if (list)
-		att_data_list_free(list);
-	g_free(ch);
+	return true;
 }
 
 static void discover_desc(struct csc *csc, struct gatt_char *c,

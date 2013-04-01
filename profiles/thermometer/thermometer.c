@@ -515,25 +515,28 @@ static void write_ccc_cb(uint8_t status, void *user_data)
 	g_free(msg);
 }
 
-static void process_thermometer_desc(struct characteristic *ch, uint16_t uuid,
-								uint16_t handle)
+static void process_thermometer_desc(struct characteristic *ch,
+						struct gatt_char_desc *desc)
 {
 	uint8_t atval[2];
+	bt_uuid_t uuid;
 	uint16_t val;
 	char *msg;
 
-	if (uuid == GATT_CHARAC_VALID_RANGE_UUID) {
+	bt_uuid16_create(&uuid, GATT_CHARAC_VALID_RANGE_UUID);
+	if (bt_uuid_cmp(&desc->uuid, &uuid) == 0) {
 		if (g_strcmp0(ch->uuid, MEASUREMENT_INTERVAL_UUID) == 0)
-			gatt_read_char(ch->t->attrib, handle,
+			gatt_read_char(ch->t->attrib, desc->handle,
 						valid_range_desc_cb, ch->t);
 		return;
 	}
 
-	if (uuid != GATT_CLIENT_CHARAC_CFG_UUID)
+	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+	if (bt_uuid_cmp(&desc->uuid, &uuid) != 0)
 		return;
 
 	if (g_strcmp0(ch->uuid, TEMPERATURE_MEASUREMENT_UUID) == 0) {
-		ch->t->measurement_ccc_handle = handle;
+		ch->t->measurement_ccc_handle = desc->handle;
 
 		if (g_slist_length(ch->t->tadapter->fwatchers) == 0) {
 			val = 0x0000;
@@ -543,7 +546,7 @@ static void process_thermometer_desc(struct characteristic *ch, uint16_t uuid,
 			msg = g_strdup("Enable Temperature Measurement ind");
 		}
 	} else if (g_strcmp0(ch->uuid, INTERMEDIATE_TEMPERATURE_UUID) == 0) {
-		ch->t->intermediate_ccc_handle = handle;
+		ch->t->intermediate_ccc_handle = desc->handle;
 
 		if (g_slist_length(ch->t->tadapter->iwatchers) == 0) {
 			val = 0x0000;
@@ -560,46 +563,31 @@ static void process_thermometer_desc(struct characteristic *ch, uint16_t uuid,
 	}
 
 	att_put_u16(val, atval);
-	gatt_write_char(ch->t->attrib, handle, atval, sizeof(atval),
+	gatt_write_char(ch->t->attrib, desc->handle, atval, sizeof(atval),
 							write_ccc_cb, msg);
 }
 
-static void discover_desc_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static bool discover_desc_cb(uint8_t status, GSList *descs, void *user_data)
 {
 	struct characteristic *ch = user_data;
-	struct att_data_list *list = NULL;
-	uint8_t format;
-	int i;
+	GSList *l;
 
 	if (status != 0) {
-		error("Discover all characteristic descriptors failed [%s]: %s",
-					ch->uuid, att_ecode2str(status));
-		goto done;
+		if (status != ATT_ECODE_ATTR_NOT_FOUND)
+			error("Discover %s descriptors failed: %s", ch->uuid,
+							att_ecode2str(status));
+
+		g_free(ch);
+		return true;
 	}
 
-	list = dec_find_info_resp(pdu, len, &format);
-	if (list == NULL)
-		goto done;
+	for (l = descs; l != NULL; l = g_slist_next(l)) {
+		struct gatt_char_desc *desc = l->data;
 
-	if (format != ATT_FIND_INFO_RESP_FMT_16BIT)
-		goto done;
-
-	for (i = 0; i < list->num; i++) {
-		uint8_t *value;
-		uint16_t handle, uuid;
-
-		value = list->data[i];
-		handle = att_get_u16(value);
-		uuid = att_get_u16(value + 2);
-
-		process_thermometer_desc(ch, uuid, handle);
+		process_thermometer_desc(ch, desc);
 	}
 
-done:
-	if (list != NULL)
-		att_data_list_free(list);
-	g_free(ch);
+	return true;
 }
 
 static void discover_desc(struct thermometer *t, struct gatt_char *c,

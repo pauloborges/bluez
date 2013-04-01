@@ -234,40 +234,30 @@ static void write_ccc(GAttrib *attrib, uint16_t handle, gpointer user_data)
 								user_data);
 }
 
-static void gatt_descriptors_cb(guint8 status, const guint8 *pdu, guint16 len,
-							gpointer user_data)
+static bool gatt_descriptors_cb(uint8_t status, GSList *descs, void *user_data)
 {
 	struct gas *gas = user_data;
-	struct att_data_list *list;
-	int i;
-	uint8_t format;
+	GSList *l;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return true;
 
 	if (status) {
 		error("Discover all GATT characteristic descriptors: %s",
 							att_ecode2str(status));
-		return;
+		return true;
 	}
 
-	list = dec_find_info_resp(pdu, len, &format);
-	if (list == NULL)
-		return;
+	for (l = descs; l != NULL; l = g_slist_next(l)) {
+		struct gatt_char_desc *desc = l->data;
+		char uuidstr[MAX_LEN_UUID_STR];
 
-	if (format != ATT_FIND_INFO_RESP_FMT_16BIT)
-		goto done;
-
-	for (i = 0; i < list->num; i++) {
-		uint16_t uuid16, ccc;
-		uint8_t *value;
-
-		value = list->data[i];
-		ccc = att_get_u16(value);
-		uuid16 = att_get_u16(&value[2]);
-		DBG("CCC: 0x%04x UUID: 0x%04x", ccc, uuid16);
-		write_ccc(gas->attrib, ccc, user_data);
+		bt_uuid_to_string(&desc->uuid, uuidstr, sizeof(uuidstr));
+		DBG("CCC: 0x%04x UUID: %s", desc->handle, uuidstr);
+		write_ccc(gas->attrib, desc->handle, user_data);
 	}
 
-done:
-	att_data_list_free(list);
+	return true;
 }
 
 static bool gatt_characteristic_cb(uint8_t status, GSList *characteristics,
