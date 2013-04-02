@@ -283,6 +283,39 @@ done:
 	return TRUE;
 }
 
+static gboolean handle_read_by_type(int fd)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
+	ssize_t len;
+	uint16_t start, end, pdu_len;
+	bt_uuid_t uuid;
+	struct att_data_list *adl;
+	uint8_t *value;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpint(len, >, 0);
+
+	pdu_len = dec_read_by_type_req(pdu, len, &start, &end, &uuid);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	adl = att_data_list_alloc(1, sizeof(uint16_t) * 2);
+	g_assert(adl != NULL);
+
+	value = adl->data[0];
+	att_put_u16(0x0001, &value[0]);
+	att_put_u16(0xAA55, &value[2]);
+
+	pdu_len = enc_read_by_type_resp(adl, pdu, sizeof(pdu));
+	g_assert_cmpint(pdu_len, >, 0);
+
+	att_data_list_free(adl);
+
+	len = write(fd, pdu, pdu_len);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	return TRUE;
+}
+
 static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 							gpointer user_data)
 {
@@ -308,6 +341,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_read_by_group(fd, context);
 	case ATT_OP_FIND_INFO_REQ:
 		return handle_find_info(fd, context);
+	case ATT_OP_READ_BY_TYPE_REQ:
+		return handle_read_by_type(fd);
 	case ATT_OP_WRITE_CMD:
 		return handle_write_cmd(fd, context);
 	case ATT_OP_WRITE_REQ:
@@ -457,6 +492,46 @@ static void test_gatt_discover_char_desc(void)
 	execute_context(context);
 }
 
+static bool read_char_by_uuid_cb(uint8_t status, GSList *values,
+								void *user_data)
+{
+	struct context *context = user_data;
+	struct gatt_att *att_data;
+	uint8_t *value;
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert(values != NULL);
+	g_assert_cmpuint(g_slist_length(values), ==, 1);
+	g_assert(context != NULL);
+
+	att_data = values->data;
+	g_assert(att_data != NULL);
+
+	value = att_data->value;
+	g_assert(value != NULL);
+
+	g_assert_cmpuint(att_data->handle, ==, 0x0001);
+	g_assert_cmpuint(att_data->size, ==, 2);
+	g_assert_cmpuint(att_get_u16(value), ==, 0xAA55);
+
+	g_main_loop_quit(context->main_loop);
+
+	return false;
+}
+
+static void test_gatt_read_char_by_uuid(void)
+{
+	struct context *context = create_context();
+	bt_uuid_t uuid;
+
+	bt_string_to_uuid(&uuid, GATT_UUID);
+
+	gatt_read_char_by_uuid(context->attrib, 0x0001, 0xffff, &uuid,
+						read_char_by_uuid_cb, context);
+
+	execute_context(context);
+}
+
 static void test_gatt_write_cmd(void)
 {
 	struct context *context = create_context();
@@ -502,6 +577,8 @@ int main(int argc, char *argv[])
 						test_gatt_discover_primary);
 	g_test_add_func("/gatt/gatt_discover_char_desc",
 						test_gatt_discover_char_desc);
+	g_test_add_func("/gatt/gatt_read_char_by_uuid",
+						test_gatt_read_char_by_uuid);
 	g_test_add_func("/gatt/gatt_write_cmd", test_gatt_write_cmd);
 	g_test_add_func("/gatt/gatt_write_char", test_gatt_write_char);
 
