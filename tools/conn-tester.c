@@ -42,6 +42,7 @@
 struct test_data {
 	struct mgmt *mgmt;
 	uint16_t mgmt_index;
+	struct hciemu *adapter;
 };
 
 #define test_le(name, data, setup, func) \
@@ -51,9 +52,66 @@ struct test_data {
 		if (!user) \
 			break; \
 		tester_add_full(name, data, test_pre_setup, setup, func, NULL, \
-							NULL, 10, user, free); \
+					test_post_teardown, 10, user, free); \
 	} while (0)
 
+static void index_added_callback(uint16_t index, uint16_t length,
+					const void *param, void *user_data)
+{
+	struct test_data *test = tester_get_data();
+
+	tester_print("Index Added callback");
+	tester_print("  Index: 0x%04x", index);
+
+	test->mgmt_index = index;
+
+	tester_pre_setup_complete();
+}
+
+static void index_removed_callback(uint16_t index, uint16_t length,
+					const void *param, void *user_data)
+{
+	struct test_data *test = tester_get_data();
+
+	tester_print("Index Removed callback");
+	tester_print("  Index: 0x%04x", index);
+
+	if (index != test->mgmt_index)
+		return;
+
+	mgmt_unregister_index(test->mgmt, test->mgmt_index);
+
+	mgmt_unref(test->mgmt);
+	test->mgmt = NULL;
+
+	tester_post_teardown_complete();
+}
+
+static void read_index_list_callback(uint8_t status, uint16_t length,
+					const void *param, void *user_data)
+{
+	struct test_data *test = tester_get_data();
+
+	tester_print("Read Index List callback");
+	tester_print("  Status: 0x%02x", status);
+
+	if (status || !param) {
+		tester_pre_setup_failed();
+		return;
+	}
+
+	mgmt_register(test->mgmt, MGMT_EV_INDEX_ADDED, MGMT_INDEX_NONE,
+					index_added_callback, NULL, NULL);
+
+	mgmt_register(test->mgmt, MGMT_EV_INDEX_REMOVED, MGMT_INDEX_NONE,
+					index_removed_callback, NULL, NULL);
+
+	test->adapter = hciemu_new(HCIEMU_TYPE_LE);
+	if (!test->adapter) {
+		tester_warn("Failed to setup HCI emulation");
+		tester_pre_setup_failed();
+	}
+}
 
 static void test_pre_setup(const void *test_data)
 {
@@ -66,8 +124,16 @@ static void test_pre_setup(const void *test_data)
 		return;
 	}
 
-	/* FIXME: Register callbacks to get events when controller was
-	 * added/removed */
+	mgmt_send(test->mgmt, MGMT_OP_READ_INDEX_LIST, MGMT_INDEX_NONE, 0, NULL,
+					read_index_list_callback, NULL, NULL);
+}
+
+static void test_post_teardown(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+
+	hciemu_unref(test->adapter);
+	test->adapter = NULL;
 }
 
 int main(int argc, char *argv[])
