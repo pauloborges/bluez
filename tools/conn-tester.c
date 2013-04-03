@@ -55,17 +55,45 @@ struct test_data {
 					test_post_teardown, 10, user, free); \
 	} while (0)
 
+static void powered_callback(uint8_t status, uint16_t length,
+					const void *param, void *user_data)
+{
+	if (status != MGMT_STATUS_SUCCESS) {
+		tester_pre_setup_failed();
+		return;
+	}
+
+	tester_print("Controller powered on");
+	tester_pre_setup_complete();
+}
+
+static void set_le_powered(uint16_t index, mgmt_request_func_t callback)
+{
+	struct test_data *test = tester_get_data();
+	unsigned char param[] = { 0x01 };
+
+	tester_print("Powering on hci%d controller (with LE enabled)", index);
+
+	mgmt_send(test->mgmt, MGMT_OP_SET_LE, index, sizeof(param), param, NULL,
+								NULL, NULL);
+
+	mgmt_send(test->mgmt, MGMT_OP_SET_POWERED, index, sizeof(param), param,
+							callback, NULL, NULL);
+}
+
 static void index_added_callback(uint16_t index, uint16_t length,
 					const void *param, void *user_data)
 {
 	struct test_data *test = tester_get_data();
+	const unsigned int *id = user_data;
 
 	tester_print("Index Added callback");
 	tester_print("  Index: 0x%04x", index);
 
 	test->mgmt_index = index;
+	mgmt_unregister(test->mgmt, *id);
 
-	tester_pre_setup_complete();
+	set_le_powered(index, powered_callback);
 }
 
 static void index_removed_callback(uint16_t index, uint16_t length,
@@ -91,6 +119,7 @@ static void read_index_list_callback(uint8_t status, uint16_t length,
 					const void *param, void *user_data)
 {
 	struct test_data *test = tester_get_data();
+	static unsigned int id;
 
 	tester_print("Read Index List callback");
 	tester_print("  Status: 0x%02x", status);
@@ -100,8 +129,8 @@ static void read_index_list_callback(uint8_t status, uint16_t length,
 		return;
 	}
 
-	mgmt_register(test->mgmt, MGMT_EV_INDEX_ADDED, MGMT_INDEX_NONE,
-					index_added_callback, NULL, NULL);
+	id = mgmt_register(test->mgmt, MGMT_EV_INDEX_ADDED, MGMT_INDEX_NONE,
+					index_added_callback, &id, NULL);
 
 	mgmt_register(test->mgmt, MGMT_EV_INDEX_REMOVED, MGMT_INDEX_NONE,
 					index_removed_callback, NULL, NULL);
