@@ -336,6 +336,30 @@ static gboolean handle_read_by_type(int fd)
 	return TRUE;
 }
 
+static gboolean handle_read(int fd)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
+	ssize_t len;
+	uint16_t pdu_len;
+	uint16_t handle;
+	uint8_t resp[2];
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpint(len, >, 0);
+
+	pdu_len = dec_read_req(pdu, len, &handle);
+	g_assert_cmpuint(pdu_len, >, 0);
+
+	att_put_u16(0xAA55, resp);
+	pdu_len = enc_read_resp(resp, sizeof(resp), pdu, sizeof(pdu));
+	g_assert_cmpint(pdu_len, >, 0);
+
+	len = write(fd, pdu, pdu_len);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	return TRUE;
+}
+
 static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 							gpointer user_data)
 {
@@ -363,6 +387,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_find_info(fd, context);
 	case ATT_OP_READ_BY_TYPE_REQ:
 		return handle_read_by_type(fd);
+	case ATT_OP_READ_REQ:
+		return handle_read(fd);
 	case ATT_OP_WRITE_CMD:
 		return handle_write_cmd(fd, context);
 	case ATT_OP_WRITE_REQ:
@@ -554,6 +580,33 @@ static void test_gatt_read_char_by_uuid(void)
 	execute_context(context);
 }
 
+static void read_char_value_cb(uint8_t status, const uint8_t *value, size_t len,
+								void *user_data)
+{
+	struct context *context = user_data;
+	uint16_t data;
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert(value != NULL);
+	g_assert(context != NULL);
+
+	g_assert_cmpuint(len, ==, 2);
+
+	data = att_get_u16(value);
+	g_assert_cmpuint(data, ==, 0xAA55);
+
+	g_main_loop_quit(context->main_loop);
+}
+
+static void test_gatt_read_char_value(void)
+{
+	struct context *context = create_context();
+
+	gatt_read_char(context->attrib, 0x0001, read_char_value_cb, context);
+
+	execute_context(context);
+}
+
 static void test_gatt_write_cmd(void)
 {
 	struct context *context = create_context();
@@ -601,6 +654,8 @@ int main(int argc, char *argv[])
 						test_gatt_discover_char_desc);
 	g_test_add_func("/gatt/gatt_read_char_by_uuid",
 						test_gatt_read_char_by_uuid);
+	g_test_add_func("/gatt/gatt_read_char_value",
+						test_gatt_read_char_value);
 	g_test_add_func("/gatt/gatt_write_cmd", test_gatt_write_cmd);
 	g_test_add_func("/gatt/gatt_write_char", test_gatt_write_char);
 
