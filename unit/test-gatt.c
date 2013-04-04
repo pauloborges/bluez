@@ -107,6 +107,26 @@ static gboolean handle_mtu_exchange(int fd)
 	return TRUE;
 }
 
+static gboolean handle_write_cmd(int fd, struct context *context)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU], value;
+	uint16_t handle;
+	ssize_t len, pdu_len;
+	size_t vlen;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpint(len, >, 0);
+
+	pdu_len = dec_write_cmd(pdu, len, &handle, &value, &vlen);
+	g_assert_cmpint(pdu_len, ==, 4 * sizeof(uint8_t));
+	g_assert_cmpint(handle, ==, 0x0001);
+	g_assert_cmpint(value, ==, 0x03);
+
+	g_main_loop_quit(context->main_loop);
+
+	return TRUE;
+}
+
 static gboolean handle_read_by_group(int fd, struct context *context)
 {
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
@@ -263,6 +283,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_read_by_group(fd, context);
 	case ATT_OP_FIND_INFO_REQ:
 		return handle_find_info(fd, context);
+	case ATT_OP_WRITE_CMD:
+		return handle_write_cmd(fd, context);
 	default:
 		g_assert_not_reached();
 	}
@@ -408,6 +430,17 @@ static void test_gatt_discover_char_desc(void)
 	execute_context(context);
 }
 
+static void test_gatt_write_cmd(void)
+{
+	struct context *context = create_context();
+	uint8_t value = 0x03;
+	size_t vlen = sizeof(value);
+
+	gatt_write_cmd(context->attrib, 0x0001, &value, vlen, NULL, NULL);
+
+	execute_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
@@ -417,6 +450,7 @@ int main(int argc, char *argv[])
 						test_gatt_discover_primary);
 	g_test_add_func("/gatt/gatt_discover_char_desc",
 						test_gatt_discover_char_desc);
+	g_test_add_func("/gatt/gatt_write_cmd", test_gatt_write_cmd);
 
 	return g_test_run();
 }
