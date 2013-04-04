@@ -26,9 +26,16 @@
 #include <config.h>
 #endif
 
+#include <errno.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <glib.h>
+
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/hci.h>
+#include <bluetooth/hci_lib.h>
+#include <bluetooth/l2cap.h>
 
 #include "lib/bluetooth.h"
 #include "lib/mgmt.h"
@@ -43,6 +50,7 @@ struct test_data {
 	struct mgmt *mgmt;
 	uint16_t mgmt_index;
 	struct hciemu *adapter;
+	int sk;
 };
 
 #define test_le(name, data, setup, func) \
@@ -165,11 +173,53 @@ static void test_post_teardown(const void *test_data)
 	test->adapter = NULL;
 }
 
+static int pre_connection(int *sk)
+{
+	struct test_data *test = tester_get_data();
+	struct sockaddr_l2 addr;
+
+	/* Create socket */
+	*sk = socket(PF_BLUETOOTH, SOCK_SEQPACKET | SOCK_NONBLOCK,
+								BTPROTO_L2CAP);
+	if (*sk < 0) {
+		tester_print("Can't create socket: %s (%d)", strerror(errno),
+									errno);
+		return -1;
+	}
+
+	/* Bind to local address */
+	memset(&addr, 0, sizeof(addr));
+	addr.l2_family = AF_BLUETOOTH;
+	str2ba(hciemu_get_address(test->adapter), &addr.l2_bdaddr);
+	if (bind(*sk, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		tester_print("Can't bind socket: %s (%d)", strerror(errno),
+									errno);
+		close(*sk);
+		return -1;
+	}
+
+	return 0;
+}
+
+static void setup_connection(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+
+	if (pre_connection(&test->sk) < 0) {
+		tester_warn("Error on setup connection");
+		tester_setup_failed();
+		return;
+	}
+
+	tester_setup_complete();
+}
+
 int main(int argc, char *argv[])
 {
 	tester_init(&argc, &argv);
 
-	test_le("Single Connection test - Not connected", NULL, NULL, NULL);
+	test_le("Single Connection test - Not connected", NULL,
+							setup_connection, NULL);
 
 	return tester_run();
 }
