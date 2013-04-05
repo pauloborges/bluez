@@ -43,6 +43,7 @@ struct context {
 	guint server_source;
 	GAttrib *attrib;
 	struct gatt_primary prim;
+	struct gatt_char_desc desc;
 };
 
 void btd_debug(const char *format, ...)
@@ -201,6 +202,62 @@ done:
 	return TRUE;
 }
 
+static gboolean handle_find_info(int fd, struct context *context)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
+	uint16_t pdu_len, start, end;
+	struct att_data_list *adl;
+	uint8_t *value;
+	ssize_t len;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert(len > 0);
+
+	pdu_len = dec_find_info_req(pdu, len, &start, &end);
+	g_assert(pdu_len == len);
+
+	adl = att_data_list_alloc(1, sizeof(uint16_t) * 2);
+	g_assert(adl != NULL);
+
+	value = adl->data[0];
+
+	if (start == 0x0003 && end == 0x000f) {
+		att_put_u16(0x0003, &value[0]);
+		att_put_u16(0xcccc, &value[2]);
+
+		context->desc.handle = 0x0003;
+		bt_uuid16_create(&context->desc.uuid, 0xcccc);
+	} else if (start == 0x0004 && end == 0x000f) {
+		att_put_u16(0x0004, &value[0]);
+		att_put_u16(0xdddd, &value[2]);
+
+		context->desc.handle = 0x0004;
+		bt_uuid16_create(&context->desc.uuid, 0xdddd);
+	} else {
+		/* Signal end of attribute group (primary service) */
+		pdu_len = enc_error_resp(pdu[0], start,
+						ATT_ECODE_ATTR_NOT_FOUND,
+						pdu, sizeof(pdu));
+		g_assert(pdu_len == 5);
+
+		memset(&context->prim, 0, sizeof(context->prim));
+
+		goto done;
+	}
+
+	pdu_len = enc_find_info_resp(ATT_FIND_INFO_RESP_FMT_16BIT, adl, pdu,
+								sizeof(pdu));
+	g_assert(pdu_len == 2 + 2 * sizeof(uint16_t));
+
+done:
+	att_data_list_free(adl);
+
+	len = write(fd, pdu, pdu_len);
+	g_assert(len == pdu_len);
+
+	return TRUE;
+}
+
 static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 							gpointer user_data)
 {
@@ -224,6 +281,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_mtu_exchange(fd);
 	case ATT_OP_READ_BY_GROUP_REQ:
 		return handle_read_by_group(fd, context);
+	case ATT_OP_FIND_INFO_REQ:
+		return handle_find_info(fd, context);
 	}
 
 	return handle_not_supported(fd);
@@ -333,6 +392,40 @@ static void test_gatt_discover_primary(void)
 	execute_context(context);
 }
 
+static bool discover_char_desc_cb(uint8_t status, GSList *descs,
+								void *user_data)
+{
+	struct context *context = user_data;
+	struct gatt_char_desc *desc;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
+		g_main_loop_quit(context->main_loop);
+		return false;
+	}
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert_cmpuint(g_slist_length(descs), ==, 1);
+
+	desc = g_slist_nth_data(descs, 0);
+
+	if (g_test_verbose() == TRUE)
+		printf("Got handle 0x%04x\n", desc->handle);
+
+	g_assert(memcmp(desc, &context->desc, sizeof(context->desc)) == 0);
+
+	return true;
+}
+
+static void test_gatt_discover_char_desc(void)
+{
+	struct context *context = create_context();
+
+	gatt_discover_char_desc(context->attrib, 0x0003, 0x000f,
+						discover_char_desc_cb, context);
+
+	execute_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
@@ -340,6 +433,8 @@ int main(int argc, char *argv[])
 	g_test_add_func("/gatt/gatt_exchange_mtu", test_gatt_exchange_mtu);
 	g_test_add_func("/gatt/gatt_discover_primary",
 						test_gatt_discover_primary);
+	g_test_add_func("/gatt/gatt_discover_char_desc",
+						test_gatt_discover_char_desc);
 
 	return g_test_run();
 }
