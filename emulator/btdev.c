@@ -876,6 +876,30 @@ static void remote_version_complete(struct btdev *btdev, uint16_t handle)
 							&rvc, sizeof(rvc));
 }
 
+static void le_send_adv_report(struct btdev *btdev, const struct btdev *remote)
+{
+	struct __attribute__ ((packed)) {
+		uint8_t subevent;
+		union {
+			struct bt_hci_evt_le_adv_report lar;
+			uint8_t raw[10 + 31 + 1];
+		};
+	} meta_event;
+
+	meta_event.subevent = BT_HCI_EVT_LE_ADV_REPORT;
+
+	memset(&meta_event.lar, 0, sizeof(meta_event.lar));
+	meta_event.lar.num_reports = 1;
+	memcpy(meta_event.lar.addr, remote->bdaddr, 6);
+	meta_event.lar.data_len = remote->le_adv_data_len;
+	memcpy(meta_event.lar.data, remote->le_adv_data,
+						meta_event.lar.data_len);
+	/* Not available */
+	meta_event.raw[10 + meta_event.lar.data_len] = 127;
+	send_event(btdev, BT_HCI_EVT_LE_META_EVENT, &meta_event,
+					1 + 10 + meta_event.lar.data_len + 1);
+}
+
 static void le_set_adv_enable_complete(struct btdev *btdev)
 {
 	int i;
@@ -886,6 +910,8 @@ static void le_set_adv_enable_complete(struct btdev *btdev)
 
 		if (!btdev_list[i]->le_scan_enable)
 			continue;
+
+		le_send_adv_report(btdev_list[i], btdev);
 	}
 }
 
@@ -899,6 +925,8 @@ static void le_set_scan_enable_complete(struct btdev *btdev)
 
 		if (!btdev_list[i]->le_adv_enable)
 			continue;
+
+		le_send_adv_report(btdev, btdev_list[i]);
 	}
 }
 
