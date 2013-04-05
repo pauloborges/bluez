@@ -127,6 +127,31 @@ static gboolean handle_write_cmd(int fd, struct context *context)
 	return TRUE;
 }
 
+static gboolean handle_write_char(int fd)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU], value;
+	ssize_t len;
+	size_t vlen;
+	uint16_t pdu_len;
+	uint16_t handle;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpuint(len, >, 0);
+
+	pdu_len = dec_write_req(pdu, len, &handle, &value, &vlen);
+	g_assert_cmpuint(pdu_len, ==, 4 * sizeof(uint8_t));
+	g_assert_cmpint(handle, ==, 0x0001);
+	g_assert_cmpint(value, ==, 0x08);
+
+	pdu_len = enc_write_resp(pdu);
+	g_assert_cmpint(pdu_len, >, 0);
+
+	len = write(fd, pdu, pdu_len);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	return TRUE;
+}
+
 static gboolean handle_read_by_group(int fd, struct context *context)
 {
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
@@ -285,6 +310,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_find_info(fd, context);
 	case ATT_OP_WRITE_CMD:
 		return handle_write_cmd(fd, context);
+	case ATT_OP_WRITE_REQ:
+		return handle_write_char(fd);
 	default:
 		g_assert_not_reached();
 	}
@@ -441,6 +468,31 @@ static void test_gatt_write_cmd(void)
 	execute_context(context);
 }
 
+static void write_char_cb(uint8_t status, void *user_data)
+{
+	struct context *context = user_data;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		g_main_loop_quit(context->main_loop);
+
+	g_assert_cmpuint(status, ==, 0);
+
+	g_main_loop_quit(context->main_loop);
+}
+
+static void test_gatt_write_char(void)
+{
+	struct context *context = create_context();
+	int handle = 0x0001;
+	uint8_t value = 0x08;
+	size_t vlen = sizeof(value);
+
+	gatt_write_char(context->attrib, handle, &value, vlen, write_char_cb,
+								context);
+
+	execute_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
@@ -451,6 +503,7 @@ int main(int argc, char *argv[])
 	g_test_add_func("/gatt/gatt_discover_char_desc",
 						test_gatt_discover_char_desc);
 	g_test_add_func("/gatt/gatt_write_cmd", test_gatt_write_cmd);
+	g_test_add_func("/gatt/gatt_write_char", test_gatt_write_char);
 
 	return g_test_run();
 }
