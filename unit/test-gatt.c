@@ -339,10 +339,10 @@ static gboolean handle_read_by_type(int fd)
 static gboolean handle_read(int fd)
 {
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
-	ssize_t len;
+	ssize_t len, resp_len;
 	uint16_t pdu_len;
 	uint16_t handle;
-	uint8_t resp[2];
+	uint8_t resp[ATT_DEFAULT_LE_MTU - 1];
 
 	len = recv(fd, pdu, sizeof(pdu), 0);
 	g_assert_cmpint(len, >, 0);
@@ -350,8 +350,65 @@ static gboolean handle_read(int fd)
 	pdu_len = dec_read_req(pdu, len, &handle);
 	g_assert_cmpuint(pdu_len, >, 0);
 
-	att_put_u16(0xAA55, resp);
-	pdu_len = enc_read_resp(resp, sizeof(resp), pdu, sizeof(pdu));
+	switch (handle) {
+	case 0x0001:
+		att_put_u16(0xAA55, resp);
+		resp_len = sizeof(uint16_t);
+		break;
+	case 0x0002: {
+		char *str = "0123-4567-89AB-CDEF-01";
+		resp_len = strlen(str);
+		g_assert_cmpuint(resp_len, ==, ATT_DEFAULT_LE_MTU - 1);
+		memcpy(resp, str, resp_len);
+		break;
+	}
+	default:
+		g_assert_not_reached();
+	}
+
+	pdu_len = enc_read_resp(resp, resp_len, pdu, sizeof(pdu));
+	g_assert_cmpint(pdu_len, >, 0);
+
+	len = write(fd, pdu, pdu_len);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	return TRUE;
+}
+
+static gboolean handle_read_blob(int fd)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
+	ssize_t len, resp_len;
+	uint16_t pdu_len;
+	uint16_t handle, offset;
+	uint8_t resp[ATT_DEFAULT_LE_MTU - 1];
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpint(len, >, 0);
+
+	pdu_len = dec_read_blob_req(pdu, len, &handle, &offset);
+	g_assert_cmpuint(pdu_len, >, 0);
+
+	switch (handle) {
+	case 0x0002: {
+		switch (offset) {
+		case 22: {
+			char *str = "23-4567-89AB-CDEF";
+			resp_len = strlen(str);
+			g_assert_cmpuint(resp_len, <, ATT_DEFAULT_LE_MTU - 1);
+			memcpy(resp, str, resp_len);
+			break;
+		}
+		default:
+			g_assert_not_reached();
+		}
+		break;
+	}
+	default:
+		g_assert_not_reached();
+	}
+
+	pdu_len = enc_read_blob_resp(resp, resp_len, 0, pdu, sizeof(pdu));
 	g_assert_cmpint(pdu_len, >, 0);
 
 	len = write(fd, pdu, pdu_len);
@@ -389,6 +446,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_read_by_type(fd);
 	case ATT_OP_READ_REQ:
 		return handle_read(fd);
+	case ATT_OP_READ_BLOB_REQ:
+		return handle_read_blob(fd);
 	case ATT_OP_WRITE_CMD:
 		return handle_write_cmd(fd, context);
 	case ATT_OP_WRITE_REQ:
@@ -607,6 +666,33 @@ static void test_gatt_read_char_value(void)
 	execute_context(context);
 }
 
+static void read_long_char_cb(uint8_t status, const uint8_t *value, size_t len,
+								void *user_data)
+{
+	struct context *context = user_data;
+	char *str;
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert(value != NULL);
+	g_assert_cmpuint(len, >, 0);
+	g_assert(context != NULL);
+
+	str = g_strndup((char *) value, len);
+	g_assert_cmpstr(str, ==, "0123-4567-89AB-CDEF-0123-4567-89AB-CDEF");
+
+	g_free(str);
+	g_main_loop_quit(context->main_loop);
+}
+
+static void test_gatt_read_long_char(void)
+{
+	struct context *context = create_context();
+
+	gatt_read_char(context->attrib, 0x0002, read_long_char_cb, context);
+
+	execute_context(context);
+}
+
 static void test_gatt_write_cmd(void)
 {
 	struct context *context = create_context();
@@ -656,6 +742,7 @@ int main(int argc, char *argv[])
 						test_gatt_read_char_by_uuid);
 	g_test_add_func("/gatt/gatt_read_char_value",
 						test_gatt_read_char_value);
+	g_test_add_func("/gatt/gatt_read_long_char", test_gatt_read_long_char);
 	g_test_add_func("/gatt/gatt_write_cmd", test_gatt_write_cmd);
 	g_test_add_func("/gatt/gatt_write_char", test_gatt_write_char);
 
