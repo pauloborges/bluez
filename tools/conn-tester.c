@@ -46,20 +46,38 @@
 #include "src/shared/mgmt.h"
 #include "src/shared/hciemu.h"
 
+#define MAX_DEVICES 1
+
+struct remote_hciemu {
+	struct hciemu *device;
+	uint16_t device_index;
+	unsigned int mgmt_id;
+	int sk;
+};
+
 struct test_data {
 	struct mgmt *mgmt;
 	uint16_t mgmt_index;
 	struct hciemu *adapter;
-	int sk;
+	struct remote_hciemu devices[MAX_DEVICES];
+	int devices_count;
+	int current_device_count;
 };
 
 #define test_le(name, data, setup, func) \
 	do { \
+		int i; \
 		struct test_data *user; \
 		user = malloc(sizeof(struct test_data)); \
 		if (!user) \
 			break; \
-		tester_add_full(name, data, test_pre_setup, setup, func, NULL, \
+		for (i = 0; i < MAX_DEVICES; i++) { \
+			user->devices[i].device = NULL; \
+			user->devices[i].sk = -1; \
+		} \
+		user->devices_count = data; \
+		user->current_device_count = 0; \
+		tester_add_full(name, NULL, test_pre_setup, setup, func, NULL, \
 					test_post_teardown, 10, user, free); \
 	} while (0)
 
@@ -168,9 +186,15 @@ static void test_pre_setup(const void *test_data)
 static void test_post_teardown(const void *test_data)
 {
 	struct test_data *test = tester_get_data();
+	int i;
 
 	hciemu_unref(test->adapter);
 	test->adapter = NULL;
+
+	for (i = 0; i < test->devices_count; i++) {
+		hciemu_unref(test->devices[i].device);
+		close(test->devices[i].sk);
+	}
 }
 
 static int pre_connection(int *sk)
@@ -201,25 +225,81 @@ static int pre_connection(int *sk)
 	return 0;
 }
 
-static void setup_connection(const void *test_data)
+static void device_powered_callback(uint8_t status, uint16_t length,
+					const void *param, void *user_data)
 {
 	struct test_data *test = tester_get_data();
 
-	if (pre_connection(&test->sk) < 0) {
-		tester_warn("Error on setup connection");
+	if (status != MGMT_STATUS_SUCCESS) {
 		tester_setup_failed();
 		return;
 	}
 
-	tester_setup_complete();
+	tester_print("Device controller powered on");
+
+	test->current_device_count++;
+	if (test->current_device_count == test->devices_count)
+		tester_setup_complete();
+}
+
+static void device_added_callback(uint16_t index, uint16_t length,
+					const void *param, void *user_data)
+{
+	struct test_data *test = tester_get_data();
+	struct remote_hciemu *remote = user_data;
+
+	mgmt_unregister(test->mgmt, remote->mgmt_id);
+
+	tester_print("Device Index Added callback");
+	tester_print("  Index: 0x%04x", index);
+
+	remote->device_index = index;
+	set_le_powered(index, device_powered_callback);
+}
+
+static void setup_device_controller(struct remote_hciemu *remote)
+{
+	struct test_data *test = tester_get_data();
+
+	remote->mgmt_id = mgmt_register(test->mgmt, MGMT_EV_INDEX_ADDED,
+					MGMT_INDEX_NONE, device_added_callback,
+					remote, NULL);
+
+	remote->device = hciemu_new(HCIEMU_TYPE_LE);
+	if (!remote->device) {
+		tester_warn("Failed to setup HCI emulation for device");
+		tester_setup_failed();
+	}
+}
+
+static void setup_connection(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+	int i;
+
+	if (test->devices_count > MAX_DEVICES) {
+		tester_warn("Exceed maximum number od devices");
+		tester_setup_failed();
+		return;
+	}
+
+	for (i = 0; i < test->devices_count; i++) {
+		setup_device_controller(&test->devices[i]);
+
+		if (pre_connection(&test->devices[i].sk) < 0) {
+			tester_warn("Error on setup connection");
+			tester_setup_failed();
+			return;
+		}
+	}
 }
 
 int main(int argc, char *argv[])
 {
 	tester_init(&argc, &argv);
 
-	test_le("Single Connection test - Not connected", NULL,
-							setup_connection, NULL);
+	test_le("Single Connection test - Not connected", 1, setup_connection,
+									NULL);
 
 	return tester_run();
 }
