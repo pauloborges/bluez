@@ -221,6 +221,99 @@ static void test_condition_complete(struct test_data *test)
 	tester_test_passed();
 }
 
+static gboolean received_hci_event(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	struct test_data *test = tester_get_data();
+	char buf[1 + HCI_EVENT_HDR_SIZE + EVT_CMD_COMPLETE_SIZE + 1], *ptr;
+	evt_cmd_complete *cc;
+	hci_event_hdr *hdr;
+	uint8_t status;
+	gsize len;
+
+	if (cond & (G_IO_HUP | G_IO_ERR | G_IO_NVAL))
+		goto failed;
+
+	if (g_io_channel_read_chars(io, (gchar *) buf, sizeof(buf), &len,
+						NULL) != G_IO_STATUS_NORMAL)
+		goto failed;
+
+	if (len != sizeof(buf))
+		goto failed;
+
+	ptr = buf + 1;
+	hdr = (void *) ptr;
+	if (hdr->evt != EVT_CMD_COMPLETE ||
+					hdr->plen != EVT_CMD_COMPLETE_SIZE + 1)
+		goto failed;
+
+	ptr += HCI_EVENT_HDR_SIZE;
+	cc = (void *) ptr;
+	if (btohs(cc->opcode) != cmd_opcode_pack(OGF_LE_CTL,
+						OCF_LE_SET_ADVERTISE_ENABLE))
+		goto failed;
+
+	ptr += EVT_CMD_COMPLETE_SIZE;
+	status = *ptr;
+	if (status != 0)
+		goto failed;
+
+	test_condition_complete(test);
+
+	return FALSE;
+
+failed:
+	tester_test_failed();
+
+	return FALSE;
+}
+
+static int enable_le_advertising(int hdev)
+{
+	le_set_advertise_enable_cp adv_cp;
+	struct hci_filter nf;
+	GIOChannel *channel;
+	uint16_t opcode;
+	int dd;
+
+	dd = hci_open_dev(hdev);
+	if (dd < 0) {
+		tester_warn("Could not open device");
+		return -1;
+	}
+
+	hci_filter_clear(&nf);
+	hci_filter_set_ptype(HCI_EVENT_PKT, &nf);
+	hci_filter_set_event(EVT_CMD_COMPLETE, &nf);
+	opcode = htobs(cmd_opcode_pack(OGF_LE_CTL,
+						OCF_LE_SET_ADVERTISE_ENABLE));
+	hci_filter_set_opcode(opcode, &nf);
+	if (setsockopt(dd, SOL_HCI, HCI_FILTER, &nf, sizeof(nf)) < 0) {
+		tester_warn("Error setting the socket filter");
+		return -1;
+	}
+
+	channel = g_io_channel_unix_new(dd);
+	g_io_channel_set_close_on_unref(channel, TRUE);
+	g_io_channel_set_encoding(channel, NULL, NULL);
+	g_io_channel_set_buffered(channel, FALSE);
+
+	g_io_add_watch_full(channel, G_PRIORITY_DEFAULT,
+				G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL,
+				received_hci_event, NULL, NULL);
+
+	g_io_channel_unref(channel);
+
+	adv_cp.enable = 0x01;
+	if (hci_send_cmd(dd, OGF_LE_CTL, OCF_LE_SET_ADVERTISE_ENABLE,
+						sizeof(adv_cp), &adv_cp) < 0) {
+		tester_warn("Error sending LE ADV Enable command");
+		return -1;
+	}
+
+	return 0;
+}
+
 static int pre_connection(int *sk)
 {
 	struct test_data *test = tester_get_data();
@@ -466,7 +559,8 @@ static void test_success_connect_1(const void *test_data)
 		/* Add conditions for LE advertising */
 		test_add_condition(test);
 
-		/* FIXME: enable advertising for second controller */
+		if (enable_le_advertising(test->devices[i].device_index) < 0)
+			tester_test_failed();
 
 		if (create_connection(&test->devices[i], connect_cb) < 0)
 			tester_test_failed();
