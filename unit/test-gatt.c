@@ -303,6 +303,73 @@ done:
 	return TRUE;
 }
 
+static gboolean handle_find_by_type(int fd, struct context *context)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU], value[ATT_DEFAULT_LE_MTU];
+	uint16_t pdu_len, start, end;
+	GSList *matches = NULL;
+	ssize_t len;
+	size_t vlen;
+	bt_uuid_t uuid, uuid2;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert(len > 0);
+
+	pdu_len = dec_find_by_type_req(pdu, len, &start, &end, &uuid, value,
+									&vlen);
+	g_assert(pdu_len == len);
+
+	bt_uuid16_create(&uuid2, GATT_PRIM_SVC_UUID);
+	g_assert(bt_uuid_cmp(&uuid, &uuid2) == 0);
+
+	g_assert(vlen == sizeof(uint16_t));
+	uuid = att_get_uuid16(value);
+	bt_uuid16_create(&uuid2, 0xabcd);
+	g_assert(bt_uuid_cmp(&uuid, &uuid2) == 0);
+
+	if (start == 0x0001 && end == 0xffff) {
+		struct att_range *range;
+
+		range = g_new0(struct att_range, 1);
+		range->start = 0x0020;
+		range->end = 0x002f;
+
+		context->prim.range = *range;
+
+		matches = g_slist_append(matches, range);
+	} else if (start == 0x0030 && end == 0xffff) {
+		struct att_range *range;
+
+		range = g_new0(struct att_range, 1);
+		range->start = 0x0030;
+		range->end = 0x003f;
+
+		context->prim.range = *range;
+
+		matches = g_slist_append(matches, range);
+	} else {
+		/* Signal end of procedure */
+		pdu_len = enc_error_resp(pdu[0], start,
+						ATT_ECODE_ATTR_NOT_FOUND,
+						pdu, sizeof(pdu));
+		g_assert(pdu_len == 5);
+
+		memset(&context->prim, 0, sizeof(context->prim));
+
+		goto done;
+	}
+
+	pdu_len = enc_find_by_type_resp(matches, pdu, sizeof(pdu));
+	g_assert(pdu_len == 1 + 2 * sizeof(uint16_t));
+	g_slist_free_full(matches, g_free);
+
+done:
+	len = write(fd, pdu, pdu_len);
+	g_assert(len == pdu_len);
+
+	return TRUE;
+}
+
 static gboolean handle_read_by_type(int fd)
 {
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
@@ -442,6 +509,8 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_read_by_group(fd, context);
 	case ATT_OP_FIND_INFO_REQ:
 		return handle_find_info(fd, context);
+	case ATT_OP_FIND_BY_TYPE_REQ:
+		return handle_find_by_type(fd, context);
 	case ATT_OP_READ_BY_TYPE_REQ:
 		return handle_read_by_type(fd);
 	case ATT_OP_READ_REQ:
@@ -557,6 +626,43 @@ static void test_gatt_discover_primary(void)
 
 	gatt_discover_primary(context->attrib, NULL, discover_primary_cb,
 								context);
+
+	execute_context(context);
+}
+
+static bool discover_primary_by_uuid_cb(uint8_t status, GSList *services,
+								void *user_data)
+{
+	struct context *context = user_data;
+	struct att_range *range;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
+		g_main_loop_quit(context->main_loop);
+		return false;
+	}
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert_cmpuint(g_slist_length(services), ==, 1);
+
+	range = g_slist_nth_data(services, 0);
+
+	if (g_test_verbose() == TRUE)
+		printf("Got handle range 0x%04x-0x%04x\n", range->start,
+								range->end);
+
+	g_assert(memcmp(range, &context->prim.range, sizeof(*range)) == 0);
+
+	return true;
+}
+
+static void test_gatt_discover_primary_by_uuid(void)
+{
+	struct context *context = create_context();
+	bt_uuid_t uuid;
+
+	bt_uuid16_create(&uuid, 0xabcd);
+	gatt_discover_primary(context->attrib, &uuid,
+					discover_primary_by_uuid_cb, context);
 
 	execute_context(context);
 }
@@ -736,6 +842,8 @@ int main(int argc, char *argv[])
 	g_test_add_func("/gatt/gatt_exchange_mtu", test_gatt_exchange_mtu);
 	g_test_add_func("/gatt/gatt_discover_primary",
 						test_gatt_discover_primary);
+	g_test_add_func("/gatt/gatt_discover_primary/by_uuid",
+					test_gatt_discover_primary_by_uuid);
 	g_test_add_func("/gatt/gatt_discover_char_desc",
 						test_gatt_discover_char_desc);
 	g_test_add_func("/gatt/gatt_read_char_by_uuid",
