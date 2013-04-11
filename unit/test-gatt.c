@@ -152,6 +152,62 @@ static gboolean handle_write_char(int fd)
 	return TRUE;
 }
 
+static gboolean handle_prep_write(int fd)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU], value[ATT_DEFAULT_LE_MTU];
+	uint16_t pdu_len, handle, offset;
+	ssize_t len;
+	size_t vlen;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpint(len, >, 0);
+
+	memset(value, 0, sizeof(value));
+
+	pdu_len = dec_prep_write_req(pdu, len, &handle, &offset, value, &vlen);
+	g_assert_cmpint(handle, ==, 0x0001);
+
+	switch (offset) {
+	case 0x0000:
+		g_assert_cmpstr((char *) value, ==, "1234-5678-90ABCDEF");
+		g_assert_cmpuint(pdu_len, ==, ATT_DEFAULT_LE_MTU);
+		break;
+	case 0x0012:
+		g_assert_cmpstr((char *) value, ==, "-GHIJ-LMNOP");
+		g_assert_cmpuint(pdu_len, ==, ATT_DEFAULT_LE_MTU - 6);
+		break;
+	default:
+		g_assert_not_reached();
+	}
+
+	pdu_len = enc_prep_write_resp(handle, offset, value, vlen, pdu,
+							ATT_DEFAULT_LE_MTU);
+	len = write(fd, pdu, pdu_len);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	return TRUE;
+}
+
+static gboolean handle_exec_write(int fd)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU], flags;
+	uint16_t pdu_len;
+	ssize_t len;
+
+	len = recv(fd, pdu, sizeof(pdu), 0);
+	g_assert_cmpint(len, >, 0);
+
+	pdu_len = dec_exec_write_req(pdu, len, &flags);
+	g_assert_cmpint(pdu_len, ==, sizeof(uint16_t));
+	g_assert_cmpint(flags, ==, 0x01);
+
+	pdu_len = enc_exec_write_resp(pdu);
+	len = write(fd, pdu, pdu_len);
+	g_assert_cmpint(len, ==, pdu_len);
+
+	return TRUE;
+}
+
 static gboolean handle_read_by_group(int fd, struct context *context)
 {
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
@@ -508,6 +564,10 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 		return handle_write_cmd(fd, context);
 	case ATT_OP_WRITE_REQ:
 		return handle_write_char(fd);
+	case ATT_OP_PREP_WRITE_REQ:
+		return handle_prep_write(fd);
+	case ATT_OP_EXEC_WRITE_REQ:
+		return handle_exec_write(fd);
 	default:
 		g_assert_not_reached();
 	}
@@ -820,6 +880,27 @@ static void test_gatt_write_char(void)
 	execute_context(context);
 }
 
+static void write_long_char_cb(uint8_t status, void *user_data)
+{
+	struct context *context = user_data;
+
+	g_assert_cmpuint(status, ==, 0);
+
+	g_main_loop_quit(context->main_loop);
+}
+
+static void test_gatt_write_long_char(void)
+{
+	struct context *context = create_context();
+	uint8_t value[] = "1234-5678-90ABCDEF-GHIJ-LMNOP";
+	size_t vlen = sizeof(value);
+
+	gatt_write_char(context->attrib, 0x0001, value, vlen,
+						write_long_char_cb, context);
+
+	execute_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
@@ -838,6 +919,8 @@ int main(int argc, char *argv[])
 	g_test_add_func("/gatt/gatt_read_long_char", test_gatt_read_long_char);
 	g_test_add_func("/gatt/gatt_write_cmd", test_gatt_write_cmd);
 	g_test_add_func("/gatt/gatt_write_char", test_gatt_write_char);
+	g_test_add_func("/gatt/gatt_write_long_char",
+						test_gatt_write_long_char);
 
 	return g_test_run();
 }
