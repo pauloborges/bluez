@@ -439,12 +439,48 @@ static void test_command_connect(const void *test_data)
 	}
 }
 
+static gboolean connect_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	struct test_data *test = tester_get_data();
+
+	tester_print("Checking connect result...");
+
+	if (cond & G_IO_OUT)
+		test_condition_complete(test);
+	else
+		tester_test_failed();
+
+	g_io_channel_unref(io);
+
+	return FALSE;
+}
+
+static void test_success_connect_1(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+	int i;
+
+	for (i = 0; i < test->devices_count; i++) {
+
+		/* Add conditions for LE advertising */
+		test_add_condition(test);
+
+		/* FIXME: enable advertising for second controller */
+
+		if (create_connection(&test->devices[i], connect_cb) < 0)
+			tester_test_failed();
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	tester_init(&argc, &argv);
 
 	test_le("Single Connection test - Not connected", 1, setup_connection,
 							test_command_connect);
+	test_le("Single Connection test - Success 1", 1, setup_connection,
+							test_success_connect_1);
 
 	return tester_run();
 }
