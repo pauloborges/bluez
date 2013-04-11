@@ -1052,6 +1052,34 @@ uint16_t dec_prep_write_req(const uint8_t *pdu, size_t len, uint16_t *handle,
 	return len;
 }
 
+uint16_t enc_prep_write_resp(uint16_t handle, uint16_t offset,
+					const uint8_t *value, size_t vlen,
+					uint8_t *pdu, size_t len)
+{
+	const uint16_t min_len = sizeof(pdu[0]) + sizeof(handle) +
+								sizeof(offset);
+
+	if (pdu == NULL)
+		return 0;
+
+	if (len < min_len)
+		return 0;
+
+	if (vlen > len - min_len)
+		vlen = len - min_len;
+
+	pdu[0] = ATT_OP_PREP_WRITE_RESP;
+	att_put_u16(handle, &pdu[1]);
+	att_put_u16(offset, &pdu[3]);
+
+	if (vlen > 0) {
+		memcpy(&pdu[5], value, vlen);
+		return min_len + vlen;
+	}
+
+	return min_len;
+}
+
 uint16_t dec_prep_write_resp(const uint8_t *pdu, size_t len, uint16_t *handle,
 				uint16_t *offset, uint8_t *value, size_t *vlen)
 {
