@@ -43,6 +43,7 @@ struct context {
 	guint server_source;
 	GAttrib *attrib;
 	struct gatt_primary prim;
+	struct gatt_char chr;
 	struct gatt_char_desc desc;
 };
 
@@ -417,12 +418,12 @@ done:
 	return TRUE;
 }
 
-static gboolean handle_read_by_type(int fd)
+static gboolean handle_read_by_type(int fd, struct context *context)
 {
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
 	ssize_t len;
 	uint16_t start, end, pdu_len;
-	bt_uuid_t uuid;
+	bt_uuid_t uuid, gatt_uuid, char_uuid;
 	struct att_data_list *adl;
 	uint8_t *value;
 
@@ -432,18 +433,65 @@ static gboolean handle_read_by_type(int fd)
 	pdu_len = dec_read_by_type_req(pdu, len, &start, &end, &uuid);
 	g_assert_cmpint(len, ==, pdu_len);
 
-	adl = att_data_list_alloc(1, sizeof(uint16_t) * 2);
-	g_assert(adl != NULL);
+	bt_string_to_uuid(&gatt_uuid, GATT_UUID);
+	bt_uuid16_create(&char_uuid, GATT_CHARAC_UUID);
 
-	value = adl->data[0];
-	att_put_u16(0x0001, &value[0]);
-	att_put_u16(0xAA55, &value[2]);
+	if (start == 0x0001 && end == 0xffff &&
+					bt_uuid_cmp(&uuid, &gatt_uuid) == 0) {
+		adl = att_data_list_alloc(1, sizeof(uint16_t) * 2);
+		g_assert(adl != NULL);
+
+		value = adl->data[0];
+		att_put_u16(0x0001, &value[0]);
+		att_put_u16(0xAA55, &value[2]);
+	} else if (start == 0x0001 && end == 0x000f &&
+					bt_uuid_cmp(&uuid, &char_uuid) == 0) {
+		adl = att_data_list_alloc(1, sizeof(uint16_t) * 3 + 1);
+		g_assert(adl != NULL);
+
+		value = adl->data[0];
+		att_put_u16(0x0002, &value[0]);
+		value[2] = ATT_CHAR_PROPER_READ;
+		att_put_u16(0x0003, &value[3]);
+		att_put_u16(0xabcd, &value[5]);
+
+		context->chr.handle = 0x0002;
+		context->chr.properties = ATT_CHAR_PROPER_READ;
+		context->chr.value_handle = 0x0003;
+		strcpy(context->chr.uuid,
+					"0000abcd-0000-1000-8000-00805f9b34fb");
+	} else if (start == 0x0003 && end == 0x000f &&
+					bt_uuid_cmp(&uuid, &char_uuid) == 0) {
+		adl = att_data_list_alloc(1, sizeof(uint16_t) * 3 + 1);
+		g_assert(adl != NULL);
+
+		value = adl->data[0];
+		att_put_u16(0x0004, &value[0]);
+		value[2] = ATT_CHAR_PROPER_READ;
+		att_put_u16(0x0005, &value[3]);
+		att_put_u16(0x1234, &value[5]);
+
+		context->chr.handle = 0x0004;
+		context->chr.properties = ATT_CHAR_PROPER_READ;
+		context->chr.value_handle = 0x0005;
+		strcpy(context->chr.uuid,
+					"00001234-0000-1000-8000-00805f9b34fb");
+	} else {
+		/* Signal end of procedure */
+		pdu_len = enc_error_resp(pdu[0], start,
+						ATT_ECODE_ATTR_NOT_FOUND,
+						pdu, sizeof(pdu));
+		g_assert(pdu_len == 5);
+
+		goto done;
+	}
 
 	pdu_len = enc_read_by_type_resp(adl, pdu, sizeof(pdu));
 	g_assert_cmpint(pdu_len, >, 0);
 
 	att_data_list_free(adl);
 
+done:
 	len = write(fd, pdu, pdu_len);
 	g_assert_cmpint(len, ==, pdu_len);
 
@@ -555,7 +603,7 @@ static gboolean server_handler(GIOChannel *channel, GIOCondition cond,
 	case ATT_OP_FIND_BY_TYPE_REQ:
 		return handle_find_by_type(fd, context);
 	case ATT_OP_READ_BY_TYPE_REQ:
-		return handle_read_by_type(fd);
+		return handle_read_by_type(fd, context);
 	case ATT_OP_READ_REQ:
 		return handle_read(fd);
 	case ATT_OP_READ_BLOB_REQ:
@@ -712,6 +760,38 @@ static void test_gatt_discover_primary_by_uuid(void)
 	bt_uuid16_create(&uuid, 0xabcd);
 	gatt_discover_primary(context->attrib, &uuid,
 					discover_primary_by_uuid_cb, context);
+
+	execute_context(context);
+}
+
+static bool discover_char_cb(uint8_t status, GSList *chars, void *user_data)
+{
+	struct context *context = user_data;
+	struct gatt_char *chr;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
+		g_main_loop_quit(context->main_loop);
+		return false;
+	}
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert_cmpuint(g_slist_length(chars), ==, 1);
+	chr = g_slist_nth_data(chars, 0);
+
+	if (g_test_verbose() == TRUE)
+		printf("Got handle 0x%04x\n", chr->handle);
+
+	g_assert(memcmp(chr, &context->chr, sizeof(context->chr)) == 0);
+
+	return true;
+}
+
+static void test_gatt_discover_char(void)
+{
+	struct context *context = create_context();
+
+	gatt_discover_char(context->attrib, 0x0001, 0x000f, NULL,
+						discover_char_cb, context);
 
 	execute_context(context);
 }
@@ -910,6 +990,7 @@ int main(int argc, char *argv[])
 						test_gatt_discover_primary);
 	g_test_add_func("/gatt/gatt_discover_primary/by_uuid",
 					test_gatt_discover_primary_by_uuid);
+	g_test_add_func("/gatt/gatt_discover_char", test_gatt_discover_char);
 	g_test_add_func("/gatt/gatt_discover_char_desc",
 						test_gatt_discover_char_desc);
 	g_test_add_func("/gatt/gatt_read_char_by_uuid",
