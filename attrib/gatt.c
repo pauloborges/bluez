@@ -483,7 +483,8 @@ static void char_discovered_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 {
 	struct discover_char *dc = user_data;
 	struct att_data_list *list;
-	unsigned int i, err = ATT_ECODE_ATTR_NOT_FOUND;
+	unsigned int i, err;
+	bool continue_discovery;
 	size_t buflen;
 	uint8_t *buf;
 	guint16 oplen;
@@ -533,6 +534,24 @@ static void char_discovered_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 
 	att_data_list_free(list);
 
+	/* From the Core spec: "It is permitted to end the sub-procedure early
+	 * if a desired characteristic is found prior to discovering all the
+	 * characteristics of the specified service supported on the server."
+	 *
+	 * In other words, this callback will receive the partial list
+	 * of discovered characteristics, and if it returns false, the
+	 * procedure is interrupted.
+	 */
+	if (dc->characteristics != NULL) {
+		continue_discovery = dc->cb(status, dc->characteristics,
+								dc->user_data);
+		g_slist_free_full(dc->characteristics, g_free);
+		dc->characteristics = NULL;
+
+		if (!continue_discovery)
+			goto data_free;
+	}
+
 	if (last != 0 && (last + 1 < dc->end)) {
 		buf = g_attrib_get_buffer(dc->attrib, &buflen);
 
@@ -550,10 +569,12 @@ static void char_discovered_cb(guint8 status, const guint8 *ipdu, guint16 iplen,
 		return;
 	}
 
-done:
-	err = (dc->characteristics ? 0 : err);
+	/* Procedure has finished */
+	err = ATT_ECODE_ATTR_NOT_FOUND;
 
+done:
 	dc->cb(err, dc->characteristics, dc->user_data);
+data_free:
 	discover_char_free(dc);
 }
 
