@@ -807,6 +807,43 @@ static void test_gatt_discover_char(void)
 	execute_context(context);
 }
 
+static bool discover_char_by_uuid_cb(uint8_t status, GSList *chars,
+								void *user_data)
+{
+	struct context *context = user_data;
+	struct gatt_char *chr;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
+		g_main_loop_quit(context->main_loop);
+		return false;
+	}
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert_cmpuint(g_slist_length(chars), ==, 1);
+	chr = g_slist_nth_data(chars, 0);
+
+	if (g_test_verbose() == TRUE)
+		printf("Got handle 0x%04x\n", chr->handle);
+
+	g_assert_cmpuint(chr->handle, ==, 0x0004);
+	g_assert_cmpstr(chr->uuid, ==, "00001234-0000-1000-8000-00805f9b34fb");
+
+	return true;
+}
+
+static void test_gatt_discover_char_by_uuid(void)
+{
+	struct context *context = create_context();
+	bt_uuid_t uuid;
+
+	bt_uuid16_create(&uuid, 0x1234);
+
+	gatt_discover_char(context->attrib, 0x0001, 0x000f, &uuid,
+					discover_char_by_uuid_cb, context);
+
+	execute_context(context);
+}
+
 static bool discover_char_desc_cb(uint8_t status, GSList *descs,
 								void *user_data)
 {
@@ -1006,6 +1043,8 @@ int main(int argc, char *argv[])
 	g_test_add_func("/gatt/gatt_discover_primary/by_uuid",
 					test_gatt_discover_primary_by_uuid);
 	g_test_add_func("/gatt/gatt_discover_char", test_gatt_discover_char);
+	g_test_add_func("/gatt/gatt_discover_char/by_uuid",
+					test_gatt_discover_char_by_uuid);
 	g_test_add_func("/gatt/gatt_discover_char_desc",
 						test_gatt_discover_char_desc);
 	g_test_add_func("/gatt/gatt_read_char_by_uuid",
