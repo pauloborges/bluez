@@ -64,6 +64,8 @@ struct test_data {
 	int current_device_count;
 };
 
+#define CID 4
+
 #define test_le(name, data, setup, func) \
 	do { \
 		int i; \
@@ -294,12 +296,103 @@ static void setup_connection(const void *test_data)
 	}
 }
 
+static bool command_hci_callback(uint16_t opcode, const void *param,
+						uint8_t length, void *user_data)
+{
+	const uint8_t *p = param;
+
+	if (opcode != BT_HCI_CMD_LE_SET_SCAN_ENABLE)
+		return true;
+
+	if (length != sizeof(struct bt_hci_cmd_le_set_scan_enable)) {
+		tester_warn("Invalid parameter size for HCI command");
+		goto error;
+	}
+
+	switch (p[0]) {
+	case 0x00:
+		return true;
+	case 0x01:
+		return true;
+	default:
+		tester_warn("Unexpected HCI cmd parameter");
+		goto error;
+	}
+
+error:
+	tester_test_failed();
+	return false;
+}
+
+static gboolean no_connect_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	tester_print("Checking connect result...");
+
+	if (cond & G_IO_OUT)
+		tester_test_failed();
+	else
+		tester_test_passed();
+
+	g_io_channel_unref(io);
+
+	return FALSE;
+}
+
+static int create_connection(struct remote_hciemu *remote, GIOFunc conn_cb)
+{
+	const char *remote_addr;
+	struct sockaddr_l2 addr;
+	GIOCondition cond;
+	GIOChannel *channel;
+	int err;
+
+	remote_addr = hciemu_get_address(remote->device);
+
+	/* Connect to remote device */
+	memset(&addr, 0, sizeof(addr));
+	addr.l2_family = AF_BLUETOOTH;
+	str2ba(remote_addr, &addr.l2_bdaddr);
+	addr.l2_bdaddr_type = BDADDR_LE_PUBLIC;
+	addr.l2_cid = htobs(CID);
+
+	channel = g_io_channel_unix_new(remote->sk);
+	cond = G_IO_OUT | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
+	g_io_add_watch_full(channel, G_PRIORITY_DEFAULT, cond, conn_cb,
+								NULL, NULL);
+
+	err = connect(remote->sk, (struct sockaddr *) &addr, sizeof(addr));
+	if (err < 0 && errno != EINPROGRESS) {
+		tester_warn("Can't connect: %s (%d)", strerror(errno), errno);
+		close(remote->sk);
+		return -1;
+	}
+
+	return 0;
+}
+
+static void test_command_connect(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+	int i;
+
+	hciemu_add_master_post_command_hook(test->adapter, command_hci_callback,
+									NULL);
+
+	for (i = 0; i < test->devices_count; i++) {
+		if (create_connection(&test->devices[i], no_connect_cb) < 0) {
+			tester_test_failed();
+			return;
+		}
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	tester_init(&argc, &argv);
 
 	test_le("Single Connection test - Not connected", 1, setup_connection,
-									NULL);
+							test_command_connect);
 
 	return tester_run();
 }
