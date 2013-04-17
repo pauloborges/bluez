@@ -296,6 +296,22 @@ static void setup_connection(const void *test_data)
 	}
 }
 
+static gboolean test_timeout(gpointer user_data)
+{
+	struct remote_hciemu *remote = user_data;
+
+	tester_print("Close socket");
+
+	close(remote->sk);
+
+	return FALSE;
+}
+
+static void close_socket(struct remote_hciemu *remote)
+{
+	g_timeout_add_seconds(2, test_timeout, remote);
+}
+
 static bool command_hci_callback(uint16_t opcode, const void *param,
 						uint8_t length, void *user_data)
 {
@@ -384,6 +400,8 @@ static void test_command_connect(const void *test_data)
 			tester_test_failed();
 			return;
 		}
+
+		close_socket(&test->devices[i]);
 	}
 }
 
