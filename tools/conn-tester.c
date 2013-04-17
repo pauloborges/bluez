@@ -62,6 +62,7 @@ struct test_data {
 	struct remote_hciemu devices[MAX_DEVICES];
 	int devices_count;
 	int current_device_count;
+	int unmet_conditions;
 };
 
 #define CID 4
@@ -79,6 +80,7 @@ struct test_data {
 		} \
 		user->devices_count = data; \
 		user->current_device_count = 0; \
+		user->unmet_conditions = 0; \
 		tester_add_full(name, NULL, test_pre_setup, setup, func, NULL, \
 					test_post_teardown, 10, user, free); \
 	} while (0)
@@ -199,6 +201,26 @@ static void test_post_teardown(const void *test_data)
 	}
 }
 
+static void test_add_condition(struct test_data *test)
+{
+	test->unmet_conditions++;
+
+	tester_print("Test condition added, total %d", test->unmet_conditions);
+}
+
+static void test_condition_complete(struct test_data *test)
+{
+	test->unmet_conditions--;
+
+	tester_print("Test condition complete, %d left",
+							test->unmet_conditions);
+
+	if (test->unmet_conditions > 0)
+		return;
+
+	tester_test_passed();
+}
+
 static int pre_connection(int *sk)
 {
 	struct test_data *test = tester_get_data();
@@ -315,7 +337,10 @@ static void close_socket(struct remote_hciemu *remote)
 static bool command_hci_callback(uint16_t opcode, const void *param,
 						uint8_t length, void *user_data)
 {
+	struct test_data *test = tester_get_data();
 	const uint8_t *p = param;
+
+	tester_print("HCI Command 0x%04x length %u", opcode, length);
 
 	if (opcode != BT_HCI_CMD_LE_SET_SCAN_ENABLE)
 		return true;
@@ -327,8 +352,10 @@ static bool command_hci_callback(uint16_t opcode, const void *param,
 
 	switch (p[0]) {
 	case 0x00:
+		test_condition_complete(test);
 		return true;
 	case 0x01:
+		test_add_condition(test);
 		return true;
 	default:
 		tester_warn("Unexpected HCI cmd parameter");
@@ -343,12 +370,14 @@ error:
 static gboolean no_connect_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
+	struct test_data *test = tester_get_data();
+
 	tester_print("Checking connect result...");
 
 	if (cond & G_IO_OUT)
 		tester_test_failed();
 	else
-		tester_test_passed();
+		test_condition_complete(test);
 
 	g_io_channel_unref(io);
 
@@ -357,6 +386,7 @@ static gboolean no_connect_cb(GIOChannel *io, GIOCondition cond,
 
 static int create_connection(struct remote_hciemu *remote, GIOFunc conn_cb)
 {
+	struct test_data *test = tester_get_data();
 	const char *remote_addr;
 	struct sockaddr_l2 addr;
 	GIOCondition cond;
@@ -377,6 +407,9 @@ static int create_connection(struct remote_hciemu *remote, GIOFunc conn_cb)
 	g_io_add_watch_full(channel, G_PRIORITY_DEFAULT, cond, conn_cb,
 								NULL, NULL);
 
+	/* Add condition for connection result */
+	test_add_condition(test);
+
 	err = connect(remote->sk, (struct sockaddr *) &addr, sizeof(addr));
 	if (err < 0 && errno != EINPROGRESS) {
 		tester_warn("Can't connect: %s (%d)", strerror(errno), errno);
@@ -396,6 +429,7 @@ static void test_command_connect(const void *test_data)
 									NULL);
 
 	for (i = 0; i < test->devices_count; i++) {
+
 		if (create_connection(&test->devices[i], no_connect_cb) < 0) {
 			tester_test_failed();
 			return;
