@@ -567,6 +567,33 @@ static void test_success_connect_1(const void *test_data)
 	}
 }
 
+static gboolean enable_later_adv(gpointer user_data)
+{
+	struct remote_hciemu *remote = user_data;
+
+	if (enable_le_advertising(remote->device_index) < 0)
+		tester_test_failed();
+
+	return FALSE;
+}
+
+static void test_success_connect_2(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+	int i;
+
+	for (i = 0; i < test->devices_count; i++) {
+
+		if (create_connection(&test->devices[i], connect_cb) < 0)
+			tester_test_failed();
+
+		/* Add conditions for LE advertising */
+		test_add_condition(test);
+
+		g_timeout_add_seconds(2, enable_later_adv, &test->devices[i]);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	tester_init(&argc, &argv);
@@ -575,6 +602,8 @@ int main(int argc, char *argv[])
 							test_command_connect);
 	test_le("Single Connection test - Success 1", 1, setup_connection,
 							test_success_connect_1);
+	test_le("Single Connection test - Success 2", 1, setup_connection,
+							test_success_connect_2);
 
 	return tester_run();
 }
