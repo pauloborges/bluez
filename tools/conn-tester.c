@@ -607,6 +607,8 @@ int main(int argc, char *argv[])
 
 	test_le("Multiple Connection test - Not connected", 3, setup_connection,
 							test_command_connect);
+	test_le("Multiple Connection test - Success 1", 3, setup_connection,
+							test_success_connect_1);
 
 	return tester_run();
 }
