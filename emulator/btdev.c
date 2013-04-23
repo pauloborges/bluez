@@ -440,6 +440,37 @@ static void set_le_features(struct btdev *btdev)
 	btdev->max_page = 1;
 }
 
+static void set_le_states(struct btdev *btdev)
+{
+	btdev->le_states[0] |= 0x01; /* Non-connectable Advertsing */
+	btdev->le_states[0] |= 0x02; /* Scannable Advertising */
+	btdev->le_states[0] |= 0x04; /* Connectable Advertising */
+	btdev->le_states[0] |= 0x08; /* Directed Advertising */
+	btdev->le_states[0] |= 0x10; /* Passive Scanning */
+	btdev->le_states[0] |= 0x20; /* Active Scanning */
+	btdev->le_states[0] |= 0x40; /* Initiating / Connection (Master) */
+	btdev->le_states[0] |= 0x80; /* Connection (Slave) */
+	btdev->le_states[1] |= 0x01; /* Non-connectable Adv and Passive Scan */
+	btdev->le_states[1] |= 0x02; /* Scannable Adv and Passive Scan */
+	btdev->le_states[1] |= 0x04; /* Connectable Adv and Passive Scan */
+	btdev->le_states[1] |= 0x08; /* Directed Adv and Passive Scan */
+	btdev->le_states[1] |= 0x10; /* Non-connectable Adv and Active Scan */
+	btdev->le_states[1] |= 0x20; /* Scannable Adv and Active Scan */
+	btdev->le_states[1] |= 0x40; /* Connectable Adv and Active Scan */
+	btdev->le_states[1] |= 0x80; /* Directed Adv and Active Scan */
+	btdev->le_states[2] |= 0x01; /* Non-connectable Adv and Initiating */
+	btdev->le_states[2] |= 0x02; /* Scannable Adv and Initiating */
+	btdev->le_states[2] |= 0x04; /* Non-connectable Adv and Master Role */
+	btdev->le_states[2] |= 0x08; /* Scannable Adv and Master Role */
+	btdev->le_states[2] |= 0x10; /* Non-connectable Adv and Slave Role */
+	btdev->le_states[2] |= 0x20; /* Scannable Adv and Slave Role */
+	btdev->le_states[3] |= 0x01; /* Passive Scan and Master Role */
+	btdev->le_states[3] |= 0x02; /* Active Scan and Master Role */
+	btdev->le_states[3] |= 0x04; /* Passive Scan and Slave Role */
+	btdev->le_states[3] |= 0x08; /* Active Scan and Slave Role */
+	btdev->le_states[3] |= 0x10; /* Initiating and Master Role */
+}
+
 static void set_amp_features(struct btdev *btdev)
 {
 }
@@ -469,6 +500,7 @@ struct btdev *btdev_create(enum btdev_type type, uint16_t id)
 	case BTDEV_TYPE_BREDRLE:
 		set_bredrle_features(btdev);
 		set_bredrle_commands(btdev);
+		set_le_states(btdev);
 		break;
 	case BTDEV_TYPE_BREDR:
 		set_bredr_features(btdev);
@@ -477,6 +509,7 @@ struct btdev *btdev_create(enum btdev_type type, uint16_t id)
 	case BTDEV_TYPE_LE:
 		set_le_features(btdev);
 		set_le_commands(btdev);
+		set_le_states(btdev);
 		break;
 	case BTDEV_TYPE_AMP:
 		set_amp_features(btdev);
