@@ -46,7 +46,7 @@
 #include "src/shared/mgmt.h"
 #include "src/shared/hciemu.h"
 
-#define MAX_DEVICES 1
+#define MAX_DEVICES 3
 
 struct remote_hciemu {
 	struct hciemu *device;
@@ -604,6 +604,9 @@ int main(int argc, char *argv[])
 							test_success_connect_1);
 	test_le("Single Connection test - Success 2", 1, setup_connection,
 							test_success_connect_2);
+
+	test_le("Multiple Connection test - Not connected", 3, setup_connection,
+							test_command_connect);
 
 	return tester_run();
 }
