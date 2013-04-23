@@ -594,6 +594,35 @@ static void test_success_connect_2(const void *test_data)
 	}
 }
 
+static void test_success_connect_3(const void *test_data)
+{
+	struct test_data *test = tester_get_data();
+
+	hciemu_add_master_post_command_hook(test->adapter, command_hci_callback,
+									NULL);
+
+	if (create_connection(&test->devices[0], connect_cb) < 0)
+		tester_test_failed();
+
+	if (create_connection(&test->devices[1], no_connect_cb) < 0)
+		tester_test_failed();
+
+	if (create_connection(&test->devices[2], connect_cb) < 0)
+		tester_test_failed();
+
+	/* Add conditions for LE advertising */
+	test_add_condition(test);
+	if (enable_le_advertising(test->devices[0].device_index) < 0)
+		tester_test_failed();
+
+	close_socket(&test->devices[1]);
+
+	/* Add conditions for LE advertising */
+	test_add_condition(test);
+	if (enable_le_advertising(test->devices[2].device_index) < 0)
+		tester_test_failed();
+}
+
 int main(int argc, char *argv[])
 {
 	tester_init(&argc, &argv);
@@ -609,6 +638,8 @@ int main(int argc, char *argv[])
 							test_command_connect);
 	test_le("Multiple Connection test - Success 1", 3, setup_connection,
 							test_success_connect_1);
+	test_le("Multiple Connection test - Success 2", 3, setup_connection,
+							test_success_connect_3);
 
 	return tester_run();
 }
