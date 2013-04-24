@@ -63,6 +63,9 @@ struct test_data {
 	int devices_count;
 	int current_device_count;
 	int unmet_conditions;
+	int scan_enable;
+	int scan_disable;
+	int expected_scans;
 };
 
 #define CID 4
@@ -81,6 +84,9 @@ struct test_data {
 		user->devices_count = data; \
 		user->current_device_count = 0; \
 		user->unmet_conditions = 0; \
+		user->scan_enable = 0; \
+		user->scan_disable = 0; \
+		user->expected_scans = 0; \
 		tester_add_full(name, NULL, test_pre_setup, setup, func, NULL, \
 					test_post_teardown, 10, user, free); \
 	} while (0)
@@ -218,7 +224,18 @@ static void test_condition_complete(struct test_data *test)
 	if (test->unmet_conditions > 0)
 		return;
 
-	tester_test_passed();
+	if (test->scan_enable == test->scan_disable &&
+				test->scan_enable == test->expected_scans) {
+		tester_test_passed();
+		return;
+	}
+
+	tester_warn("Expected %d scan(s), but occured %d enable and %d disable",
+					test->expected_scans, test->scan_enable,
+					test->scan_disable);
+
+	tester_test_failed();
+	return;
 }
 
 static gboolean received_hci_event(GIOChannel *io, GIOCondition cond,
@@ -445,9 +462,11 @@ static bool command_hci_callback(uint16_t opcode, const void *param,
 
 	switch (p[0]) {
 	case 0x00:
+		test->scan_disable++;
 		test_condition_complete(test);
 		return true;
 	case 0x01:
+		test->scan_enable++;
 		test_add_condition(test);
 		return true;
 	default:
@@ -518,6 +537,7 @@ static void test_command_connect(const void *test_data)
 	struct test_data *test = tester_get_data();
 	int i;
 
+	test->expected_scans = 1;
 	hciemu_add_master_post_command_hook(test->adapter, command_hci_callback,
 									NULL);
 
@@ -598,6 +618,7 @@ static void test_success_connect_3(const void *test_data)
 {
 	struct test_data *test = tester_get_data();
 
+	test->expected_scans = 3;
 	hciemu_add_master_post_command_hook(test->adapter, command_hci_callback,
 									NULL);
 
