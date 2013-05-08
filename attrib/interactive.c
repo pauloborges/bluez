@@ -185,6 +185,9 @@ static bool primary_all_cb(uint8_t status, GSList *services, void *user_data)
 {
 	GSList *l;
 
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return false;
+
 	if (status) {
 		error("Discover all primary services failed: %s\n",
 						att_ecode2str(status));
@@ -208,6 +211,9 @@ static bool primary_all_cb(uint8_t status, GSList *services, void *user_data)
 static bool primary_by_uuid_cb(uint8_t status, GSList *ranges, void *user_data)
 {
 	GSList *l;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return false;
 
 	if (status) {
 		error("Discover primary services by UUID failed: %s\n",
@@ -258,6 +264,9 @@ static bool included_cb(uint8_t status, GSList *includes, void *user_data)
 static bool char_cb(uint8_t status, GSList *characteristics, void *user_data)
 {
 	GSList *l;
+
+	if (status == ATT_ECODE_ATTR_NOT_FOUND)
+		return false;
 
 	if (status) {
 		error("Discover all characteristics failed: %s\n",
