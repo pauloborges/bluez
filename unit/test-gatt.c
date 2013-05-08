@@ -280,6 +280,16 @@ static gboolean handle_read_by_group(int fd, struct context *context)
 		context->prim.range.end = 0x001f;
 		strcpy(context->prim.uuid,
 					"0000bbbb-0000-1000-8000-00805f9b34fb");
+	} else if (start == 0x0020 && end == 0xffff) {
+		att_put_u16(0x0020, &value[0]);
+		/* Test "optimization" permitted by Core spec Erratum 4063. */
+		att_put_u16(0xffff, &value[2]);
+		att_put_u16(0xcccc, &value[4]);
+
+		context->prim.range.start = 0x0020;
+		context->prim.range.end = 0xffff;
+		strcpy(context->prim.uuid,
+					"0000cccc-0000-1000-8000-00805f9b34fb");
 	} else {
 		/* Signal end of attribute group (primary service) */
 		pdu_len = enc_error_resp(pdu[0], start,
@@ -400,6 +410,17 @@ static gboolean handle_find_by_type(int fd, struct context *context)
 		range = g_new0(struct att_range, 1);
 		range->start = 0x0030;
 		range->end = 0x003f;
+
+		context->prim.range = *range;
+
+		matches = g_slist_append(matches, range);
+	} else if (start == 0x0040 && end == 0xffff) {
+		struct att_range *range;
+
+		range = g_new0(struct att_range, 1);
+		range->start = 0x0040;
+		/* Test "optimization" permitted by Core spec Erratum 4063. */
+		range->end = 0xffff;
 
 		context->prim.range = *range;
 
