@@ -167,7 +167,6 @@ struct btd_adapter {
 	GSList *connections;		/* Connected devices */
 	GSList *devices;		/* Devices structure pointers */
 	GSList *connect_list;		/* Devices to connect when found */
-	struct btd_device *connect_le;	/* LE device waiting to be connected */
 	sdp_list_t *services;		/* Services associated to adapter */
 
 	bool toggle_discoverable;	/* discoverable needs to be changed */
@@ -1032,9 +1031,6 @@ static void adapter_remove_device(struct btd_adapter *adapter,
 
 	adapter->connections = g_slist_remove(adapter->connections, dev);
 
-	if (adapter->connect_le == dev)
-		adapter->connect_le = NULL;
-
 	l = adapter->auths->head;
 	while (l != NULL) {
 		struct service_auth *auth = l->data;
@@ -1073,55 +1069,6 @@ struct btd_device *adapter_get_device(struct btd_adapter *adapter,
 sdp_list_t *btd_adapter_get_services(struct btd_adapter *adapter)
 {
 	return adapter->services;
-}
-
-static void stop_passive_scanning_complete(uint8_t status, uint16_t length,
-					const void *param, void *user_data)
-{
-	struct btd_adapter *adapter = user_data;
-	struct btd_device *dev;
-	int err;
-
-	DBG("status 0x%02x (%s)", status, mgmt_errstr(status));
-
-	dev = adapter->connect_le;
-	adapter->connect_le = NULL;
-
-	if (status != MGMT_STATUS_SUCCESS) {
-		error("Stopping passive scanning failed: %s",
-							mgmt_errstr(status));
-		return;
-	}
-
-	adapter->discovery_type = 0x00;
-	adapter->discovery_enable = 0x00;
-
-	err = device_connect_le(dev);
-	if (err < 0) {
-		error("LE auto connection failed: %s (%d)",
-						strerror(-err), -err);
-	}
-}
-
-static void stop_passive_scanning(struct btd_adapter *adapter)
-{
-	struct mgmt_cp_stop_discovery cp;
-
-	DBG("");
-
-	/* If there are any normal discovery clients passive scanning
-	 * wont be running */
-	if (adapter->discovery_list)
-		return;
-
-	if (adapter->discovery_enable == 0x00)
-		return;
-
-	cp.type = adapter->discovery_type;
-
-	mgmt_send(adapter->mgmt, MGMT_OP_STOP_DISCOVERY,
-			adapter->dev_id, sizeof(cp), &cp,
-			stop_passive_scanning_complete, adapter, NULL);
 }
 
 static void trigger_start_discovery(struct btd_adapter *adapter, guint delay);
@@ -2653,14 +2600,6 @@ const char *btd_adapter_get_name(struct btd_adapter *adapter)
 int adapter_connect_list_add(struct btd_adapter *adapter,
 					struct btd_device *device)
 {
-	/*
-	 * If the adapter->connect_le device is getting added back to
-	 * the connect list it probably means that the connect attempt
-	 * failed and hence we should clear this pointer
-	 */
-	if (device == adapter->connect_le)
-		adapter->connect_le = NULL;
-
 	if (g_slist_find(adapter->connect_list, device)) {
 		DBG("ignoring already added device %s",
 						device_get_path(device));
@@ -2686,14 +2625,6 @@ int adapter_connect_list_add(struct btd_adapter *adapter,
 void adapter_connect_list_remove(struct btd_adapter *adapter,
 					struct btd_device *device)
 {
-	/*
-	 * If the adapter->connect_le device is being removed from the
-	 * connect list it means the connection was successful and hence
-	 * the pointer should be cleared
-	 */
-	if (device == adapter->connect_le)
-		adapter->connect_le = NULL;
-
 	if (!g_slist_find(adapter->connect_list, device)) {
 		DBG("device %s is not on the list, ignoring",
 						device_get_path(device));
@@ -2703,11 +2634,6 @@ void adapter_connect_list_remove(struct btd_adapter *adapter,
 	adapter->connect_list = g_slist_remove(adapter->connect_list, device);
 	DBG("%s removed from %s's connect_list", device_get_path(device),
 							adapter->system_name);
-
-	if (!adapter->connect_list) {
-		stop_passive_scanning(adapter);
-		return;
-	}
 
 	if (!(adapter->current_settings & MGMT_SETTING_POWERED))
 		return;
