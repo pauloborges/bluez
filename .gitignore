@@ -68,6 +68,7 @@ tools/btinfo
 tools/obexctl
 test/sap_client.pyc
 test/bluezutils.pyc
+test/gatt-service
 unit/test-eir
 unit/test-uuid
 unit/test-crc
