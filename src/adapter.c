@@ -4020,15 +4020,6 @@ static void update_found_devices(struct btd_adapter *adapter,
 
 	eir_data_free(&eir_data);
 
-	/*
-	 * Only if at least one client has requested discovery, maintain
-	 * list of found devices and name confirming for legacy devices.
-	 * Otherwise, this is an event from passive discovery and we
-	 * should check if the device needs connecting to.
-	 */
-	if (!adapter->discovery_list)
-		goto connect_le;
-
 	if (g_slist_find(adapter->discovery_found, dev))
 		return;
 
@@ -4037,28 +4028,6 @@ static void update_found_devices(struct btd_adapter *adapter,
 
 	adapter->discovery_found = g_slist_prepend(adapter->discovery_found,
 									dev);
-
-	return;
-
-connect_le:
-	/*
-	 * If we're in the process of stopping passive scanning and
-	 * connecting another (or maybe even the same) LE device just
-	 * ignore this one.
-	 */
-	if (adapter->connect_le)
-		return;
-
-	/*
-	 * If this is an LE device that's not connected and part of the
-	 * connect_list stop passive scanning so that a connection
-	 * attempt to it can be made
-	 */
-	if (device_is_le(dev) && !device_is_connected(dev) &&
-				g_slist_find(adapter->connect_list, dev)) {
-		adapter->connect_le = dev;
-		stop_passive_scanning(adapter);
-	}
 }
 
 static void device_found_callback(uint16_t index, uint16_t length,
