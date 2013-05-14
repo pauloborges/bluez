@@ -84,7 +84,6 @@
 #define MODE_DISCOVERABLE	0x02
 #define MODE_UNKNOWN		0xff
 
-#define CONN_SCAN_TIMEOUT (3)
 #define IDLE_DISCOV_TIMEOUT (5)
 #define TEMP_DEV_TIMEOUT (3 * 60)
 #define BONDING_TIMEOUT (2 * 60)
@@ -159,7 +158,6 @@ struct btd_adapter {
 	GSList *discovery_list;		/* list of discovery clients */
 	GSList *discovery_found;	/* list of found devices */
 	guint discovery_idle_timeout;	/* timeout between discovery runs */
-	guint passive_scan_timeout;	/* timeout between passive scans */
 	guint temp_devices_timeout;	/* timeout for temporary devices */
 
 	guint pairable_timeout_id;	/* pairable timeout id */
@@ -1077,84 +1075,6 @@ sdp_list_t *btd_adapter_get_services(struct btd_adapter *adapter)
 	return adapter->services;
 }
 
-static void passive_scanning_complete(uint8_t status, uint16_t length,
-					const void *param, void *user_data)
-{
-	struct btd_adapter *adapter = user_data;
-	const struct mgmt_cp_start_discovery *rp = param;
-
-	DBG("status 0x%02x", status);
-
-	if (length < sizeof(*rp)) {
-		error("Wrong size of start scanning return parameters");
-		return;
-	}
-
-	if (status == MGMT_STATUS_SUCCESS) {
-		adapter->discovery_type = rp->type;
-		adapter->discovery_enable = 0x01;
-	}
-}
-
-static gboolean passive_scanning_timeout(gpointer user_data)
-{
-	struct btd_adapter *adapter = user_data;
-	struct mgmt_cp_start_discovery cp;
-
-	adapter->passive_scan_timeout = 0;
-
-	cp.type = (1 << BDADDR_LE_PUBLIC) | (1 << BDADDR_LE_RANDOM);
-
-	mgmt_send(adapter->mgmt, MGMT_OP_START_DISCOVERY,
-				adapter->dev_id, sizeof(cp), &cp,
-				passive_scanning_complete, adapter, NULL);
-
-	return FALSE;
-}
-
-static void trigger_passive_scanning(struct btd_adapter *adapter)
-{
-	if (!(adapter->current_settings & MGMT_SETTING_LE))
-		return;
-
-	DBG("");
-
-	if (adapter->passive_scan_timeout > 0) {
-		g_source_remove(adapter->passive_scan_timeout);
-		adapter->passive_scan_timeout = 0;
-	}
-
-	/*
-	 * If any client is running a discovery right now, then do not
-	 * even try to start passive scanning.
-	 *
-	 * The discovery procedure is using interleaved scanning and
-	 * thus will discover Low Energy devices as well.
-	 */
-	if (adapter->discovery_list)
-		return;
-
-	if (adapter->discovery_enable == 0x01)
-		return;
-
-	/*
-	 * In case the discovery is suspended (for example for an ongoing
-	 * pairing attempt), then also do not start passive scanning.
-	 */
-	if (adapter->discovery_suspended)
-		return;
-
-	/*
-	 * If the list of connectable Low Energy devices is empty,
-	 * then do not start passive scanning.
-	 */
-	if (!adapter->connect_list)
-		return;
-
-	adapter->passive_scan_timeout = g_timeout_add_seconds(CONN_SCAN_TIMEOUT,
-					passive_scanning_timeout, adapter);
-}
-
 static void stop_passive_scanning_complete(uint8_t status, uint16_t length,
 					const void *param, void *user_data)
 {
@@ -1176,17 +1096,10 @@ static void stop_passive_scanning_complete(uint8_t status, uint16_t length,
 	adapter->discovery_type = 0x00;
 	adapter->discovery_enable = 0x00;
 
-	if (!dev) {
-		DBG("Device removed while stopping passive scanning");
-		trigger_passive_scanning(adapter);
-		return;
-	}
-
 	err = device_connect_le(dev);
 	if (err < 0) {
 		error("LE auto connection failed: %s (%d)",
 						strerror(-err), -err);
-		trigger_passive_scanning(adapter);
 	}
 }
 
@@ -1209,19 +1122,6 @@ static void stop_passive_scanning(struct btd_adapter *adapter)
 	mgmt_send(adapter->mgmt, MGMT_OP_STOP_DISCOVERY,
 			adapter->dev_id, sizeof(cp), &cp,
 			stop_passive_scanning_complete, adapter, NULL);
-}
-
-static void cancel_passive_scanning(struct btd_adapter *adapter)
-{
-	if (!(adapter->current_settings & MGMT_SETTING_LE))
-		return;
-
-	DBG("");
-
-	if (adapter->passive_scan_timeout > 0) {
-		g_source_remove(adapter->passive_scan_timeout);
-		adapter->passive_scan_timeout = 0;
-	}
 }
 
 static void trigger_start_discovery(struct btd_adapter *adapter, guint delay);
@@ -1319,8 +1219,6 @@ static void trigger_start_discovery(struct btd_adapter *adapter, guint delay)
 {
 
 	DBG("");
-
-	cancel_passive_scanning(adapter);
 
 	if (adapter->discovery_idle_timeout > 0) {
 		g_source_remove(adapter->discovery_idle_timeout);
@@ -1431,18 +1329,6 @@ static void discovering_callback(uint16_t index, uint16_t length,
 	adapter->discovery_type = ev->type;
 	adapter->discovery_enable = ev->discovering;
 
-	/*
-	 * Check for existing discoveries triggered by client applications
-	 * and ignore all others.
-	 *
-	 * If there are no clients, then it is good idea to trigger a
-	 * passive scanning attempt.
-	 */
-	if (!adapter->discovery_list) {
-		trigger_passive_scanning(adapter);
-		return;
-	}
-
 	if (adapter->discovery_suspended)
 		return;
 
@@ -1474,8 +1360,6 @@ static void stop_discovery_complete(uint8_t status, uint16_t length,
 		adapter->discovering = false;
 		g_dbus_emit_property_changed(dbus_conn, adapter->path,
 					ADAPTER_INTERFACE, "Discovering");
-
-		trigger_passive_scanning(adapter);
 	}
 }
 
@@ -1588,8 +1472,6 @@ static void discovery_disconnect(DBusConnection *conn, void *user_data)
 		adapter->discovering = false;
 		g_dbus_emit_property_changed(dbus_conn, adapter->path,
 					ADAPTER_INTERFACE, "Discovering");
-
-		trigger_passive_scanning(adapter);
 		return;
 	}
 
@@ -1687,8 +1569,6 @@ static DBusMessage *stop_discovery(DBusConnection *conn,
 		adapter->discovering = false;
 		g_dbus_emit_property_changed(dbus_conn, adapter->path,
 					ADAPTER_INTERFACE, "Discovering");
-
-		trigger_passive_scanning(adapter);
 
 		return dbus_message_new_method_return(msg);
 	}
@@ -2800,8 +2680,6 @@ int adapter_connect_list_add(struct btd_adapter *adapter,
 	if (!(adapter->current_settings & MGMT_SETTING_POWERED))
 		return 0;
 
-	trigger_passive_scanning(adapter);
-
 	return 0;
 }
 
@@ -2833,8 +2711,6 @@ void adapter_connect_list_remove(struct btd_adapter *adapter,
 
 	if (!(adapter->current_settings & MGMT_SETTING_POWERED))
 		return;
-
-	trigger_passive_scanning(adapter);
 }
 
 static void adapter_start(struct btd_adapter *adapter)
@@ -2843,8 +2719,6 @@ static void adapter_start(struct btd_adapter *adapter)
 						ADAPTER_INTERFACE, "Powered");
 
 	DBG("adapter %s has been enabled", adapter->path);
-
-	trigger_passive_scanning(adapter);
 }
 
 static void reply_pending_requests(struct btd_adapter *adapter)
@@ -4264,8 +4138,6 @@ static void adapter_stop(struct btd_adapter *adapter)
 {
 	/* check pending requests */
 	reply_pending_requests(adapter);
-
-	cancel_passive_scanning(adapter);
 
 	while (adapter->discovery_list) {
 		struct discovery_client *client;
