@@ -55,6 +55,7 @@
 #include "dbus-common.h"
 #include "agent.h"
 #include "profile.h"
+#include "gatt.h"
 #include "systemd.h"
 
 #define BLUEZ_NAME "org.bluez"
@@ -539,6 +540,7 @@ int main(int argc, char *argv[])
 	btd_device_init();
 	btd_agent_init();
 	btd_profile_init();
+	btd_gatt_service_manager_init();
 
 	if (option_experimental)
 		gdbus_flags = G_DBUS_FLAG_ENABLE_EXPERIMENTAL;
@@ -591,6 +593,7 @@ int main(int argc, char *argv[])
 	btd_profile_cleanup();
 	btd_agent_cleanup();
 	btd_device_cleanup();
+	btd_gatt_service_manager_cleanup();
 
 	adapter_cleanup();
 
