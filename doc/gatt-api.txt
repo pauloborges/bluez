@@ -1,0 +1,78 @@
+BlueZ D-Bus GATT API description
+********************************
+
+
+Service hierarchy
+=================
+
+Service		org.bluez
+Interface	org.bluez.gatt.Service1
+Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX
+
+Properties	string UUID [read-only]
+
+		array{object} Includes [read-only]
+
+Characteristic hierarchy
+========================
+
+Service		org.bluez
+Interface	org.bluez.gatt.Characteristic1
+Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY
+
+
+Methods		array{byte} ReadValue(uint16 offset)
+
+			This method reads the characteristic value attribute from the
+			given characteristic.
+
+			Possible errors: org.bluez.Error.NotConnected
+					 org.bluez.Error.Failed
+
+		void WriteValue(uint16 offset, array{byte} buf)
+
+			This method writes the characteristic value attribute from the
+			given characteristic.
+
+			Possible errors: org.bluez.Error.NotConnected
+					 org.bluez.Error.Failed
+
+
+Properties	string UUID [read-only]
+
+		array{byte} Value [read-write, optional]
+
+			Value of the characteristic, if present, the value will be cached
+			by bluetoothd and updated when the PropertyChanged is emitted.
+
+		byte Permissions [read-only, optional]
+
+		bool Authenticate [read-only, optional]
+
+		byte Properties [read-only, optional]
+
+		array{dict} Descriptors [read-write, optional]
+
+		{
+			"uuid":
+			"value":
+			"permissions":
+		}
+		{
+			...
+		}
+
+ServiceManager hierarchy
+========================
+
+Service		org.bluez
+Interface	org.bluez.gatt.ServiceManager1
+Object path	/
+
+Methods		RegisterServices(array{object} services)
+
+			Registers a list of primary services, all the characteristics
+			under it and all the secondary services included by it (using
+			the D-Bus ObjectManager)
+
+		UnregisterAllServices()
