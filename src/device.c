@@ -3117,11 +3117,12 @@ static gboolean attrib_disconnected_cb(GIOChannel *io, GIOCondition cond,
 
 	/*
 	 * Keep scanning/re-connection active if disconnection reason
-	 * is connection timeout, remote user terminated connection or local
-	 * initiated disconnection.
+	 * is connection timeout, remote user terminated connection.
 	 */
-	if (err == ETIMEDOUT || err == ECONNRESET || err == ECONNABORTED)
+	if (err == ETIMEDOUT || err == ECONNRESET) {
 		connect_le(device);
+		return FALSE;
+	}
 
 done:
 	attio_cleanup(device);
