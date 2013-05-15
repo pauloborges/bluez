@@ -4281,6 +4281,33 @@ unsigned int btd_adapter_register_powered_cb(struct btd_adapter *adapter,
 	return powered->id;
 }
 
+static int powered_id_cmp(const void *a, const void *b)
+{
+	const struct powered_cb *powered = a;
+	unsigned int id = GPOINTER_TO_UINT(b);
+
+	return powered->id - id;
+}
+
+bool btd_adapter_unregister_powered_cb(struct btd_adapter *adapter,
+							unsigned int id)
+{
+	struct powered_cb *powered;
+	GSList *l;
+
+	l = g_slist_find_custom(adapter->powered_callbacks,
+				GUINT_TO_POINTER(id), powered_id_cmp);
+	if (l == NULL)
+		return false;
+
+	powered = l->data;
+	adapter->powered_callbacks = g_slist_remove(adapter->powered_callbacks,
+								powered);
+	g_free(powered);
+
+	return true;
+}
+
 void btd_adapter_register_pin_cb(struct btd_adapter *adapter,
 							btd_adapter_pin_cb_t cb)
 {

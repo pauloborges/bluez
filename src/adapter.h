@@ -136,6 +136,9 @@ unsigned int btd_adapter_register_powered_cb(struct btd_adapter *adapter,
 						btd_adapter_powered_cb_t cb,
 						void *user_data);
 
+bool btd_adapter_unregister_powered_cb(struct btd_adapter *adapter,
+							unsigned int id);
+
 typedef ssize_t (*btd_adapter_pin_cb_t) (struct btd_adapter *adapter,
 			struct btd_device *dev, char *out, bool *display,
 							unsigned int attempt);
