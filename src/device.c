@@ -131,6 +131,7 @@ struct attio_data {
 	guint id;
 	attio_connect_cb cfunc;
 	attio_disconnect_cb dcfunc;
+	struct btd_device *device;
 	gpointer user_data;
 };
 
@@ -187,7 +188,6 @@ struct btd_device {
 	DBusMessage	*disconnect;		/* disconnect message */
 	GAttrib		*attrib;
 	GSList		*attios;
-	GSList		*attios_offline;
 	guint		attachid;		/* Attrib server attach */
 
 	gboolean	connected;
@@ -499,7 +499,6 @@ static void device_free(gpointer user_data)
 	g_slist_free_full(device->uuids, g_free);
 	g_slist_free_full(device->primaries, g_free);
 	g_slist_free_full(device->attios, g_free);
-	g_slist_free_full(device->attios_offline, g_free);
 	g_slist_free_full(device->svc_callbacks, svc_dev_remove);
 
 	attio_cleanup(device);
@@ -3144,7 +3143,7 @@ static void register_all_services(struct browse_req *req, GSList *services)
 
 	device_probe_profiles(device, req->profiles_added);
 
-	if (device->attios == NULL && device->attios_offline == NULL)
+	if (device->attios == NULL)
 		attio_cleanup(device);
 
 	g_dbus_emit_property_changed(dbus_conn, device->path,
@@ -4374,14 +4373,13 @@ void device_set_appearance(struct btd_device *device, uint16_t value)
 
 static gboolean notify_attios(gpointer user_data)
 {
-	struct btd_device *device = user_data;
+	struct attio_data *attio = user_data;
+	struct btd_device *device = attio->device;
 
 	if (device->attrib == NULL)
 		return FALSE;
 
-	g_slist_foreach(device->attios_offline, attio_connected, device->attrib);
-	device->attios = g_slist_concat(device->attios, device->attios_offline);
-	device->attios_offline = NULL;
+	attio_connected(attio, device->attrib);
 
 	return FALSE;
 }
@@ -4400,16 +4398,13 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 	attio->id = ++attio_id;
 	attio->cfunc = cfunc;
 	attio->dcfunc = dcfunc;
+	attio->device = btd_device_ref(device);
 	attio->user_data = user_data;
 
-	if (device->attrib && cfunc) {
-		device->attios_offline = g_slist_append(device->attios_offline,
-									attio);
-		g_idle_add(notify_attios, device);
-		return attio->id;
-	}
-
 	device->attios = g_slist_append(device->attios, attio);
+
+	if (device->attrib && cfunc)
+		g_idle_add(notify_attios, attio);
 
 	connect_le(device);
 
@@ -4431,23 +4426,16 @@ gboolean btd_device_remove_attio_callback(struct btd_device *device, guint id)
 
 	l = g_slist_find_custom(device->attios, GUINT_TO_POINTER(id),
 								attio_id_cmp);
-	if (l) {
-		attio = l->data;
-		device->attios = g_slist_remove(device->attios, attio);
-	} else {
-		l = g_slist_find_custom(device->attios_offline,
-					GUINT_TO_POINTER(id), attio_id_cmp);
-		if (!l)
-			return FALSE;
+	if (!l)
+		return FALSE;
 
-		attio = l->data;
-		device->attios_offline = g_slist_remove(device->attios_offline,
-									attio);
-	}
+	attio = l->data;
+	device->attios = g_slist_remove(device->attios, attio);
 
+	btd_device_unref(attio->device);
 	g_free(attio);
 
-	if (device->attios != NULL || device->attios_offline != NULL)
+	if (device->attios != NULL)
 		return TRUE;
 
 	attio_cleanup(device);
