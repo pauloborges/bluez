@@ -126,6 +126,12 @@ struct btd_adapter_pin_cb_iter {
 	/* When the iterator reaches the end, it is NULL and attempt is 0 */
 };
 
+struct powered_cb {
+	unsigned int id;
+	btd_adapter_powered_cb_t cb;
+	void *user_data;
+};
+
 struct btd_adapter {
 	int ref_count;
 
@@ -172,6 +178,7 @@ struct btd_adapter {
 	gboolean initialized;
 
 	GSList *pin_callbacks;
+	GSList *powered_callbacks;
 
 	GSList *drivers;
 	GSList *profiles;
@@ -2596,8 +2603,16 @@ const char *btd_adapter_get_name(struct btd_adapter *adapter)
 
 static void adapter_start(struct btd_adapter *adapter)
 {
+	GSList *l;
+
 	g_dbus_emit_property_changed(dbus_conn, adapter->path,
 						ADAPTER_INTERFACE, "Powered");
+
+	for (l = adapter->powered_callbacks; l; l = g_slist_next(l)) {
+		struct powered_cb *powered = l->data;
+
+		powered->cb(true, powered->user_data);
+	}
 
 	DBG("adapter %s has been enabled", adapter->path);
 }
@@ -3718,6 +3733,9 @@ static void adapter_remove(struct btd_adapter *adapter)
 
 	g_slist_free(adapter->pin_callbacks);
 	adapter->pin_callbacks = NULL;
+
+	g_slist_free(adapter->powered_callbacks);
+	adapter->powered_callbacks = NULL;
 }
 
 const char *adapter_get_path(struct btd_adapter *adapter)
@@ -3983,6 +4001,8 @@ static void adapter_remove_connection(struct btd_adapter *adapter,
 
 static void adapter_stop(struct btd_adapter *adapter)
 {
+	GSList *l;
+
 	/* check pending requests */
 	reply_pending_requests(adapter);
 
@@ -4018,6 +4038,12 @@ static void adapter_stop(struct btd_adapter *adapter)
 
 	g_dbus_emit_property_changed(dbus_conn, adapter->path,
 						ADAPTER_INTERFACE, "Powered");
+
+	for (l = adapter->powered_callbacks; l; l = g_slist_next(l)) {
+		struct powered_cb *powered = l->data;
+
+		powered->cb(false, powered->user_data);
+	}
 
 	DBG("adapter %s has been disabled", adapter->path);
 }
@@ -4235,6 +4261,24 @@ int btd_adapter_restore_powered(struct btd_adapter *adapter)
 	set_mode(adapter, MGMT_OP_SET_POWERED, 0x01);
 
 	return 0;
+}
+
+unsigned int btd_adapter_register_powered_cb(struct btd_adapter *adapter,
+						btd_adapter_powered_cb_t cb,
+						void *user_data)
+{
+	struct powered_cb *powered;
+	static unsigned int powered_id;
+
+	powered = g_new0(struct powered_cb, 1);
+	powered->id = ++powered_id;
+	powered->cb = cb;
+	powered->user_data = user_data;
+
+	adapter->powered_callbacks =
+			g_slist_prepend(adapter->powered_callbacks, powered);
+
+	return powered->id;
 }
 
 void btd_adapter_register_pin_cb(struct btd_adapter *adapter,
