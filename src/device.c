@@ -198,7 +198,6 @@ struct btd_device {
 	gboolean	paired;
 	gboolean	blocked;
 	gboolean	bonded;
-	gboolean	disable_auto_connect;
 	gboolean	general_connect;
 
 	bool		legacy;
@@ -1062,6 +1061,13 @@ void device_request_disconnect(struct btd_device *device, DBusMessage *msg)
 	if (device->browse)
 		browse_request_cancel(device->browse);
 
+	if (device->att_io) {
+		/* Connection attempt pending */
+		g_io_channel_shutdown(device->att_io, FALSE, NULL);
+		g_io_channel_unref(device->att_io);
+		device->att_io = NULL;
+	}
+
 	if (device->connect) {
 		DBusMessage *reply = btd_error_failed(device->connect,
 								"Cancelled");
@@ -1113,11 +1119,8 @@ static DBusMessage *dev_disconnect(DBusConnection *conn, DBusMessage *msg,
 {
 	struct btd_device *device = user_data;
 
-	/*
-	 * Disable connections through passive scanning until
-	 * Device1.Connect is called
-	 */
-	device->disable_auto_connect = TRUE;
+	if (!device->connected)
+		return btd_error_not_connected(msg);
 
 	device_request_disconnect(device, msg);
 
@@ -1359,8 +1362,6 @@ static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 			return dbus_message_new_method_return(msg);
 
 		btd_device_set_temporary(dev, FALSE);
-
-		dev->disable_auto_connect = FALSE;
 
 		err = connect_le(dev);
 		if (err < 0)
@@ -3046,14 +3047,6 @@ static void store_services(struct btd_device *device)
 	g_key_file_free(key_file);
 }
 
-static bool device_get_auto_connect(struct btd_device *device)
-{
-	if (device->disable_auto_connect)
-		return false;
-
-	return device->attios ? true : false;
-}
-
 static void attio_connected(gpointer data, gpointer user_data)
 {
 	struct attio_data *attio = data;
@@ -3089,7 +3082,7 @@ static gboolean attrib_disconnected_cb(GIOChannel *io, GIOCondition cond,
 
 	g_slist_foreach(device->attios, attio_disconnected, NULL);
 
-	if (!device_get_auto_connect(device)) {
+	if (device->attios == NULL) {
 		DBG("Automatic connection disabled");
 		goto done;
 	}
@@ -3317,7 +3310,7 @@ static void att_error_cb(const GError *gerr, gpointer user_data)
 	if (g_error_matches(gerr, BT_IO_ERROR, ECONNABORTED))
 		return;
 
-	if (device_get_auto_connect(device)) {
+	if (device->attios) {
 		DBG("Enabling automatic connections");
 		connect_le(device);
 	}
