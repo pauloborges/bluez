@@ -207,6 +207,7 @@ struct btd_device {
 	GIOChannel	*att_io;
 	guint		cleanup_id;
 	guint		store_id;
+	unsigned int	powered_id;		/* Tracks adapter powered */
 };
 
 static const uint16_t uuid_list[] = {
@@ -4387,6 +4388,23 @@ static gboolean notify_attio(gpointer user_data)
 	return FALSE;
 }
 
+static void powered_cb(bool powered, void *user_data)
+{
+	struct btd_device *device = user_data;
+
+	/*
+	 * When the adapter is powered down the scanning
+	 * and the active connections are closed by the
+	 * kernel. ATT/GATT control variables are cleaned
+	 * when the error callback gets called.
+	 */
+
+	if (powered == false)
+		return;
+
+	connect_le(device);
+}
+
 guint btd_device_add_attio_callback(struct btd_device *device,
 						attio_connect_cb cfunc,
 						attio_disconnect_cb dcfunc,
@@ -4403,6 +4421,11 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 	attio->dcfunc = dcfunc;
 	attio->device = btd_device_ref(device);
 	attio->user_data = user_data;
+
+	if (device->attios == NULL)
+		device->powered_id =
+			btd_adapter_register_powered_cb(device->adapter,
+							powered_cb, device);
 
 	device->attios = g_slist_append(device->attios, attio);
 
@@ -4454,6 +4477,9 @@ gboolean btd_device_remove_attio_callback(struct btd_device *device, guint id)
 
 	if (device->attios != NULL)
 		return TRUE;
+
+	btd_adapter_unregister_powered_cb(device->adapter, device->powered_id);
+	device->powered_id = 0;
 
 	attio_cleanup(device);
 
