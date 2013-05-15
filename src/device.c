@@ -198,7 +198,6 @@ struct btd_device {
 	gboolean	paired;
 	gboolean	blocked;
 	gboolean	bonded;
-	gboolean	auto_connect;
 	gboolean	disable_auto_connect;
 	gboolean	general_connect;
 
@@ -1125,8 +1124,7 @@ static DBusMessage *dev_disconnect(DBusConnection *conn, DBusMessage *msg,
 	 * Disable connections through passive scanning until
 	 * Device1.Connect is called
 	 */
-	if (device->auto_connect)
-		device->disable_auto_connect = TRUE;
+	device->disable_auto_connect = TRUE;
 
 	device_request_disconnect(device, msg);
 
@@ -3082,7 +3080,7 @@ static bool device_get_auto_connect(struct btd_device *device)
 	if (device->disable_auto_connect)
 		return false;
 
-	return device->auto_connect;
+	return device->attios ? true : false;
 }
 
 static void attio_connected(gpointer data, gpointer user_data)
@@ -3681,34 +3679,6 @@ void device_set_rssi(struct btd_device *device, int8_t rssi)
 
 	g_dbus_emit_property_changed(dbus_conn, device->path,
 						DEVICE_INTERFACE, "RSSI");
-}
-
-static void device_set_auto_connect(struct btd_device *device, gboolean enable)
-{
-	char addr[18];
-
-	if (!device)
-		return;
-
-	ba2str(&device->bdaddr, addr);
-
-	DBG("%s auto connect: %d", addr, enable);
-
-	device->auto_connect = enable;
-
-	/* Disabling auto connect */
-	if (enable == FALSE) {
-		/* FIXME: Close ATT socket */
-		return;
-	}
-
-	if (device->attrib) {
-		DBG("Already connected");
-		return;
-	}
-
-	/* Enabling auto connect */
-	connect_le(device);
 }
 
 static gboolean start_discovery(gpointer user_data)
@@ -4438,8 +4408,6 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 	attio->cfunc = cfunc;
 	attio->dcfunc = dcfunc;
 	attio->user_data = user_data;
-
-	device_set_auto_connect(device, TRUE);
 
 	if (device->attrib && cfunc) {
 		device->attios_offline = g_slist_append(device->attios_offline,
