@@ -166,7 +166,6 @@ struct btd_adapter {
 	bool pincode_requested;		/* PIN requested during last bonding */
 	GSList *connections;		/* Connected devices */
 	GSList *devices;		/* Devices structure pointers */
-	GSList *connect_list;		/* Devices to connect when found */
 	sdp_list_t *services;		/* Services associated to adapter */
 
 	bool toggle_discoverable;	/* discoverable needs to be changed */
@@ -1021,8 +1020,6 @@ static void adapter_remove_device(struct btd_adapter *adapter,
 						gboolean remove_storage)
 {
 	GList *l;
-
-	adapter->connect_list = g_slist_remove(adapter->connect_list, dev);
 
 	adapter->devices = g_slist_remove(adapter->devices, dev);
 
@@ -2597,48 +2594,6 @@ const char *btd_adapter_get_name(struct btd_adapter *adapter)
 	return NULL;
 }
 
-int adapter_connect_list_add(struct btd_adapter *adapter,
-					struct btd_device *device)
-{
-	if (g_slist_find(adapter->connect_list, device)) {
-		DBG("ignoring already added device %s",
-						device_get_path(device));
-		return 0;
-	}
-
-	if (!(adapter->supported_settings & MGMT_SETTING_LE)) {
-		error("Can't add %s to non-LE capable adapter connect list",
-						device_get_path(device));
-		return -ENOTSUP;
-	}
-
-	adapter->connect_list = g_slist_append(adapter->connect_list, device);
-	DBG("%s added to %s's connect_list", device_get_path(device),
-							adapter->system_name);
-
-	if (!(adapter->current_settings & MGMT_SETTING_POWERED))
-		return 0;
-
-	return 0;
-}
-
-void adapter_connect_list_remove(struct btd_adapter *adapter,
-					struct btd_device *device)
-{
-	if (!g_slist_find(adapter->connect_list, device)) {
-		DBG("device %s is not on the list, ignoring",
-						device_get_path(device));
-		return;
-	}
-
-	adapter->connect_list = g_slist_remove(adapter->connect_list, device);
-	DBG("%s removed from %s's connect_list", device_get_path(device),
-							adapter->system_name);
-
-	if (!(adapter->current_settings & MGMT_SETTING_POWERED))
-		return;
-}
-
 static void adapter_start(struct btd_adapter *adapter)
 {
 	g_dbus_emit_property_changed(dbus_conn, adapter->path,
@@ -3751,9 +3706,6 @@ static void adapter_remove(struct btd_adapter *adapter)
 	}
 
 	discovery_cleanup(adapter);
-
-	g_slist_free(adapter->connect_list);
-	adapter->connect_list = NULL;
 
 	for (l = adapter->devices; l; l = l->next)
 		device_remove(l->data, FALSE);

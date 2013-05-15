@@ -1324,6 +1324,8 @@ start_connect:
 	return NULL;
 }
 
+static int connect_le(struct btd_device *dev);
+
 static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
@@ -1339,7 +1341,7 @@ static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 
 		dev->disable_auto_connect = FALSE;
 
-		err = device_connect_le(dev);
+		err = connect_le(dev);
 		if (err < 0)
 			return btd_error_failed(msg, strerror(-err));
 
@@ -1615,7 +1617,7 @@ static DBusMessage *pair_device(DBusConnection *conn, DBusMessage *msg,
 	 * this in the ATT connect callback)
 	 */
 	if (device_is_le(device) && !device_is_connected(device))
-		err = device_connect_le(device);
+		err = connect_le(device);
 	else
 		err = adapter_create_bonding(adapter, &device->bdaddr,
 						device->bdaddr_type, io_cap);
@@ -3127,7 +3129,7 @@ static gboolean attrib_disconnected_cb(GIOChannel *io, GIOCondition cond,
 	 * initiated disconnection.
 	 */
 	if (err == ETIMEDOUT || err == ECONNRESET || err == ECONNABORTED)
-		adapter_connect_list_add(device->adapter, device);
+		connect_le(device);
 
 done:
 	attio_cleanup(device);
@@ -3348,7 +3350,7 @@ static void att_error_cb(const GError *gerr, gpointer user_data)
 
 	if (device_get_auto_connect(device)) {
 		DBG("Enabling automatic connections");
-		adapter_connect_list_add(device->adapter, device);
+		connect_le(device);
 	}
 }
 
@@ -3360,17 +3362,10 @@ static void att_success_cb(gpointer user_data)
 	if (device->attios == NULL)
 		return;
 
-	/*
-	 * Remove the device from the connect_list and give the passive
-	 * scanning another chance to be restarted in case there are
-	 * other devices in the connect_list.
-	 */
-	adapter_connect_list_remove(device->adapter, device);
-
 	g_slist_foreach(device->attios, attio_connected, device->attrib);
 }
 
-int device_connect_le(struct btd_device *dev)
+static int connect_le(struct btd_device *dev)
 {
 	struct btd_adapter *adapter = dev->adapter;
 	struct att_callbacks *attcb;
@@ -3608,9 +3603,6 @@ void device_set_temporary(struct btd_device *device, gboolean temporary)
 
 	DBG("temporary %d", temporary);
 
-	if (temporary)
-		adapter_connect_list_remove(device->adapter, device);
-
 	device->temporary = temporary;
 }
 
@@ -3706,7 +3698,7 @@ static void device_set_auto_connect(struct btd_device *device, gboolean enable)
 
 	/* Disabling auto connect */
 	if (enable == FALSE) {
-		adapter_connect_list_remove(device->adapter, device);
+		/* FIXME: Close ATT socket */
 		return;
 	}
 
@@ -3716,7 +3708,7 @@ static void device_set_auto_connect(struct btd_device *device, gboolean enable)
 	}
 
 	/* Enabling auto connect */
-	adapter_connect_list_add(device->adapter, device);
+	connect_le(device);
 }
 
 static gboolean start_discovery(gpointer user_data)
@@ -4457,6 +4449,8 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 	}
 
 	device->attios = g_slist_append(device->attios, attio);
+
+	connect_le(device);
 
 	return attio->id;
 }

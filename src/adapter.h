@@ -201,11 +201,6 @@ void btd_adapter_gatt_server_stop(struct btd_adapter *adapter);
 
 bool btd_adapter_ssp_enabled(struct btd_adapter *adapter);
 
-int adapter_connect_list_add(struct btd_adapter *adapter,
-					struct btd_device *device);
-void adapter_connect_list_remove(struct btd_adapter *adapter,
-						struct btd_device *device);
-
 void btd_adapter_set_oob_handler(struct btd_adapter *adapter,
 						struct oob_handler *handler);
 gboolean btd_adapter_check_oob_handler(struct btd_adapter *adapter);
