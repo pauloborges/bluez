@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
@@ -34,21 +35,46 @@
 
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+#define ERROR_INTERFACE "org.bluez.Error"
 
 #define SERVICE_PATH "/service%d"
 #define CHARACTERISTIC_PATH "/characteristic%d"
 
+#define IMMEDIATE_ALERT_UUID "00001802-0000-1000-8000-00805f9b34fb"
+#define ALERT_LEVEL_CHR_UUID "00002a06-0000-1000-8000-00805f9b34fb"
+
 static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
 
-static void connect_handler(DBusConnection *connection, void *user_data)
-{
+struct service {
+	char *uuid;
+	GSList *includes;
+};
 
-}
+enum char_features_t {
+	CHAR_FEATURE_PROP_VALUE = (1 << 0),
+	CHAR_FEATURE_HAS_PERMS = (1 << 1),
+	CHAR_FEATURE_HAS_AUTH = (1 << 2),
+};
+
+struct characteristic {
+	char *uuid;
+	uint8_t *value;
+	int vlen;
+	int features;
+	uint8_t perms;
+	bool auth;
+	uint8_t props;
+	GSList *descriptors;
+};
 
 static gboolean service_get_uuid(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
+	struct service *service = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &service->uuid);
+
 	return TRUE;
 }
 
@@ -61,7 +87,9 @@ static gboolean service_get_includes(const GDBusPropertyTable *property,
 static gboolean service_exist_includes(const GDBusPropertyTable *property,
 								void *data)
 {
-	return TRUE;
+	struct service *service = data;
+
+	return service->includes != NULL;
 }
 
 static const GDBusPropertyTable service_properties[] = {
@@ -74,12 +102,27 @@ static const GDBusPropertyTable service_properties[] = {
 static gboolean chr_get_uuid(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
+	struct characteristic *chr = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &chr->uuid);
+
 	return TRUE;
 }
 
 static gboolean chr_get_value(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
+	struct characteristic *chr = data;
+	DBusMessageIter array;
+
+	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_BYTE_AS_STRING, &array);
+
+	dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+						&chr->value, chr->vlen);
+
+	dbus_message_iter_close_container(iter, &array);
+
 	return TRUE;
 }
 
@@ -87,38 +130,52 @@ static void chr_set_value(const GDBusPropertyTable *property,
 				DBusMessageIter *iter,
 				GDBusPendingPropertySet id, void *user_data)
 {
-	g_dbus_pending_property_success(id);
+	g_dbus_pending_property_error(id, ERROR_INTERFACE ".Failed",
+								"Not Supported");
 }
 
 static gboolean chr_exist_value(const GDBusPropertyTable *property,
 								void *data)
 {
-	return TRUE;
+	struct characteristic *chr = data;
+
+	return !!(chr->features & CHAR_FEATURE_PROP_VALUE);
 }
 
 static gboolean chr_get_perms(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
+	struct characteristic *chr = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &chr->perms);
+
 	return TRUE;
 }
 
 static gboolean chr_exist_perms(const GDBusPropertyTable *property,
 								void *data)
 {
-	return TRUE;
+	struct characteristic *chr = data;
+
+	return !!(chr->features & CHAR_FEATURE_HAS_PERMS);
 }
 
 static gboolean chr_get_auth(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
+	struct characteristic *chr = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &chr->auth);
+
 	return TRUE;
 }
 
 static gboolean chr_exist_auth(const GDBusPropertyTable *property, void *data)
 {
-	return TRUE;
-}
+	struct characteristic *chr = data;
 
+	return !!(chr->features & CHAR_FEATURE_HAS_AUTH);
+}
 
 static gboolean chr_get_descriptors(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
@@ -136,7 +193,9 @@ static void chr_set_descriptors(const GDBusPropertyTable *property,
 static gboolean chr_exist_descriptors(const GDBusPropertyTable *property,
 								void *data)
 {
-	return TRUE;
+	struct characteristic *chr = data;
+
+	return chr->descriptors != NULL;
 }
 
 static const GDBusPropertyTable chr_properties[] = {
@@ -153,7 +212,23 @@ static const GDBusPropertyTable chr_properties[] = {
 static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
-	return dbus_message_new_method_return(msg);
+	struct characteristic *chr = user_data;
+	DBusMessageIter iter, array;
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(msg);
+
+	dbus_message_iter_init(reply, &iter);
+
+	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_BYTE_AS_STRING, &array);
+
+	dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+						&chr->value, chr->vlen);
+
+	dbus_message_iter_close_container(&iter, &array);
+
+	return reply;
 }
 
 static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
@@ -174,28 +249,48 @@ static const GDBusMethodTable chr_methods[] = {
 
 static void populate_service(DBusConnection *conn)
 {
+	struct characteristic *chr;
+	struct service *service;
 	static int id = 1;
 	char service_path[64], chr_path[64];
 
 	snprintf(service_path, sizeof(service_path), SERVICE_PATH, id++);
 
+	service = g_new0(struct service, 1);
+
+	service->uuid = g_strdup(IMMEDIATE_ALERT_UUID);
+
 	if (g_dbus_register_interface(conn, service_path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties,
-					NULL, NULL) == FALSE) {
+					service, NULL) == FALSE) {
 		fprintf(stderr, "Couldn't register service interface\n");
 		return;
 	}
 
-	snprintf(chr_path, sizeof(chr_path), "%s/" CHARACTERISTIC_PATH,
+	snprintf(chr_path, sizeof(chr_path), "%s" CHARACTERISTIC_PATH,
 							service_path, id++);
+
+	chr = g_new0(struct characteristic, 1);
+
+	chr->uuid = g_strdup(ALERT_LEVEL_CHR_UUID);
+
+	chr->value = g_new0(uint8_t, 1);
+	chr->vlen = sizeof(uint8_t);
+
+	chr->features = CHAR_FEATURE_PROP_VALUE;
 
 	if (g_dbus_register_interface(conn, chr_path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
-					NULL, NULL) == FALSE) {
+					chr, NULL) == FALSE) {
 		fprintf(stderr, "Couldn't register service interface\n");
 		return;
 	}
+}
+
+static void connect_handler(DBusConnection *connection, void *user_data)
+{
+	populate_service(dbus_conn);
 }
 
 int main(int argc, char *argv[])
@@ -210,8 +305,6 @@ int main(int argc, char *argv[])
 	g_dbus_client_set_connect_watch(client, connect_handler, NULL);
 
 	g_dbus_attach_object_manager(dbus_conn);
-
-	populate_service(dbus_conn);
 
 	g_main_loop_run(main_loop);
 
