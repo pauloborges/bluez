@@ -42,9 +42,9 @@ Properties	string UUID [read-only]
 		array{dict} Descriptors [read-write, optional]
 
 		{
-			"uuid":
-			"value":
-			"permissions":
+			"uuid": string [mandatory]
+			"value": array{byte} [mandatory]
+			"permissions": byte [optional]
 		}
 		{
 			...
