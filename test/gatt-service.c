@@ -33,6 +33,8 @@
 #include <dbus/dbus.h>
 #include <gdbus/gdbus.h>
 
+#define SERVICE_MANAGER_INTERFACE "org.bluez.gatt.ServiceManager1"
+
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
 #define ERROR_INTERFACE "org.bluez.Error"
@@ -247,6 +249,31 @@ static const GDBusMethodTable chr_methods[] = {
 	{ }
 };
 
+static bool register_services(DBusConnection *conn, const char *path)
+{
+	DBusMessage *msg;
+	DBusMessageIter iter, array;
+
+	msg = dbus_message_new_method_call("org.bluez", "/org/bluez",
+				SERVICE_MANAGER_INTERFACE, "RegisterServices");
+	if (msg == NULL) {
+		fprintf(stderr, "Couldn't allocate D-Bus message\n");
+		return false;
+	}
+
+	dbus_message_iter_init_append(msg, &iter);
+
+	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
+				DBUS_TYPE_OBJECT_PATH_AS_STRING, &array);
+
+	dbus_message_iter_append_basic(&array, DBUS_TYPE_OBJECT_PATH, &path);
+
+	dbus_message_iter_close_container(&iter, &array);
+
+	return g_dbus_send_message(conn, msg);
+
+}
+
 static void populate_service(DBusConnection *conn)
 {
 	struct characteristic *chr;
@@ -286,6 +313,9 @@ static void populate_service(DBusConnection *conn)
 		fprintf(stderr, "Couldn't register service interface\n");
 		return;
 	}
+
+	if (register_services(conn, service_path) == false)
+		fprintf(stderr, "Could not send RegisterServices\n");
 }
 
 static void connect_handler(DBusConnection *connection, void *user_data)
