@@ -129,6 +129,7 @@ struct included_search {
 
 struct attio_data {
 	guint id;
+	unsigned int idle_id;
 	attio_connect_cb cfunc;
 	attio_disconnect_cb dcfunc;
 	struct btd_device *device;
@@ -4371,10 +4372,12 @@ void device_set_appearance(struct btd_device *device, uint16_t value)
 	store_device_info(device);
 }
 
-static gboolean notify_attios(gpointer user_data)
+static gboolean notify_attio(gpointer user_data)
 {
 	struct attio_data *attio = user_data;
 	struct btd_device *device = attio->device;
+
+	attio->idle_id = 0;
 
 	if (device->attrib == NULL)
 		return FALSE;
@@ -4403,8 +4406,14 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 
 	device->attios = g_slist_append(device->attios, attio);
 
-	if (device->attrib && cfunc)
-		g_idle_add(notify_attios, attio);
+	/*
+	 * If ATT channel is established already: notify the client
+	 * in the in the next loop iteraction.
+	 */
+	if (device->attrib && cfunc) {
+		attio->idle_id = g_idle_add(notify_attio, attio);
+		return attio->id;
+	}
 
 	connect_le(device);
 
@@ -4430,6 +4439,14 @@ gboolean btd_device_remove_attio_callback(struct btd_device *device, guint id)
 		return FALSE;
 
 	attio = l->data;
+
+	/*
+	 * Safe-guard: remove source if register and unregistered gets called
+	 * in the same loop iteraction.
+	 */
+	if (attio->idle_id)
+		g_source_remove(attio->idle_id);
+
 	device->attios = g_slist_remove(device->attios, attio);
 
 	btd_device_unref(attio->device);
