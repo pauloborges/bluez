@@ -31,6 +31,9 @@
 #define SERVICE_NAME "org.bluez.unit.test-gdbus-client"
 #define SERVICE_PATH "/org/bluez/unit/test_gdbus_client"
 
+#define CHILD_NAME "org.bluez.unit.test-gdbus-client.Child"
+#define CHILD_PATH "/org/bluez/unit/test_gdbus_client/child"
+
 struct context {
 	GMainLoop *main_loop;
 	DBusConnection *dbus_conn;
@@ -779,6 +782,77 @@ static void client_string_changed(void)
 	destroy_context(context);
 }
 
+static void proxy_check_child(GDBusProxy *proxy, void *user_data)
+{
+	struct context *context = user_data;
+	const char *interface;
+	int *value;
+
+	interface = g_dbus_proxy_get_interface(proxy);
+
+	if (g_test_verbose())
+		g_print("interface %s\n", interface);
+
+	if (context->data == NULL)
+		context->data = g_new0(int, 1);
+
+	value = context->data;
+
+	if (g_strcmp0(interface, SERVICE_NAME) == 0)
+		*value |= 0x1;
+
+	if (g_strcmp0(interface, CHILD_NAME) == 0)
+		*value |= 0x2;
+
+	if (*value == 0x3)
+		g_dbus_client_unref(context->dbus_client);
+}
+
+static void client_child_object(void)
+{
+	struct context *context = create_context();
+	static const GDBusPropertyTable string_properties[] = {
+		{ "String", "s", get_string, NULL, string_exists },
+		{ },
+	};
+
+	if (context == NULL)
+		return;
+
+	g_dbus_register_interface(context->dbus_conn,
+				SERVICE_PATH, SERVICE_NAME,
+				methods, signals, string_properties,
+				context, NULL);
+
+	g_dbus_register_interface(context->dbus_conn,
+				CHILD_PATH, CHILD_NAME,
+				methods, signals, string_properties,
+				context, NULL);
+
+	context->dbus_client = g_dbus_client_new(context->dbus_conn,
+						SERVICE_NAME, SERVICE_PATH);
+
+	g_dbus_client_set_disconnect_watch(context->dbus_client,
+						disconnect_handler, context);
+
+	g_dbus_client_set_proxy_handlers(context->dbus_client,
+						proxy_check_child, NULL,
+						NULL, context);
+
+	context->timeout_source = g_timeout_add_seconds(2, timeout_test,
+								context);
+
+	g_main_loop_run(context->main_loop);
+
+	g_dbus_unregister_interface(context->dbus_conn,
+					SERVICE_PATH, SERVICE_NAME);
+
+	g_dbus_unregister_interface(context->dbus_conn,
+					CHILD_PATH, CHILD_NAME);
+
+	destroy_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
@@ -808,6 +882,8 @@ int main(int argc, char *argv[])
 
 	g_test_add_func("/gdbus/client_string_changed",
 						client_string_changed);
+
+	g_test_add_func("/gdbus/client_child_object", client_child_object);
 
 	return g_test_run();
 }
