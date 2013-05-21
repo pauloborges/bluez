@@ -38,6 +38,21 @@
 
 #include "gatt.h"
 
+#define SERVICE_INTERFACE "org.bluez.gatt.Service1"
+#define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+
+struct characteristic {
+	char *path;
+	char *uuid;
+};
+
+struct service {
+	char *path;
+	char *uuid;
+	GDBusClient *client;
+	GSList *chrs;
+};
+
 struct application {
 	char *owner;
 	GSList *services;
@@ -46,6 +61,147 @@ struct application {
 
 static GSList *applications = NULL;
 
+static struct characteristic *new_characteristic(const char *path,
+							const char *uuid)
+{
+	struct characteristic *chr;
+
+	chr = g_new0(struct characteristic, 1);
+
+	chr->path = g_strdup(path);
+	chr->uuid = g_strdup(uuid);
+
+	return chr;
+}
+
+static void destroy_char(void *user_data)
+{
+	struct characteristic *chr = user_data;
+
+	g_free(chr->path);
+	g_free(chr->uuid);
+	g_free(chr);
+}
+
+static void destroy_service(void *data)
+{
+	struct service *srv = data;
+
+	g_free(srv->path);
+	g_free(srv->uuid);
+
+	g_dbus_client_unref(srv->client);
+
+	g_free(srv);
+}
+
+static void proxy_added(GDBusProxy *proxy, void *user_data)
+{
+	struct service *srv = user_data;
+	DBusMessageIter iter;
+	const char *interface;
+	const char *path;
+	const char *uuid;
+
+	interface = g_dbus_proxy_get_interface(proxy);
+
+	DBG("iface %s", interface);
+
+	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
+		struct characteristic *chr;
+
+		path = g_dbus_proxy_get_path(proxy);
+
+		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
+			return;
+
+		dbus_message_iter_get_basic(&iter, &uuid);
+
+		chr = new_characteristic(path, uuid);
+
+		srv->chrs = g_slist_append(srv->chrs, chr);
+
+		DBG("new char %s uuid %s", path, uuid);
+	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
+		if (srv->uuid != NULL)
+			return;
+
+		g_dbus_proxy_get_property(proxy, "UUID", &iter);
+
+		dbus_message_iter_get_basic(&iter, &uuid);
+
+		srv->uuid = g_strdup(uuid);
+
+		DBG("uuid %s", uuid);
+	}
+}
+
+static int char_by_path(const void *a, const void *b)
+{
+	const struct characteristic *chr = a;
+	const char *path = b;
+
+	return g_strcmp0(chr->path, path);
+}
+
+static void proxy_removed(GDBusProxy *proxy, void *user_data)
+{
+	GSList *l;
+	struct service *srv = user_data;
+	struct characteristic *chr;
+	const char *interface;
+	const char *path;
+
+	interface = g_dbus_proxy_get_interface(proxy);
+
+	DBG("iface %s", interface);
+
+	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) != 0)
+		return;
+
+	path = g_dbus_proxy_get_path(proxy);
+
+	l = g_slist_find_custom(srv->chrs, path, char_by_path);
+	if (l == NULL)
+		return;
+
+	chr = l->data;
+
+	srv->chrs = g_slist_remove(srv->chrs, chr);
+
+	destroy_char(chr);
+}
+
+static void property_changed(GDBusProxy *proxy, const char *name,
+					DBusMessageIter *iter, void *user_data)
+{
+	const char *interface;
+
+	interface = g_dbus_proxy_get_interface(proxy);
+
+	DBG("iface %s", interface);
+}
+
+static struct service *new_service(const char *sender, const char *path)
+{
+	struct service *srv;
+
+	srv = g_new0(struct service, 1);
+
+	srv->path = g_strdup(path);
+	srv->client = g_dbus_client_new(btd_get_dbus_connection(),
+							sender, path);
+	if (srv->client == NULL) {
+		destroy_service(srv);
+		return NULL;
+	}
+
+	g_dbus_client_set_proxy_handlers(srv->client, proxy_added,
+					proxy_removed, property_changed, srv);
+
+	return srv;
+}
+
 static void destroy_application(void *data)
 {
 	struct application *app = data;
@@ -53,7 +209,7 @@ static void destroy_application(void *data)
 	DBG("app %p", app);
 
 	g_free(app->owner);
-	g_slist_free_full(app->services, g_free);
+	g_slist_free_full(app->services, destroy_service);
 
 	if (app->watch > 0)
 		g_dbus_remove_watch(btd_get_dbus_connection(), app->watch);
@@ -115,7 +271,8 @@ static DBusMessage *register_services(DBusConnection *conn,
 
 		dbus_message_iter_get_basic(&iter, &path);
 
-		app->services = g_slist_append(app->services, g_strdup(path));
+		app->services = g_slist_append(app->services,
+						new_service(app->owner, path));
 
 		DBG("path %s", path);
 
