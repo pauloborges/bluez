@@ -2888,7 +2888,7 @@ static GSList *device_services_from_record(struct btd_device *device,
 }
 
 static void device_register_primaries(struct btd_device *device,
-						GSList *prim_list, int psm)
+						GSList *prim_list)
 {
 	device->primaries = g_slist_concat(device->primaries, prim_list);
 }
@@ -2924,7 +2924,7 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 
 	primaries = device_services_from_record(device, req->profiles_added);
 	if (primaries)
-		device_register_primaries(device, primaries, ATT_PSM);
+		device_register_primaries(device, primaries);
 
 	device_probe_profiles(device, req->profiles_added);
 
@@ -3113,7 +3113,7 @@ static void register_all_services(struct browse_req *req, GSList *services)
 	g_slist_free_full(device->primaries, g_free);
 	device->primaries = NULL;
 
-	device_register_primaries(device, g_slist_copy(services), -1);
+	device_register_primaries(device, g_slist_copy(services));
 
 	device_probe_profiles(device, req->profiles_added);
 
