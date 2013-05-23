@@ -38,7 +38,7 @@
 #include "service.h"
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "monitor.h"
 #include "reporter.h"
 #include "manager.h"

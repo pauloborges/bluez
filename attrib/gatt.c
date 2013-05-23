@@ -36,7 +36,7 @@
 #include "lib/uuid.h"
 #include "att.h"
 #include "gattrib.h"
-#include "gatt.h"
+#include "gatt_lib.h"
 
 struct discover_primary {
 	GAttrib *attrib;

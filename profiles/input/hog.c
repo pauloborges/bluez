@@ -53,7 +53,7 @@
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
 #include "attio.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 
 #define HOG_UUID		"00001812-0000-1000-8000-00805f9b34fb"
 

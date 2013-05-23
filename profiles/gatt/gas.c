@@ -43,7 +43,7 @@
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
 #include "attio.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "log.h"
 #include "textfile.h"
 

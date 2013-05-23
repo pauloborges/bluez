@@ -96,7 +96,7 @@ gdbus_libgdbus_internal_la_SOURCES = gdbus/gdbus.h \
 				gdbus/object.c gdbus/client.c gdbus/polkit.c
 
 attrib_sources = attrib/att.h attrib/att-database.h attrib/att.c \
-		attrib/gatt.h attrib/gatt.c \
+		attrib/gatt_lib.h attrib/gatt.c \
 		attrib/gattrib.h attrib/gattrib.c \
 		attrib/gatt-service.h attrib/gatt-service.c
 
@@ -295,7 +295,7 @@ unit_test_lib_LDADD = lib/libbluetooth-internal.la @GLIB_LIBS@
 unit_tests += unit/test-gatt
 
 unit_test_gatt_SOURCES = unit/test-gatt.c \
-				attrib/gatt.h attrib/gatt.c \
+				attrib/gatt_lib.h attrib/gatt.c \
 				attrib/gattrib.h attrib/gattrib.c \
 				attrib/att.h attrib/att.c \
 				src/shared/util.c
