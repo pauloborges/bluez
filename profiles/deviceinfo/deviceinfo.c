@@ -38,7 +38,7 @@
 #include "attrib/gattrib.h"
 #include "attio.h"
 #include "attrib/att.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "log.h"
 
 #define PNP_ID_SIZE	7

@@ -33,7 +33,7 @@
 #include "lib/uuid.h"
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "btio/btio.h"
 #include "log.h"
 #include "src/shared/util.h"

@@ -41,7 +41,7 @@
 #include "attrib/gattrib.h"
 #include "attio.h"
 #include "attrib/att.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 
 #define THERMOMETER_INTERFACE		"org.bluez.Thermometer1"
 #define THERMOMETER_MANAGER_INTERFACE	"org.bluez.ThermometerManager1"

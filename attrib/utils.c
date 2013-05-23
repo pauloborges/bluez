@@ -38,7 +38,7 @@
 #include <btio/btio.h>
 #include "att.h"
 #include "gattrib.h"
-#include "gatt.h"
+#include "gatt_lib.h"
 #include "gatttool.h"
 
 GIOChannel *gatt_connect(const char *src, const char *dst,

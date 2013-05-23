@@ -39,7 +39,7 @@
 #include "error.h"
 #include "attrib/gattrib.h"
 #include "attrib/att.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "attio.h"
 #include "log.h"
 
