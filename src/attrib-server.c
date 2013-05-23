@@ -43,7 +43,6 @@
 #include "log.h"
 #include <btio/btio.h>
 #include "sdpd.h"
-#include "hcid.h"
 #include "adapter.h"
 #include "device.h"
 #include "attrib/gattrib.h"
