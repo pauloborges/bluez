@@ -4439,7 +4439,8 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 		return attio->id;
 	}
 
-	connect_le(device);
+	if (btd_adapter_get_powered(device->adapter))
+		connect_le(device);
 
 	return attio->id;
 }
