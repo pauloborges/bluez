@@ -40,7 +40,7 @@
 #include "att.h"
 #include <btio/btio.h>
 #include "gattrib.h"
-#include "gatt.h"
+#include "gatt_lib.h"
 #include "gatttool.h"
 
 static char *opt_src = NULL;

@@ -40,7 +40,7 @@
 #include "service.h"
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "attio.h"
 
 #define SCAN_PARAMETERS_UUID		"00001813-0000-1000-8000-00805f9b34fb"

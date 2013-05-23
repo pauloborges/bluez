@@ -46,7 +46,7 @@
 #include "hcid.h"
 #include "attrib/gattrib.h"
 #include "attrib/att.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "attrib/att-database.h"
 #include "attrib-server.h"
 #include "reporter.h"

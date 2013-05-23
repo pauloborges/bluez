@@ -33,7 +33,7 @@
 #include "lib/uuid.h"
 #include "gattrib.h"
 #include "att.h"
-#include "gatt.h"
+#include "gatt_lib.h"
 #include "att-database.h"
 #include "attrib-server.h"
 #include "gatt-service.h"

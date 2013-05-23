@@ -43,7 +43,7 @@
 #include "attrib/gatt-service.h"
 #include "attrib/gattrib.h"
 #include "attrib-server.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "profile.h"
 #include "error.h"
 #include "textfile.h"

@@ -60,7 +60,7 @@
 #include "error.h"
 #include "glib-helper.h"
 #include "sdp-client.h"
-#include "attrib/gatt.h"
+#include "attrib/gatt_lib.h"
 #include "agent.h"
 #include "storage.h"
 #include "attrib-server.h"
