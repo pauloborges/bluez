@@ -217,8 +217,7 @@ static const uint16_t uuid_list[] = {
 	0
 };
 
-static int device_browse_primary(struct btd_device *device, DBusMessage *msg,
-							gboolean secure);
+static int device_browse_primary(struct btd_device *device, DBusMessage *msg);
 static int device_browse_sdp(struct btd_device *device, DBusMessage *msg,
 							gboolean reverse);
 
@@ -1232,7 +1231,7 @@ static int device_resolve_svc(struct btd_device *dev, DBusMessage *msg)
 	if (device_is_bredr(dev))
 		return device_browse_sdp(dev, msg, FALSE);
 	else
-		return device_browse_primary(dev, msg, FALSE);
+		return device_browse_primary(dev, msg);
 }
 
 static struct btd_service *find_connectable_service(struct btd_device *dev,
@@ -3317,7 +3316,7 @@ done:
 
 	if (device->connect) {
 		if (!device->svc_resolved)
-			device_browse_primary(device, NULL, FALSE);
+			device_browse_primary(device, NULL);
 
 		if (err < 0)
 			reply = btd_error_failed(device->connect,
@@ -3458,13 +3457,11 @@ static void att_browse_cb(gpointer user_data)
 	discover_gatt_services(device);
 }
 
-static int device_browse_primary(struct btd_device *device, DBusMessage *msg,
-								gboolean secure)
+static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 {
 	struct btd_adapter *adapter = device->adapter;
 	struct att_callbacks *attcb;
 	struct browse_req *req;
-	BtIOSecLevel sec_level;
 
 	if (device->browse)
 		return -EBUSY;
@@ -3479,8 +3476,6 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg,
 		goto done;
 	}
 
-	sec_level = secure ? BT_IO_SEC_HIGH : BT_IO_SEC_LOW;
-
 	attcb = g_new0(struct att_callbacks, 1);
 	attcb->error = att_browse_error_cb;
 	attcb->success = att_browse_cb;
@@ -3493,7 +3488,6 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg,
 				BT_IO_OPT_DEST_BDADDR, &device->bdaddr,
 				BT_IO_OPT_DEST_TYPE, device->bdaddr_type,
 				BT_IO_OPT_CID, ATT_CID,
-				BT_IO_OPT_SEC_LEVEL, sec_level,
 				BT_IO_OPT_INVALID);
 
 	if (device->att_io == NULL) {
@@ -3683,7 +3677,7 @@ static gboolean start_discovery(gpointer user_data)
 	if (device_is_bredr(device))
 		device_browse_sdp(device, NULL, TRUE);
 	else
-		device_browse_primary(device, NULL, FALSE);
+		device_browse_primary(device, NULL);
 
 	device->discov_timer = 0;
 
@@ -3763,7 +3757,7 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 		if (device_is_bredr(device))
 			device_browse_sdp(device, bonding->msg, FALSE);
 		else
-			device_browse_primary(device, bonding->msg, FALSE);
+			device_browse_primary(device, bonding->msg);
 
 		bonding_request_free(bonding);
 	} else if (!device->svc_resolved) {
@@ -4242,7 +4236,7 @@ void btd_device_gatt_set_service_changed(struct btd_device *device,
 			prim->changed = TRUE;
 	}
 
-	device_browse_primary(device, NULL, FALSE);
+	device_browse_primary(device, NULL);
 }
 
 void btd_device_add_uuid(struct btd_device *device, const char *uuid)
