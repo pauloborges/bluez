@@ -3462,7 +3462,6 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 				BT_IO_OPT_DEST_BDADDR, &device->bdaddr,
 				BT_IO_OPT_DEST_TYPE, device->bdaddr_type,
 				BT_IO_OPT_CID, ATT_CID,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 				BT_IO_OPT_INVALID);
 
 	if (device->att_io == NULL) {
