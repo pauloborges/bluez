@@ -183,6 +183,14 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	return char_value;
 }
 
+void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
+				btd_attr_write_t write_cb)
+{
+	struct btd_attribute *attr = new_attribute(uuid, read_cb, write_cb);
+
+	add_attribute(attr);
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {
