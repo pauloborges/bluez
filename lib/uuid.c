@@ -276,3 +276,17 @@ int bt_uuid_strcmp(const void *a, const void *b)
 {
 	return strcasecmp(a, b);
 }
+
+int bt_uuid_len(const bt_uuid_t *uuid)
+{
+	switch (uuid->type) {
+	case BT_UUID16:
+		return 2;
+	case BT_UUID32:
+		return 4;
+	case BT_UUID128:
+		return 16;
+	default:
+		return 0;
+	}
+}

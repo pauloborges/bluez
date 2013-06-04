@@ -21,6 +21,33 @@
  *
  */
 
+struct btd_attribute;
+
+typedef void (*btd_attr_read_result_t) (int err, uint8_t *value, size_t len,
+					void *user_data);
+typedef void (*btd_attr_read_t) (struct btd_device *device,
+					btd_attr_read_result_t result,
+					void *user_data);
+
+typedef void (*btd_attr_write_result_t) (int err, void *user_data);
+typedef void (*btd_attr_write_t) (struct btd_device *device, uint8_t *value,
+					size_t len, uint16_t offset,
+					btd_attr_write_result_t result,
+					void *user_data);
+
+typedef void (*btd_attr_value_t) (uint8_t *value, size_t len, void *user_data);
+
 void btd_gatt_service_manager_init(void);
 
 void btd_gatt_service_manager_cleanup(void);
+
+/* btd_gatt_add_service - Add a service declaration to local attribute database.
+ * @uuid:	Service UUID.
+ * @primary:	Set to 'true' if this is a primary services. Otherwise, it will
+ *		be declared as a secondary service.
+ *
+ *
+ * Returns a reference to service declaration attribute. In case of error,
+ * NULL is returned.
+ */
+struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary);
