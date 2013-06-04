@@ -32,14 +32,23 @@
 #include <dbus/dbus.h>
 #include <gdbus/gdbus.h>
 
+#include "adapter.h"
+#include "device.h"
+
 #include "dbus-common.h"
 #include "log.h"
 #include "error.h"
+#include "uuid.h"
+#include "attrib/att.h"
 
 #include "gatt.h"
 
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+
+/* GATT Profile Attribute types */
+#define GATT_PRIM_SVC_UUID		0x2800
+#define GATT_SND_SVC_UUID		0x2801
 
 struct characteristic {
 	char *path;
@@ -60,6 +69,61 @@ struct application {
 };
 
 static GSList *applications = NULL;
+
+struct btd_attribute {
+	uint16_t handle;
+	bt_uuid_t type;
+	uint16_t value_len;
+	uint8_t value[0];
+};
+
+static GList *local_attribute_db = NULL;
+static uint16_t next_handle = 1;
+
+static struct btd_attribute *new_const_attribute(bt_uuid_t *type,
+							uint8_t *value,
+							uint16_t len)
+{
+	struct btd_attribute *attr = g_malloc0(sizeof(struct btd_attribute) +
+						len);
+
+	memcpy(&attr->type, type, sizeof(*type));
+	memcpy(&attr->value, value, len);
+	attr->value_len = len;
+
+	return attr;
+}
+
+static void add_attribute(struct btd_attribute *attr)
+{
+	/* TODO: Throw error if next_handle overflows */
+	attr->handle = next_handle++;
+
+	local_attribute_db = g_list_append(local_attribute_db, attr);
+}
+
+struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
+{
+	struct btd_attribute *attr;
+	bt_uuid_t type;
+	uint16_t len = bt_uuid_len(uuid);
+	uint8_t value[len];
+
+	/* Set attribute type */
+	if (primary)
+		bt_uuid16_create(&type, GATT_PRIM_SVC_UUID);
+	else
+		bt_uuid16_create(&type, GATT_SND_SVC_UUID);
+
+	/* Set attribute value */
+	att_put_uuid(*uuid, value);
+
+	attr = new_const_attribute(&type, value, len);
+
+	add_attribute(attr);
+
+	return attr;
+}
 
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
