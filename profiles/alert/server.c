@@ -46,7 +46,6 @@
 #include "attrib/gatt_lib.h"
 #include "profile.h"
 #include "error.h"
-#include "textfile.h"
 #include "attio.h"
 
 #define PHONE_ALERT_STATUS_SVC_UUID	0x180E
