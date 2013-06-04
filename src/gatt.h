@@ -51,3 +51,19 @@ void btd_gatt_service_manager_cleanup(void);
  * NULL is returned.
  */
 struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary);
+
+/* btd_gatt_add_char- Add a characteristic (declaration and value attributes)
+ * to local attribute database.
+ * @uuid:	Characteristic UUID.
+ * @properties:	Characteristic properties.
+ * @read_cb:	Callback that should be called once the characteristic value
+ *		attribute is read.
+ * @write_cb:	Callback that should be called once the characteristic value
+ *		attribute is written.
+ *
+ * Returns a reference to characteristic value attribute. In case of error,
+ * NULL is returned.
+ */
+struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
+					btd_attr_read_t read_cb,
+					btd_attr_write_t write_cb);

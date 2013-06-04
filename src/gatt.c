@@ -49,6 +49,7 @@
 /* GATT Profile Attribute types */
 #define GATT_PRIM_SVC_UUID		0x2800
 #define GATT_SND_SVC_UUID		0x2801
+#define GATT_CHARAC_UUID		0x2803
 
 struct characteristic {
 	char *path;
@@ -73,6 +74,8 @@ static GSList *applications = NULL;
 struct btd_attribute {
 	uint16_t handle;
 	bt_uuid_t type;
+	btd_attr_read_t read_cb;
+	btd_attr_write_t write_cb;
 	uint16_t value_len;
 	uint8_t value[0];
 };
@@ -90,6 +93,19 @@ static struct btd_attribute *new_const_attribute(bt_uuid_t *type,
 	memcpy(&attr->type, type, sizeof(*type));
 	memcpy(&attr->value, value, len);
 	attr->value_len = len;
+
+	return attr;
+}
+
+static struct btd_attribute *new_attribute(bt_uuid_t *type,
+						btd_attr_read_t read_cb,
+						btd_attr_write_t write_cb)
+{
+	struct btd_attribute *attr = g_new0(struct btd_attribute, 1);
+
+	memcpy(&attr->type, type, sizeof(*type));
+	attr->read_cb = read_cb;
+	attr->write_cb = write_cb;
 
 	return attr;
 }
@@ -123,6 +139,48 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 	add_attribute(attr);
 
 	return attr;
+}
+
+struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
+					btd_attr_read_t read_cb,
+					btd_attr_write_t write_cb)
+{
+	struct btd_attribute *char_decl, *char_value;
+	bt_uuid_t type;
+	/* Characteristic properties (1 octet), characteristic value attribute
+	 * handle (2 octets) and characteristic UUID (2 or 16 octets).
+	 */
+	uint16_t len = 1 + 2 + bt_uuid_len(uuid);
+	uint8_t value[len];
+
+	/*
+	 * Create and add the characteristic declaration attribute
+	 */
+	bt_uuid16_create(&type, GATT_CHARAC_UUID);
+
+	value[0] = properties;
+
+	/* Since we don't know yet the characteristic value attribute handle,
+	 * we skip and set it later.
+	 */
+
+	att_put_uuid(*uuid, &value[3]);
+
+	char_decl = new_const_attribute(&type, value, len);
+	add_attribute(char_decl);
+
+	/*
+	 * Create and add the characteristic value attribute
+	 */
+	char_value = new_attribute(uuid, read_cb, write_cb);
+	add_attribute(char_value);
+
+	/* Update characteristic value handle in characteristic declaration
+	 * attribute.
+	 */
+	att_put_u16(char_value->handle, &char_decl->value[1]);
+
+	return char_value;
 }
 
 static struct characteristic *new_characteristic(const char *path,
