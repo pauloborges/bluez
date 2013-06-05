@@ -75,7 +75,8 @@ struct foreach_data {
 	GAttrib *attrib;
 	bt_uuid_t type;
 	uint16_t end;
-	gatt_func_by_type_t func;
+	gatt_func_by_type_t func_by_type;
+	gatt_func_by_info_t func_by_info;
 	void *user_data;
 };
 
@@ -1271,7 +1272,7 @@ static void read_by_type_cb(uint8_t status, const uint8_t *pdu,
 
 		last_handle = handle;
 
-		data->func(err, handle, buf, len, data->user_data);
+		data->func_by_type(err, handle, buf, len, data->user_data);
 	}
 
 	att_data_list_free(list);
@@ -1310,10 +1311,91 @@ unsigned int gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
 	data = g_new0(struct foreach_data, 1);
 
 	data->attrib = g_attrib_ref(attrib);
-	data->func = func;
+	data->func_by_type = func;
 	memcpy(&data->type, type, sizeof(*type));
 	data->end = end;
 	data->user_data = user_data;
 
 	return foreach_by_type(data, start);
+}
+
+static unsigned int foreach_by_info(struct foreach_data *data, uint16_t start);
+
+static void find_info_cb(uint8_t status, const uint8_t *pdu,
+				uint16_t plen, void *user_data)
+{
+	struct foreach_data *data = user_data;
+	uint16_t last_handle = data->end;
+	uint8_t format;
+	unsigned int err = status;
+	struct att_data_list *list;
+	int i;
+
+	if (err == ATT_ECODE_ATTR_NOT_FOUND)
+		err = 0;
+
+	if (status)
+		goto done;
+
+	list = dec_find_info_resp(pdu, plen, &format);
+	if (list == NULL) {
+		err = ATT_ECODE_IO;
+		goto done;
+	}
+
+	for (i = 0; i < list->num; i++) {
+		uint8_t *value = list->data[i];
+		uint16_t handle = att_get_u16(value);
+		bt_uuid_t type;
+
+		if (format == ATT_FIND_INFO_RESP_FMT_16BIT)
+			type = att_get_uuid16(&value[2]);
+		else
+			type = att_get_uuid128(&value[2]);
+
+		last_handle = handle;
+
+		data->func_by_info(err, handle, &type, data->user_data);
+	}
+
+	att_data_list_free(list);
+
+	if (last_handle < data->end) {
+		foreach_by_info(data, last_handle + 1);
+		return;
+	}
+
+done:
+	g_attrib_unref(data->attrib);
+	g_free(data);
+}
+
+static unsigned int foreach_by_info(struct foreach_data *data, uint16_t start)
+{
+	uint8_t *buf;
+	size_t buflen;
+	guint16 plen;
+
+	buf = g_attrib_get_buffer(data->attrib, &buflen);
+	plen = enc_find_info_req(start, data->end, buf, buflen);
+	if (plen == 0)
+		return 0;
+
+	return g_attrib_send(data->attrib, 0, buf, plen, find_info_cb,
+								data, NULL);
+}
+
+unsigned int gatt_foreach_by_info(GAttrib *attrib, uint16_t start, uint16_t end,
+				gatt_func_by_info_t func, void *user_data)
+{
+	struct foreach_data *data;
+
+	data = g_new0(struct foreach_data, 1);
+
+	data->attrib = g_attrib_ref(attrib);
+	data->func_by_info = func;
+	data->end = end;
+	data->user_data = user_data;
+
+	return foreach_by_info(data, start);
 }
