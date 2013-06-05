@@ -71,6 +71,14 @@ struct discover_char {
 	void *user_data;
 };
 
+struct foreach_data {
+	GAttrib *attrib;
+	bt_uuid_t type;
+	uint16_t end;
+	gatt_func_by_type_t func;
+	void *user_data;
+};
+
 static void discover_primary_free(struct discover_primary *dp)
 {
 	g_slist_free_full(dp->primaries, g_free);
@@ -1230,4 +1238,82 @@ gboolean gatt_parse_record(const sdp_record_t *rec,
 		memcpy(prim_uuid, &uuid, sizeof(uuid_t));
 
 	return ret;
+}
+
+static unsigned int foreach_by_type(struct foreach_data *data, uint16_t start);
+
+static void read_by_type_cb(uint8_t status, const uint8_t *pdu,
+				uint16_t plen, void *user_data)
+{
+	struct foreach_data *data = user_data;
+	uint16_t last_handle = data->end;
+	unsigned int err = status;
+	struct att_data_list *list;
+	int i;
+
+	if (err == ATT_ECODE_ATTR_NOT_FOUND)
+		err = 0;
+
+	if (status)
+		goto done;
+
+	list = dec_read_by_type_resp(pdu, plen);
+	if (list == NULL) {
+		err = ATT_ECODE_IO;
+		goto done;
+	}
+
+	for (i = 0; i < list->num; i++) {
+		uint8_t *value = list->data[i];
+		uint16_t handle = att_get_u16(value);
+		uint8_t *buf = &value[2];
+		size_t len = list->len - sizeof(handle);
+
+		last_handle = handle;
+
+		data->func(err, handle, buf, len, data->user_data);
+	}
+
+	att_data_list_free(list);
+
+	if (last_handle < data->end) {
+		foreach_by_type(data, last_handle + 1);
+		return;
+	}
+
+done:
+	g_attrib_unref(data->attrib);
+	g_free(data);
+}
+
+static unsigned int foreach_by_type(struct foreach_data *data, uint16_t start)
+{
+	uint8_t *buf;
+	size_t buflen;
+	guint16 plen;
+
+	buf = g_attrib_get_buffer(data->attrib, &buflen);
+	plen = enc_read_by_type_req(start, data->end, &data->type, buf, buflen);
+	if (plen == 0)
+		return 0;
+
+	return g_attrib_send(data->attrib, 0, buf, plen, read_by_type_cb,
+								data, NULL);
+}
+
+unsigned int gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
+				bt_uuid_t *type, gatt_func_by_type_t func,
+				void *user_data)
+{
+	struct foreach_data *data;
+
+	data = g_new0(struct foreach_data, 1);
+
+	data->attrib = g_attrib_ref(attrib);
+	data->func = func;
+	memcpy(&data->type, type, sizeof(*type));
+	data->end = end;
+	data->user_data = user_data;
+
+	return foreach_by_type(data, start);
 }
