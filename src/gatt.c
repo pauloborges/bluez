@@ -268,6 +268,46 @@ GSList *btd_gatt_get_services(GList *database, bt_uuid_t *service)
 	return services;
 }
 
+static bool is_characteristic(struct btd_attribute *attr)
+{
+	if (attr->type.value.u16 == GATT_CHARAC_UUID)
+		return true;
+	else
+		return false;
+}
+
+GSList *btd_gatt_get_chars_decl(GList *database, struct btd_attribute *service,
+							bt_uuid_t *type)
+{
+	GList *list = g_list_find_custom(database, service, attribute_cmp);
+	GSList *chars = NULL;
+
+	if (!list)
+		goto error;
+
+	for (list = g_list_next(list); list && !is_service(list->data);
+						list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+
+		if (is_characteristic(attr)) {
+			GList *next_attr = g_list_next(list);
+			struct btd_attribute *value_decl = next_attr->data;
+
+			if (!bt_uuid_cmp(&value_decl->type, type))
+				chars = g_slist_prepend(chars, attr);
+
+			/*
+			 * Avoid searching for a characteristic declaration in
+			 * a characteristic value declaration.
+			*/
+			list = next_attr;
+		}
+	}
+
+error:
+	return chars;
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {
