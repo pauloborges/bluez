@@ -60,6 +60,10 @@ typedef void (*gatt_read_char_cb_t) (uint8_t status, const uint8_t *value,
 						size_t vlen, void *user_data);
 typedef void (*gatt_write_char_cb_t) (uint8_t status, void *user_data);
 
+typedef void (*gatt_func_by_type_t) (uint8_t status, uint16_t handle,
+					uint8_t *value, size_t vlen,
+					void *user_data);
+
 struct gatt_primary {
 	char uuid[MAX_LEN_UUID_STR + 1];
 	gboolean changed;
@@ -123,3 +127,7 @@ guint gatt_exchange_mtu(GAttrib *attrib, uint16_t mtu,
 gboolean gatt_parse_record(const sdp_record_t *rec,
 					uuid_t *prim_uuid, uint16_t *psm,
 					uint16_t *start, uint16_t *end);
+
+guint gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
+				bt_uuid_t *type, gatt_func_by_type_t func,
+				void *user_data);
