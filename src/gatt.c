@@ -527,6 +527,24 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	*database = insert_attribute(*database, attr);
 }
 
+static void insert_include(uint8_t status, uint16_t handle,
+					uint8_t *value, size_t vlen,
+					void *user_data)
+{
+	GList **database = user_data;
+	struct btd_attribute *attr;
+	bt_uuid_t uuid;
+
+	DBG("status %d handle %#4x", status, handle);
+
+	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
+
+	attr = new_const_attribute(&uuid, value, vlen);
+	attr->handle = handle;
+
+	*database = insert_attribute(*database, attr);
+}
+
 void gatt_discover_attributes(struct btd_device *device)
 {
 	GAttrib *attrib;
@@ -550,6 +568,10 @@ void gatt_discover_attributes(struct btd_device *device)
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 					insert_char_declaration, &database);
+
+	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+					insert_include, &database);
 }
 
 void btd_gatt_service_manager_init(void)
