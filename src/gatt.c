@@ -330,6 +330,18 @@ error:
 	return NULL;
 }
 
+struct btd_attribute *btd_gatt_get_char_value(GList *database,
+						struct btd_attribute *chr)
+{
+	GList *list = g_list_find_custom(database, chr, attribute_cmp);
+
+	if (!list)
+		return NULL;
+
+	list = g_list_next(list);
+	return list->data;
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {
