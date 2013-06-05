@@ -22,3 +22,4 @@
  */
 
 void ias_init(void);
+void ias_exit(void);
