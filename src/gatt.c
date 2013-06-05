@@ -245,6 +245,29 @@ void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
 	add_attribute(attr);
 }
 
+GSList *btd_gatt_get_services(GList *database, bt_uuid_t *service)
+{
+	GList *list;
+	GSList *services = NULL;
+
+	for (list = g_list_first(database); list; list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+
+		if (is_service(attr)) {
+			bt_uuid_t curr_svc;
+			if (attr->value_len == 2)
+				curr_svc = att_get_uuid16(attr->value);
+			else
+				curr_svc = att_get_uuid128(attr->value);
+
+			if (!bt_uuid_cmp(&curr_svc, service))
+				services = g_slist_prepend(services, attr);
+		}
+	}
+
+	return services;
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {

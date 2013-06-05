@@ -86,3 +86,13 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
  */
 void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
 				btd_attr_write_t write_cb);
+
+/* btd_gatt_get_services - Get a list with all services whose UUID matches the
+ * searched one.
+ * @database:	List of attributes where the services will be searched.
+ * @service:	Service UUID.
+ *
+ * Returns a list with all services' attributes. If there is no services,
+ * NULL is returned.
+ */
+GSList *btd_gatt_get_services(GList *database, bt_uuid_t *service);
