@@ -54,35 +54,6 @@
 #include "immalert.h"
 #include "ias.h"
 
-struct reporter_adapter {
-	struct btd_adapter *adapter;
-	GSList *devices;
-};
-
-static GSList *reporter_adapters;
-
-static int radapter_cmp(gconstpointer a, gconstpointer b)
-{
-	const struct reporter_adapter *radapter = a;
-	const struct btd_adapter *adapter = b;
-
-	if (radapter->adapter == adapter)
-		return 0;
-
-	return -1;
-}
-
-static struct reporter_adapter *
-find_reporter_adapter(struct btd_adapter *adapter)
-{
-	GSList *l = g_slist_find_custom(reporter_adapters, adapter,
-								radapter_cmp);
-	if (!l)
-		return NULL;
-
-	return l->data;
-}
-
 const char *get_alert_level_string(uint8_t level)
 {
 	switch (level) {
@@ -174,48 +145,18 @@ static const GDBusPropertyTable reporter_device_properties[] = {
 	{ }
 };
 
-static void unregister_reporter_device(gpointer data, gpointer user_data)
-{
-	struct btd_device *device = data;
-	struct reporter_adapter *radapter = user_data;
-	const char *path = device_get_path(device);
-
-	DBG("unregister on device %s", path);
-
-	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
-					PROXIMITY_REPORTER_INTERFACE);
-
-	radapter->devices = g_slist_remove(radapter->devices, device);
-	btd_device_unref(device);
-}
-
-static void register_reporter_device(struct btd_device *device,
-					struct reporter_adapter *radapter)
-{
-	const char *path = device_get_path(device);
-
-	DBG("register on device %s", path);
-
-	g_dbus_register_interface(btd_get_dbus_connection(), path,
-					PROXIMITY_REPORTER_INTERFACE,
-					NULL, NULL, reporter_device_properties,
-					device, NULL);
-
-	btd_device_ref(device);
-	radapter->devices = g_slist_prepend(radapter->devices, device);
-}
-
 int reporter_device_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
-	struct reporter_adapter *radapter;
-	struct btd_adapter *adapter = device_get_adapter(device);
+	const char *path = device_get_path(device);
 
-	radapter = find_reporter_adapter(adapter);
-	if (!radapter)
-		return -1;
+	g_dbus_register_interface(btd_get_dbus_connection(), path,
+				PROXIMITY_REPORTER_INTERFACE,
+				NULL, NULL, reporter_device_properties,
+				btd_device_ref(device),
+				(GDBusDestroyFunction) btd_device_unref);
 
-	register_reporter_device(device, radapter);
+	DBG("Register Proximity Reporter for %s", path);
 
 	return 0;
 }
@@ -223,29 +164,21 @@ int reporter_device_probe(struct btd_service *service)
 void reporter_device_remove(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
-	struct reporter_adapter *radapter;
-	struct btd_adapter *adapter = device_get_adapter(device);
+	const char *path = device_get_path(device);
 
-	radapter = find_reporter_adapter(adapter);
-	if (!radapter)
-		return;
+	DBG("Unregister Proximity Reporter for %s", path);
 
-	unregister_reporter_device(device, radapter);
+	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
+					PROXIMITY_REPORTER_INTERFACE);
 }
 
 int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
 {
-	struct reporter_adapter *radapter;
-
-	radapter = g_new0(struct reporter_adapter, 1);
-	radapter->adapter = adapter;
-
 	link_loss_register(adapter);
 	register_tx_power(adapter);
 	imm_alert_register(adapter);
 	ias_init();
 
-	reporter_adapters = g_slist_prepend(reporter_adapters, radapter);
 	DBG("Proximity Reporter for adapter %p", adapter);
 
 	return 0;
@@ -254,17 +187,7 @@ int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
 void reporter_adapter_remove(struct btd_profile *p,
 						struct btd_adapter *adapter)
 {
-	struct reporter_adapter *radapter = find_reporter_adapter(adapter);
-	if (!radapter)
-		return;
-
-	g_slist_foreach(radapter->devices, unregister_reporter_device,
-								radapter);
-
 	link_loss_unregister(adapter);
 	imm_alert_unregister(adapter);
 	ias_exit();
-
-	reporter_adapters = g_slist_remove(reporter_adapters, radapter);
-	g_free(radapter);
 }
