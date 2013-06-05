@@ -96,3 +96,15 @@ void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
  * NULL is returned.
  */
 GSList *btd_gatt_get_services(GList *database, bt_uuid_t *service);
+
+/* btd_gatt_get_chars_decl - Get a list with all characteristics of the
+ * specified type in the specified service.
+ * @database:	List of attributes where the characteristics will be searched.
+ * @service:	Service declaration.
+ * @type:	Characteristic type.
+ *
+ * Returns a list with all characteristics' attributes. If there is no
+ * characteristic, NULL is returned.
+ */
+GSList *btd_gatt_get_chars_decl(GList *database, struct btd_attribute *service,
+				bt_uuid_t *type);
