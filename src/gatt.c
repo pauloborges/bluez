@@ -141,6 +141,36 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 	return attr;
 }
 
+static bool is_service(struct btd_attribute *attr)
+{
+	if (attr->type.type != BT_UUID16)
+		return false;
+
+	if (attr->type.value.u16 == GATT_PRIM_SVC_UUID ||
+				attr->type.value.u16 == GATT_SND_SVC_UUID)
+		return true;
+	else
+		return false;
+
+}
+void btd_gatt_remove_service(struct btd_attribute *service)
+{
+	GList *list = g_list_find(local_attribute_db, service);
+
+	if (list == NULL)
+		return;
+
+	/* Remove service declaration attribute */
+	g_free(list->data);
+	list = g_list_delete_link(list, list);
+
+	/* Remove all characteristics until next service declaration */
+	while (list && !is_service(list->data)) {
+		g_free(list->data);
+		list = g_list_delete_link(list, list);
+	}
+}
+
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					btd_attr_read_t read_cb,
 					btd_attr_write_t write_cb)
