@@ -71,3 +71,8 @@ void ias_init(void)
 	ial = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
 							NULL, write_ial_cb);
 }
+
+void ias_exit(void)
+{
+	btd_gatt_remove_service(ias);
+}
