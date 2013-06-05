@@ -308,6 +308,28 @@ error:
 	return chars;
 }
 
+struct btd_attribute *btd_gatt_get_char_desc(GList *database,
+						struct btd_attribute *chr,
+						bt_uuid_t *type)
+{
+	GList *list = g_list_find_custom(database, chr, attribute_cmp);
+
+	if (!list)
+		goto error;
+
+	for (list = g_list_nth(list, 2); list && !is_service(list->data)
+					&& !is_characteristic(list->data);
+						list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+
+		if (!bt_uuid_cmp(&attr->type, type))
+			return attr;
+	}
+
+error:
+	return NULL;
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {
