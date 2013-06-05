@@ -515,7 +515,8 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 {
 	GList **database = user_data;
 	struct btd_attribute *attr;
-	bt_uuid_t uuid;
+	bt_uuid_t uuid, value_uuid;
+	uint16_t value_handle;
 
 	DBG("status %d handle %#4x", status, handle);
 
@@ -523,6 +524,21 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
+
+	*database = insert_attribute(*database, attr);
+
+	value_handle = att_get_u16(&value[1]);
+
+	vlen -= 3; /* Discarding 2 (handle) + 1 (properties) bytes */
+
+	if (vlen == 2)
+		value_uuid = att_get_uuid16(&value[3]);
+	else if (vlen == 16)
+		value_uuid = att_get_uuid128(&value[3]);
+
+	/* FIXME: missing callbacks */
+	attr = new_attribute(&value_uuid, NULL, NULL);
+	attr->handle = value_handle;
 
 	*database = insert_attribute(*database, attr);
 }
@@ -543,6 +559,26 @@ static void insert_include(uint8_t status, uint16_t handle,
 	attr->handle = handle;
 
 	*database = insert_attribute(*database, attr);
+}
+
+static void insert_char_descriptor(uint8_t status, uint16_t handle,
+					bt_uuid_t *type, void *user_data)
+{
+	GList **database = user_data, *l;
+	struct btd_attribute *attr;
+
+	DBG("status %d handle %#4x", status, handle);
+
+	attr = new_attribute(type, NULL, NULL);
+	attr->handle = handle;
+
+	l = g_list_find_custom(*database, attr, attribute_cmp);
+	if (l != NULL) {
+		g_free(attr);
+		return;
+	}
+
+	*database = g_list_insert_sorted(*database, attr, attribute_cmp);
 }
 
 void gatt_discover_attributes(struct btd_device *device)
@@ -572,6 +608,9 @@ void gatt_discover_attributes(struct btd_device *device)
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 					insert_include, &database);
+
+	gatt_foreach_by_info(attrib, 0x0001, 0xffff, insert_char_descriptor,
+					&database);
 }
 
 void btd_gatt_service_manager_init(void)
