@@ -208,6 +208,8 @@ struct btd_device {
 	guint		cleanup_id;
 	guint		store_id;
 	unsigned int	powered_id;		/* Tracks adapter powered */
+
+	GList		*attribute_database;
 };
 
 static const uint16_t uuid_list[] = {
@@ -4532,6 +4534,11 @@ struct btd_service *btd_device_get_service(struct btd_device *dev,
 	}
 
 	return NULL;
+}
+
+GList *device_get_attribute_database(struct btd_device *device)
+{
+	return device->attribute_database;
 }
 
 void btd_device_init(void)
