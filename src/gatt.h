@@ -41,6 +41,8 @@ void btd_gatt_service_manager_init(void);
 
 void btd_gatt_service_manager_cleanup(void);
 
+void gatt_discover_attributes(struct btd_device *device);
+
 /* btd_gatt_add_service - Add a service declaration to local attribute database.
  * @uuid:	Service UUID.
  * @primary:	Set to 'true' if this is a primary services. Otherwise, it will

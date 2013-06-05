@@ -40,6 +40,8 @@
 #include "error.h"
 #include "uuid.h"
 #include "attrib/att.h"
+#include "attrib/gattrib.h"
+#include "attrib/gatt_lib.h"
 
 #include "gatt.h"
 
@@ -116,6 +118,18 @@ static void add_attribute(struct btd_attribute *attr)
 	attr->handle = next_handle++;
 
 	local_attribute_db = g_list_append(local_attribute_db, attr);
+}
+
+static int attribute_cmp(gconstpointer a, gconstpointer b)
+{
+	const struct btd_attribute *attr1 = a, *attr2 = b;
+
+	return attr1->handle - attr2->handle;
+}
+
+static GList *insert_attribute(GList *attr_database, struct btd_attribute *attr)
+{
+	return g_list_insert_sorted(attr_database, attr, attribute_cmp);
 }
 
 struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
@@ -458,6 +472,85 @@ static const GDBusMethodTable methods[] = {
 	{ GDBUS_METHOD("UnregisterServices", NULL, NULL, unregister_services) },
 	{ }
 };
+
+static void insert_primary_service(uint8_t status, uint16_t handle,
+					uint8_t *value, size_t vlen,
+					void *user_data)
+{
+	GList **database = user_data;
+	struct btd_attribute *attr;
+	bt_uuid_t uuid;
+
+	DBG("status %d handle %#4x", status, handle);
+
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+
+	attr = new_const_attribute(&uuid, value, vlen);
+	attr->handle = handle;
+
+	*database = insert_attribute(*database, attr);
+}
+
+static void insert_secondary_service(uint8_t status, uint16_t handle,
+					uint8_t *value, size_t vlen,
+					void *user_data)
+{
+	GList **database = user_data;
+	struct btd_attribute *attr;
+	bt_uuid_t uuid;
+
+	DBG("status %d handle %#4x", status, handle);
+
+	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
+
+	attr = new_const_attribute(&uuid, value, vlen);
+	attr->handle = handle;
+
+	*database = insert_attribute(*database, attr);
+}
+
+static void insert_char_declaration(uint8_t status, uint16_t handle,
+					uint8_t *value, size_t vlen,
+					void *user_data)
+{
+	GList **database = user_data;
+	struct btd_attribute *attr;
+	bt_uuid_t uuid;
+
+	DBG("status %d handle %#4x", status, handle);
+
+	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
+
+	attr = new_const_attribute(&uuid, value, vlen);
+	attr->handle = handle;
+
+	*database = insert_attribute(*database, attr);
+}
+
+void gatt_discover_attributes(struct btd_device *device)
+{
+	GAttrib *attrib;
+	bt_uuid_t uuid;
+	GList *database = device_get_attribute_database(device);
+
+	attrib = device_get_attrib(device);
+	if (attrib == NULL)
+		return;
+
+	DBG("device %p", device);
+
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+					insert_primary_service, &database);
+
+	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+					insert_secondary_service, &database);
+
+	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+					insert_char_declaration, &database);
+}
 
 void btd_gatt_service_manager_init(void)
 {

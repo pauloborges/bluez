@@ -22,6 +22,8 @@
  *
  */
 
+#include "attrib/gattrib.h"
+
 #define DEVICE_INTERFACE	"org.bluez.Device1"
 
 struct btd_device;
