@@ -64,6 +64,9 @@ typedef void (*gatt_func_by_type_t) (uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data);
 
+typedef void (*gatt_func_by_info_t) (uint8_t status, uint16_t handle,
+					bt_uuid_t *type, void *user_data);
+
 struct gatt_primary {
 	char uuid[MAX_LEN_UUID_STR + 1];
 	gboolean changed;
@@ -130,4 +133,8 @@ gboolean gatt_parse_record(const sdp_record_t *rec,
 
 guint gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
 				bt_uuid_t *type, gatt_func_by_type_t func,
+				void *user_data);
+
+unsigned int gatt_foreach_by_info(GAttrib *attrib, uint16_t start,
+				uint16_t end, gatt_func_by_info_t func,
 				void *user_data);
