@@ -121,3 +121,14 @@ GSList *btd_gatt_get_chars_decl(GList *database, struct btd_attribute *service,
 struct btd_attribute *btd_gatt_get_char_desc(GList *database,
 						struct btd_attribute *chr,
 						bt_uuid_t *type);
+
+/* btd_gatt_get_char_value - Get the characteristic value declaration of a
+ * characteristic.
+ * @database:	List of attributes where the descriptor will be searched.
+ * @chr:	Characteristic declaration.
+ *
+ * Returns the characteristic value declaration attribute. If there is no
+ * such attribute, NULL is returned.
+ */
+struct btd_attribute *btd_gatt_get_char_value(GList *database,
+						struct btd_attribute *chr);
