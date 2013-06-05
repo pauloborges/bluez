@@ -263,6 +263,7 @@ void reporter_adapter_remove(struct btd_profile *p,
 
 	link_loss_unregister(adapter);
 	imm_alert_unregister(adapter);
+	ias_exit();
 
 	reporter_adapters = g_slist_remove(reporter_adapters, radapter);
 	g_free(radapter);
