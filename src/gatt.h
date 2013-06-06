@@ -165,3 +165,9 @@ void btd_gatt_write_attribute(struct btd_device *device,
 unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
 						btd_attr_value_t value_cb,
 						void *user_data);
+
+/* btd_gatt_remove_notifier - Remove a notifier from an attribute.
+ * @attr:	Target attribute.
+ * @id:		Notifier ID.
+ */
+void btd_gatt_remove_notifier(struct btd_attribute *attr, unsigned int id);
