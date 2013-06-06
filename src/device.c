@@ -61,6 +61,7 @@
 #include "glib-helper.h"
 #include "sdp-client.h"
 #include "attrib/gatt_lib.h"
+#include "gatt.h"
 #include "agent.h"
 #include "storage.h"
 #include "attrib-server.h"
@@ -3449,6 +3450,8 @@ static void discover_gatt_services(struct btd_device *device)
 	search = g_new0(struct included_search, 1);
 	search->req = device->browse;
 	gatt_discover_primary(device->attrib, NULL, primary_cb, search);
+
+	gatt_discover_attributes(device);
 }
 
 static void att_browse_cb(gpointer user_data)
