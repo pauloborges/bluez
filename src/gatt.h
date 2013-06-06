@@ -132,3 +132,13 @@ struct btd_attribute *btd_gatt_get_char_desc(GList *database,
  */
 struct btd_attribute *btd_gatt_get_char_value(GList *database,
 						struct btd_attribute *chr);
+
+/* btd_gatt_read_attribute - Read the value of an attribute.
+ * @attr:	Attribute to be read.
+ * @result:	Callback function to be called with the result.
+ * @user_data:	Data to be passed to the result callback function.
+ */
+void btd_gatt_read_attribute(struct btd_device *device,
+					struct btd_attribute *attr,
+					btd_attr_read_result_t result,
+					void *user_data);
