@@ -1017,6 +1017,48 @@ void gatt_discover_attributes(struct btd_device *device)
 					&root);
 }
 
+static void read_name_cb(struct btd_device *device,
+				btd_attr_read_result_t result, void *user_data)
+{
+	struct btd_adapter *adapter = device_get_adapter(device);
+	const char *name = btd_adapter_get_name(adapter);
+
+	result(0, (uint8_t *) name, strlen(name), user_data);
+}
+
+static void add_gap(void)
+{
+	struct btd_attribute *char_value, *char_decl;
+	bt_uuid_t uuid;
+	uint8_t value[5];
+	uint8_t appearance[2];
+
+	/* Primary Service: <<GAP Service>> */
+	bt_uuid16_create(&uuid, GENERIC_ACCESS_PROFILE_ID);
+	btd_gatt_add_service(&uuid, true);
+
+	/* Declaration and Value: <<Device Name>>*/
+	bt_uuid16_create(&uuid, GATT_CHARAC_DEVICE_NAME);
+	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_name_cb, NULL);
+
+	/* Declaration: <<Appearance >>*/
+	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
+	value[0] = ATT_CHAR_PROPER_READ;
+	att_put_u16(GATT_CHARAC_APPEARANCE, &value[3]);
+	char_decl = new_const_attribute(&uuid, value, sizeof(value));
+	add_attribute(char_decl);
+
+	/* Value: <<Appearance>> */
+	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
+	att_put_u16(0x0000, &appearance);
+	char_value = new_const_attribute(&uuid, appearance,
+						sizeof(appearance));
+	add_attribute(char_value);
+
+	/* Setting handle in the <<Appearance>> Declaration */
+	att_put_u16(char_value->handle, &char_decl->value[1]);
+}
+
 static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
 {
 	DBG("");
@@ -1060,6 +1102,8 @@ void btd_gatt_service_manager_init(void)
 		g_error_free(gerr);
 		/* Doesn't have LE support, continue */
 	}
+
+	add_gap();
 
 	g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
