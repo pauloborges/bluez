@@ -39,6 +39,7 @@
 #include "log.h"
 #include "error.h"
 #include "uuid.h"
+#include "btio.h"
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
 #include "attrib/gatt_lib.h"
@@ -97,6 +98,8 @@ static unsigned int next_nofifier_id = 1;
 
 static GList *local_attribute_db = NULL;
 static uint16_t next_handle = 1;
+static GIOChannel *bredr_io = NULL;
+static GIOChannel *le_io = NULL;
 
 static void destroy_attribute(struct btd_attribute *attr)
 {
@@ -1014,8 +1017,47 @@ void gatt_discover_attributes(struct btd_device *device)
 					&root);
 }
 
+static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
+{
+	DBG("");
+
+	if (gerr) {
+		error("ATT Connect: %s", gerr->message);
+		return;
+	}
+}
+
 void btd_gatt_service_manager_init(void)
 {
+	GError *gerr = NULL;
+
+	DBG("Starting GATT server");
+
+	bredr_io = bt_io_listen(connect_event, NULL, NULL, NULL, &gerr,
+					BT_IO_OPT_SOURCE_BDADDR, BDADDR_ANY,
+					BT_IO_OPT_PSM, ATT_PSM,
+					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+					BT_IO_OPT_INVALID);
+
+	if (bredr_io == NULL) {
+		error("%s", gerr->message);
+		g_error_free(gerr);
+		return;
+	}
+
+	/* LE socket */
+	le_io = bt_io_listen(connect_event, NULL, NULL, NULL, &gerr,
+					BT_IO_OPT_SOURCE_BDADDR, BDADDR_ANY,
+					BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
+					BT_IO_OPT_CID, ATT_CID,
+					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+					BT_IO_OPT_INVALID);
+	if (le_io == NULL) {
+		error("%s", gerr->message);
+		g_error_free(gerr);
+		/* Doesn't have LE support, continue */
+	}
+
 	g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
@@ -1025,4 +1067,14 @@ void btd_gatt_service_manager_cleanup(void)
 {
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1");
+
+	if (le_io != NULL) {
+		g_io_channel_shutdown(le_io, FALSE, NULL);
+		g_io_channel_unref(le_io);
+	}
+
+	if (bredr_io != NULL) {
+		g_io_channel_shutdown(bredr_io, FALSE, NULL);
+		g_io_channel_unref(bredr_io);
+	}
 }
