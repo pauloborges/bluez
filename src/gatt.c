@@ -404,6 +404,14 @@ unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
 	return id;
 }
 
+void btd_gatt_remove_notifier(struct btd_attribute *attr, unsigned int id)
+{
+	if (!attr->notifiers)
+		return;
+
+	g_hash_table_remove(attr->notifiers, &id);
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {
