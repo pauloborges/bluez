@@ -1031,6 +1031,9 @@ void btd_gatt_service_manager_init(void)
 {
 	GError *gerr = NULL;
 
+	if (!(g_dbus_get_flags() & G_DBUS_FLAG_ENABLE_EXPERIMENTAL))
+		return;
+
 	DBG("Starting GATT server");
 
 	bredr_io = bt_io_listen(connect_event, NULL, NULL, NULL, &gerr,
