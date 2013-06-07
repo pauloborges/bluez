@@ -82,6 +82,16 @@ struct btd_attribute {
 	uint8_t value[0];
 };
 
+struct device_root {
+	GList *database;
+	const char *path;
+};
+
+struct attribute_iface {
+	struct btd_attribute *attr;
+	char *path;
+};
+
 static GList *local_attribute_db = NULL;
 static uint16_t next_handle = 1;
 
@@ -473,11 +483,173 @@ static const GDBusMethodTable methods[] = {
 	{ }
 };
 
+static gboolean service_property_get_uuid(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	struct attribute_iface *iface = data;
+	struct btd_attribute *attr = iface->attr;
+	bt_uuid_t uuid, uuid128;
+	char uuidstr[MAX_LEN_UUID_STR];
+	const char *str = uuidstr;
+
+	if (attr->value_len == 2) {
+		uuid = att_get_uuid16(attr->value);
+		bt_uuid_to_uuid128(&uuid, &uuid128);
+	} else
+		uuid128 = att_get_uuid128(attr->value);
+
+	bt_uuid_to_string(&uuid128, uuidstr, sizeof(uuidstr));
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &str);
+
+	return TRUE;
+}
+
+static gboolean service_property_get_includes(
+					const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	return TRUE;
+}
+
+static gboolean service_property_exists_includes(
+					const GDBusPropertyTable *property,
+					void *data)
+{
+	return FALSE;
+}
+
+static const GDBusPropertyTable service_properties[] = {
+	{ "UUID", "s", service_property_get_uuid },
+	{ "Includes", "as", service_property_get_includes, NULL,
+					service_property_exists_includes },
+	{ }
+};
+
+
+static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
+							void *user_data)
+{
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
+							void *user_data)
+{
+	return dbus_message_new_method_return(msg);
+}
+
+static const GDBusMethodTable chr_methods[] = {
+	{ GDBUS_METHOD("ReadValue", GDBUS_ARGS({"offset", "q"}),
+				GDBUS_ARGS({"value", "ay"}),
+				chr_read_value) },
+	{ GDBUS_METHOD("WriteValue",
+				GDBUS_ARGS({"offset", "q"}, {"value", "ay"}),
+				NULL, chr_write_value) },
+	{ }
+};
+
+static gboolean chr_get_uuid(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	struct attribute_iface *iface = data;
+	struct btd_attribute *attr = iface->attr;
+	bt_uuid_t uuid, uuid128;
+	char uuidstr[MAX_LEN_UUID_STR];
+	const char *str = uuidstr;
+
+	if (attr->value_len - 3 == 2) {
+		uuid = att_get_uuid16(&attr->value[3]);
+		bt_uuid_to_uuid128(&uuid, &uuid128);
+	} else if (attr->value_len - 3 == 16)
+		uuid128 = att_get_uuid128(&attr->value[3]);
+
+	bt_uuid_to_string(&uuid128, uuidstr, sizeof(uuidstr));
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &str);
+
+	return TRUE;
+}
+
+static gboolean chr_get_value(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	return TRUE;
+}
+
+static void chr_set_value(const GDBusPropertyTable *property,
+				DBusMessageIter *iter,
+				GDBusPendingPropertySet id, void *user_data)
+{
+	g_dbus_pending_property_error(id, ERROR_INTERFACE ".Failed",
+							"Not Supported");
+}
+
+static gboolean chr_exist_value(const GDBusPropertyTable *property,
+								void *data)
+{
+	return FALSE;
+}
+
+static gboolean chr_get_perms(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	return TRUE;
+}
+
+static gboolean chr_exist_perms(const GDBusPropertyTable *property,
+								void *data)
+{
+	return FALSE;
+}
+
+static gboolean chr_get_auth(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	return TRUE;
+}
+
+static gboolean chr_exist_auth(const GDBusPropertyTable *property, void *data)
+{
+	return FALSE;
+}
+
+static gboolean chr_get_descriptors(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	return TRUE;
+}
+
+static void chr_set_descriptors(const GDBusPropertyTable *property,
+				DBusMessageIter *iter,
+				GDBusPendingPropertySet id, void *user_data)
+{
+	g_dbus_pending_property_success(id);
+}
+
+static gboolean chr_exist_descriptors(const GDBusPropertyTable *property,
+								void *data)
+{
+	return FALSE;
+}
+
+static const GDBusPropertyTable chr_properties[] = {
+	{ "UUID", "s", chr_get_uuid },
+	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value },
+	{ "Permissions", "y", chr_get_perms, NULL, chr_exist_perms },
+	{ "Authenticate", "b", chr_get_auth, NULL, chr_exist_auth },
+	{ "Properties", "y", chr_get_perms, NULL, chr_exist_perms },
+	{ "Descriptors", "a{a{sv}}", chr_get_descriptors, chr_set_descriptors,
+						chr_exist_descriptors },
+	{ }
+};
+
 static void insert_primary_service(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	GList **database = user_data;
+	struct device_root *root = user_data;
+	struct attribute_iface *iface;
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -488,14 +660,26 @@ static void insert_primary_service(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	*database = insert_attribute(*database, attr);
+	root->database = insert_attribute(root->database, attr);
+
+	iface = g_new0(struct attribute_iface, 1);
+	iface->attr = attr;
+	iface->path = g_strdup_printf("%s/service%d", root->path, handle);
+
+	/* FIXME: free how? */
+	if (g_dbus_register_interface(btd_get_dbus_connection(),
+					iface->path, SERVICE_INTERFACE,
+					NULL, NULL, service_properties, iface,
+					NULL) == FALSE)
+		error("Unable to register service interface for %s",
+							iface->path);
 }
 
 static void insert_secondary_service(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	GList **database = user_data;
+	struct device_root *root = user_data;
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -506,15 +690,35 @@ static void insert_secondary_service(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	*database = insert_attribute(*database, attr);
+	root->database = insert_attribute(root->database, attr);
+}
+
+static struct btd_attribute *find_parent_service(GList *database,
+						struct btd_attribute *attr)
+{
+	GList *l;
+
+	l = g_list_find(database, attr);
+	if (l == NULL)
+		return NULL;
+
+	for (; l; l = g_list_previous(l)) {
+		struct btd_attribute *a = l->data;
+
+		if (is_service(a))
+			return a;
+	}
+
+	return NULL;
 }
 
 static void insert_char_declaration(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	GList **database = user_data;
-	struct btd_attribute *attr;
+	struct device_root *root = user_data;
+	struct attribute_iface *iface;
+	struct btd_attribute *attr, *parent;
 	bt_uuid_t uuid, value_uuid;
 	uint16_t value_handle;
 
@@ -525,7 +729,14 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	*database = insert_attribute(*database, attr);
+	iface = g_new0(struct attribute_iface, 1);
+	iface->attr = attr;
+
+	root->database = insert_attribute(root->database, attr);
+	parent = find_parent_service(root->database, attr);
+
+	iface->path = g_strdup_printf("%s/service%d/characteristics%d",
+					root->path, parent->handle, handle);
 
 	value_handle = att_get_u16(&value[1]);
 
@@ -540,14 +751,20 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	attr = new_attribute(&value_uuid, NULL, NULL);
 	attr->handle = value_handle;
 
-	*database = insert_attribute(*database, attr);
+	root->database = insert_attribute(root->database, attr);
+
+	if (g_dbus_register_interface(btd_get_dbus_connection(), iface->path,
+					CHARACTERISTIC_INTERFACE,
+					chr_methods, NULL, chr_properties,
+					iface, NULL) == FALSE)
+		error("Couldn't register characteristic interface");
 }
 
 static void insert_include(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	GList **database = user_data;
+	struct device_root *root = user_data;
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -558,70 +775,74 @@ static void insert_include(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	*database = insert_attribute(*database, attr);
+	root->database = insert_attribute(root->database, attr);
 }
 
 static void insert_char_descriptor(uint8_t status, uint16_t handle,
 					bt_uuid_t *type, void *user_data)
 {
-	GList **database = user_data, *l;
+	struct device_root *root = user_data;
 	struct btd_attribute *attr;
+	GList *l;
 
 	DBG("status %d handle %#4x", status, handle);
 
 	attr = new_attribute(type, NULL, NULL);
 	attr->handle = handle;
 
-	l = g_list_find_custom(*database, attr, attribute_cmp);
+	l = g_list_find_custom(root->database, attr, attribute_cmp);
 	if (l != NULL) {
 		g_free(attr);
 		return;
 	}
 
-	*database = g_list_insert_sorted(*database, attr, attribute_cmp);
+	root->database = insert_attribute(root->database, attr);
 }
 
 void gatt_discover_attributes(struct btd_device *device)
 {
 	GAttrib *attrib;
 	bt_uuid_t uuid;
-	GList *database = device_get_attribute_database(device);
+	struct device_root root;
 
 	attrib = device_get_attrib(device);
 	if (attrib == NULL)
 		return;
 
+	root.database = device_get_attribute_database(device);
+	root.path = device_get_path(device);
+
 	DBG("device %p", device);
 
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_primary_service, &database);
+					insert_primary_service, &root);
 
 	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_secondary_service, &database);
+					insert_secondary_service, &root);
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_char_declaration, &database);
+					insert_char_declaration, &root);
 
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_include, &database);
+					insert_include, &root);
 
 	gatt_foreach_by_info(attrib, 0x0001, 0xffff, insert_char_descriptor,
-					&database);
+					&root);
 }
 
 void btd_gatt_service_manager_init(void)
 {
 	g_dbus_register_interface(btd_get_dbus_connection(),
-				"/org/bluez", "org.bluez.gatt.ServiceManager1",
-				methods, NULL, NULL, NULL, NULL);
+			"/org/bluez", "org.bluez.gatt.ServiceManager1",
+			methods, NULL, NULL, NULL, NULL);
 }
 
 void btd_gatt_service_manager_cleanup(void)
 {
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
-				"/org/bluez", "org.bluez.gatt.ServiceManager1");
+			"/org/bluez", "org.bluez.gatt.ServiceManager1");
 }
