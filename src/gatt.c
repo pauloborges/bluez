@@ -48,11 +48,6 @@
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
 
-/* GATT Profile Attribute types */
-#define GATT_PRIM_SVC_UUID		0x2800
-#define GATT_SND_SVC_UUID		0x2801
-#define GATT_CHARAC_UUID		0x2803
-
 struct characteristic {
 	char *path;
 	char *uuid;
