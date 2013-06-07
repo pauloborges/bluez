@@ -94,9 +94,15 @@ struct notifier {
 	void *user_data;
 };
 
-static unsigned int next_nofifier_id = 1;
+struct channel {
+	struct btd_device *device;
+	GAttrib *attrib;
+	uint16_t mtu;
+	unsigned int id;
+};
 
 static GList *local_attribute_db = NULL;
+static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
@@ -124,6 +130,17 @@ void btd_gatt_dump_local_attribute_database(void)
 	DBG("======== begin =========");
 	g_list_foreach(local_attribute_db, print_attribute, NULL);
 	DBG("========= end ==========");
+}
+
+static void send_error(GAttrib *attrib, uint8_t opcode, uint16_t handle,
+								uint8_t ecode)
+{
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
+	size_t plen;
+
+	plen = enc_error_resp(opcode, handle, ecode, pdu, sizeof(pdu));
+
+	g_attrib_send(attrib, 0, pdu, plen, NULL, NULL, NULL);
 }
 
 static void destroy_attribute(struct btd_attribute *attr)
@@ -1120,14 +1137,126 @@ static void add_gatt(void)
 	btd_gatt_dump_local_attribute_database();
 }
 
+static void channel_free(struct channel *channel)
+{
+	g_attrib_unref(channel->attrib);
+	g_free(channel);
+}
+
+static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	DBG("%p Disconnected", user_data);
+
+	return FALSE;
+}
+
+static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
+							gpointer user_data)
+{
+	struct channel *channel = user_data;
+
+	switch (ipdu[0]) {
+	case ATT_OP_ERROR:
+		break;
+
+	/* Requests */
+	case ATT_OP_WRITE_CMD:
+		break;
+
+	case ATT_OP_MTU_REQ:
+	case ATT_OP_FIND_INFO_REQ:
+	case ATT_OP_FIND_BY_TYPE_REQ:
+	case ATT_OP_READ_BY_TYPE_REQ:
+	case ATT_OP_READ_REQ:
+	case ATT_OP_READ_BLOB_REQ:
+	case ATT_OP_READ_MULTI_REQ:
+	case ATT_OP_READ_BY_GROUP_REQ:
+	case ATT_OP_WRITE_REQ:
+	case ATT_OP_PREP_WRITE_REQ:
+	case ATT_OP_EXEC_WRITE_REQ:
+	case ATT_OP_SIGNED_WRITE_CMD:
+		send_error(channel->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_REQ_NOT_SUPP);
+		break;
+
+	/* Responses */
+	case ATT_OP_MTU_RESP:
+	case ATT_OP_FIND_INFO_RESP:
+	case ATT_OP_FIND_BY_TYPE_RESP:
+	case ATT_OP_READ_BY_TYPE_RESP:
+	case ATT_OP_READ_RESP:
+	case ATT_OP_READ_BLOB_RESP:
+	case ATT_OP_READ_MULTI_RESP:
+	case ATT_OP_READ_BY_GROUP_RESP:
+	case ATT_OP_WRITE_RESP:
+	case ATT_OP_PREP_WRITE_RESP:
+	case ATT_OP_EXEC_WRITE_RESP:
+	case ATT_OP_HANDLE_CNF:
+		break;
+
+	/* Notification & Indication */
+	case ATT_OP_HANDLE_NOTIFY:
+	case ATT_OP_HANDLE_IND:
+		break;
+	}
+}
+
 static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
 {
-	DBG("");
+	struct channel *channel;
+	uint16_t mtu, cid;
+	char src[18], dst[18];
+	struct btd_adapter *adapter;
+	bdaddr_t sba;
+	bdaddr_t dba;
 
 	if (gerr) {
 		error("ATT Connect: %s", gerr->message);
 		return;
 	}
+
+	channel = g_new0(struct channel, 1);
+
+	if (!bt_io_get(io, NULL,
+			BT_IO_OPT_SOURCE_BDADDR, &sba,
+			BT_IO_OPT_DEST_BDADDR, &dba,
+			BT_IO_OPT_CID, &cid,
+			BT_IO_OPT_IMTU, &mtu,
+			BT_IO_OPT_INVALID)) {
+		g_free(channel);
+		return;
+	}
+
+	ba2str(&sba, src);
+	ba2str(&dba, dst);
+
+	adapter = adapter_find(&sba);
+	if (!adapter) {
+		error("Can't find adapter %s", src);
+		g_free(channel);
+		return;
+	}
+
+	channel->device = adapter_find_device(adapter, &dba);
+	if (!channel->device) {
+		error("Can't find device %s", dst);
+		return;
+	}
+
+	channel->attrib = g_attrib_new(io);
+	channel->mtu = (cid == ATT_CID ? ATT_DEFAULT_LE_MTU : mtu);
+
+	DBG("%p Connected: %s < %s CID: %d, MTU: %d", channel, src, dst,
+								cid, mtu);
+
+	g_attrib_register(channel->attrib, GATTRIB_ALL_EVENTS,
+				GATTRIB_ALL_HANDLES, channel_handler_cb,
+				channel, NULL);
+
+	channel->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
+				G_IO_ERR | G_IO_HUP, channel_watch_cb,
+				channel, (GDestroyNotify) channel_free);
 }
 
 void btd_gatt_service_manager_init(void)
