@@ -78,6 +78,7 @@ struct btd_attribute {
 	bt_uuid_t type;
 	btd_attr_read_t read_cb;
 	btd_attr_write_t write_cb;
+	GHashTable *notifiers;
 	uint16_t value_len;
 	uint8_t value[0];
 };
@@ -92,8 +93,22 @@ struct attribute_iface {
 	char *path;
 };
 
+struct notifier {
+	btd_attr_value_t value_cb;
+	void *user_data;
+};
+
+static unsigned int next_nofifier_id = 1;
+
 static GList *local_attribute_db = NULL;
 static uint16_t next_handle = 1;
+
+static void destroy_attribute(struct btd_attribute *attr)
+{
+	if (attr->notifiers != NULL)
+		g_hash_table_destroy(attr->notifiers);
+	g_free(attr);
+}
 
 static struct btd_attribute *new_const_attribute(bt_uuid_t *type,
 							uint8_t *value,
@@ -118,6 +133,8 @@ static struct btd_attribute *new_attribute(bt_uuid_t *type,
 	memcpy(&attr->type, type, sizeof(*type));
 	attr->read_cb = read_cb;
 	attr->write_cb = write_cb;
+	attr->notifiers = g_hash_table_new_full(g_int_hash, g_int_equal, NULL,
+								g_free);
 
 	return attr;
 }
@@ -185,12 +202,12 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 		return;
 
 	/* Remove service declaration attribute */
-	g_free(list->data);
+	destroy_attribute(list->data);
 	list = g_list_delete_link(list, list);
 
 	/* Remove all characteristics until next service declaration */
 	while (list && !is_service(list->data)) {
-		g_free(list->data);
+		destroy_attribute(list->data);
 		list = g_list_delete_link(list, list);
 	}
 }
@@ -365,6 +382,26 @@ void btd_gatt_write_attribute(struct btd_device *device,
 		attr->write_cb(device, value, len, offset, result, user_data);
 	else
 		result(ATT_ECODE_WRITE_NOT_PERM, user_data);
+}
+
+unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
+						btd_attr_value_t value_cb,
+						void *user_data)
+{
+	struct notifier *notif;
+	unsigned int id;
+
+	if (!attr->notifiers)
+		return -1;
+
+	notif = g_new0(struct notifier, 1);
+	notif->value_cb = value_cb;
+	notif->user_data = user_data;
+
+	id = next_nofifier_id++;
+	g_hash_table_insert(attr->notifiers, &id, notif);
+
+	return id;
 }
 
 static struct characteristic *new_characteristic(const char *path,
