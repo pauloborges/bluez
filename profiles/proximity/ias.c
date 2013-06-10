@@ -47,6 +47,7 @@ static struct btd_attribute *ias = NULL;
 static struct btd_attribute *ial = NULL;
 
 static void write_ial_cb(struct btd_device *device,
+			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {

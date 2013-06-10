@@ -388,7 +388,7 @@ void btd_gatt_read_attribute(struct btd_device *device,
 					void *user_data)
 {
 	if (attr->read_cb)
-		attr->read_cb(device, result, user_data);
+		attr->read_cb(device, attr, result, user_data);
 	else if (attr->value_len > 0)
 		result(0, attr->value, attr->value_len, user_data);
 	else
@@ -402,7 +402,8 @@ void btd_gatt_write_attribute(struct btd_device *device,
 				void *user_data)
 {
 	if (attr->write_cb)
-		attr->write_cb(device, value, len, offset, result, user_data);
+		attr->write_cb(device, attr, value, len, offset,
+						result, user_data);
 	else
 		result(ATT_ECODE_WRITE_NOT_PERM, user_data);
 }
@@ -1043,7 +1044,9 @@ void gatt_discover_attributes(struct btd_device *device)
 }
 
 static void read_name_cb(struct btd_device *device,
-				btd_attr_read_result_t result, void *user_data)
+				struct btd_attribute *attr,
+				btd_attr_read_result_t result,
+				void *user_data)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
 	const char *name = btd_adapter_get_name(adapter);
@@ -1052,6 +1055,7 @@ static void read_name_cb(struct btd_device *device,
 }
 
 static void read_appearance_cb(struct btd_device *device,
+				struct btd_attribute *attr,
 				btd_attr_read_result_t result,
 				void *user_data)
 {
@@ -1060,10 +1064,10 @@ static void read_appearance_cb(struct btd_device *device,
 	result(0, appearance, sizeof(appearance), user_data);
 }
 
-static void ccc_written_cb(struct btd_device *device, uint8_t *value,
-					size_t len, uint16_t offset,
-					btd_attr_write_result_t result,
-					void *user_data)
+static void ccc_written_cb(struct btd_device *device,
+			struct btd_attribute *attr, uint8_t *value,
+			size_t len, uint16_t offset,
+			btd_attr_write_result_t result, void *user_data)
 {
 	uint16_t ccc = att_get_u16(value);
 
