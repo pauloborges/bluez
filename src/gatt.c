@@ -101,6 +101,11 @@ struct channel {
 	unsigned int id;
 };
 
+struct attr_read_data {
+	btd_attr_read_result_t func;
+	void* user_data;
+};
+
 static GList *local_attribute_db = NULL;
 static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
@@ -410,6 +415,40 @@ void btd_gatt_read_attribute(struct btd_device *device,
 		result(0, attr->value, attr->value_len, user_data);
 	else
 		result(ATT_ECODE_READ_NOT_PERM, NULL, 0, user_data);
+}
+
+static void client_read_attribute_response(uint8_t status,
+						const uint8_t *value,
+						size_t vlen, void *user_data)
+{
+	struct attr_read_data *data = user_data;
+	btd_attr_read_result_t func = data->func;
+
+	if (status)
+		func(status, NULL, 0, data->user_data);
+	else
+		func(status, (uint8_t *) value, vlen, data->user_data);
+
+	g_free(data);
+}
+
+static void client_read_attribute_cb(struct btd_device *device,
+						struct btd_attribute *attr,
+						btd_attr_read_result_t result,
+						void *user_data)
+{
+	GAttrib *attrib = device_get_attrib(device);
+	struct attr_read_data *data;
+
+	data = g_new0(struct attr_read_data, 1);
+	data->func = result;
+	data->user_data = user_data;
+
+	if (gatt_read_char(attrib, attr->handle,
+				client_read_attribute_response, data) == 0) {
+		result(ATT_ECODE_UNLIKELY, NULL, 0, user_data);
+		g_free(data);
+	}
 }
 
 void btd_gatt_write_attribute(struct btd_device *device,
@@ -973,8 +1012,8 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	else if (vlen == 16)
 		value_uuid = att_get_uuid128(&value[3]);
 
-	/* FIXME: missing callbacks */
-	attr = new_attribute(&value_uuid, NULL, NULL);
+	/* FIXME: missing write callback */
+	attr = new_attribute(&value_uuid, client_read_attribute_cb, NULL);
 	attr->handle = value_handle;
 
 	root->database = insert_attribute(root->database, attr);
