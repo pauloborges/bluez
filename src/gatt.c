@@ -1143,6 +1143,42 @@ static void channel_free(struct channel *channel)
 	g_free(channel);
 }
 
+static gint find_by_handle(gconstpointer a, gconstpointer b)
+{
+	const struct btd_attribute *attr = a;
+
+	return attr->handle - GPOINTER_TO_UINT(b);
+}
+
+static void read_request(struct channel *channel, const uint8_t *ipdu,
+								size_t ilen)
+{
+	uint16_t handle;
+	GList *list;
+	struct btd_attribute *attr;
+	uint8_t opdu[channel->mtu];
+	size_t plen;
+
+	if (dec_read_req(ipdu, ilen, &handle) == 0) {
+		send_error(channel->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_INVALID_PDU);
+		return;
+	}
+
+	list = g_list_find_custom(local_attribute_db,
+				GUINT_TO_POINTER(handle), find_by_handle);
+	if (!list) {
+		send_error(channel->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_INVALID_HANDLE);
+		return;
+	}
+
+	attr = list->data;
+
+	plen = enc_read_resp(attr->value, attr->value_len, opdu, sizeof(opdu));
+	g_attrib_send(channel->attrib, 0, opdu, plen, NULL, NULL, NULL);
+}
+
 static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
@@ -1164,11 +1200,14 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	case ATT_OP_WRITE_CMD:
 		break;
 
+	case ATT_OP_READ_REQ:
+		read_request(channel, ipdu, ilen);
+		break;
+
 	case ATT_OP_MTU_REQ:
 	case ATT_OP_FIND_INFO_REQ:
 	case ATT_OP_FIND_BY_TYPE_REQ:
 	case ATT_OP_READ_BY_TYPE_REQ:
-	case ATT_OP_READ_REQ:
 	case ATT_OP_READ_BLOB_REQ:
 	case ATT_OP_READ_MULTI_REQ:
 	case ATT_OP_READ_BY_GROUP_REQ:
