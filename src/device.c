@@ -4541,6 +4541,11 @@ GList *device_get_attribute_database(struct btd_device *device)
 	return device->attribute_database;
 }
 
+GAttrib *device_get_attrib(struct btd_device *device)
+{
+	return device->attrib;
+}
+
 void btd_device_init(void)
 {
 	dbus_conn = btd_get_dbus_connection();
