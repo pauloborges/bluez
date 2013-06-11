@@ -70,6 +70,8 @@ void ias_init(void)
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
 	ial = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
 							NULL, write_ial_cb);
+
+	btd_gatt_dump_local_attribute_database();
 }
 
 void ias_exit(void)
