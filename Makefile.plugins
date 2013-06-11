@@ -73,8 +73,14 @@ builtin_sources += profiles/health/mcap_lib.h profiles/health/mcap_internal.h \
 			profiles/health/hdp_util.h profiles/health/hdp_util.c
 endif
 
+if EXPERIMENTAL
+builtin_modules += gatt
+builtin_sources += profiles/gatt/gatt.c
+else
 builtin_modules += gatt
 builtin_sources += profiles/gatt/gas.c
+endif
+
 
 builtin_modules += scanparam
 builtin_sources += profiles/scanparam/scan.c
