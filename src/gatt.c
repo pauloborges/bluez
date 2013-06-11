@@ -80,13 +80,13 @@ struct btd_attribute {
 };
 
 struct device_root {
+	struct btd_device *device;
 	GList *database;
-	const char *path;
 };
 
 struct attribute_iface {
+	struct btd_device *device;
 	struct btd_attribute *attr;
-	char *path;
 };
 
 struct notifier {
@@ -774,11 +774,45 @@ static const GDBusPropertyTable service_properties[] = {
 	{ }
 };
 
+static void read_value_response(int err, uint8_t *value, size_t len,
+					void *user_data)
+{
+	DBusMessage *reply, *msg = user_data;
+	DBusMessageIter iter, array;
+
+	if (err) {
+		reply = btd_error_failed(msg, att_ecode2str(err));
+		goto done;
+	}
+
+	reply = dbus_message_new_method_return(msg);
+
+	dbus_message_iter_init(reply, &iter);
+
+	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_BYTE_AS_STRING, &array);
+	dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+						&value, len);
+
+	dbus_message_iter_close_container(&iter, &array);
+
+done:
+	g_dbus_send_message(btd_get_dbus_connection(), reply);
+}
 
 static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
-	return dbus_message_new_method_return(msg);
+	struct attribute_iface *iface = user_data;
+	GList *database = device_get_attribute_database(iface->device);
+	struct btd_attribute *value;
+
+	value = btd_gatt_get_char_value(database, iface->attr);
+
+	btd_gatt_read_attribute(iface->device, value,
+				read_value_response, dbus_message_ref(msg));
+
+	return NULL;
 }
 
 static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
@@ -916,6 +950,7 @@ static void insert_primary_service(uint8_t status, uint16_t handle,
 	struct device_root *root = user_data;
 	struct attribute_iface *iface;
 	struct btd_attribute *attr;
+	char *path;
 	bt_uuid_t uuid;
 
 	DBG("status %d handle %#4x", status, handle);
@@ -929,15 +964,19 @@ static void insert_primary_service(uint8_t status, uint16_t handle,
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
-	iface->path = g_strdup_printf("%s/service%d", root->path, handle);
+	iface->device = root->device;
+
+	path = g_strdup_printf("%s/service%d", device_get_path(root->device),
+						handle);
 
 	/* FIXME: free how? */
 	if (g_dbus_register_interface(btd_get_dbus_connection(),
-					iface->path, SERVICE_INTERFACE,
+					path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties, iface,
 					NULL) == FALSE)
-		error("Unable to register service interface for %s",
-							iface->path);
+		error("Unable to register service interface for %s", path);
+
+	g_free(path);
 }
 
 static void insert_secondary_service(uint8_t status, uint16_t handle,
@@ -986,6 +1025,7 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	struct btd_attribute *attr, *parent;
 	bt_uuid_t uuid, value_uuid;
 	uint16_t value_handle;
+	char *path;
 
 	DBG("status %d handle %#4x", status, handle);
 
@@ -996,12 +1036,13 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
+	iface->device = root->device;
 
 	root->database = insert_attribute(root->database, attr);
 	parent = find_parent_service(root->database, attr);
 
-	iface->path = g_strdup_printf("%s/service%d/characteristics%d",
-					root->path, parent->handle, handle);
+	path = g_strdup_printf("%s/service%d/characteristics%d",
+			device_get_path(root->device), parent->handle, handle);
 
 	value_handle = att_get_u16(&value[1]);
 
@@ -1018,11 +1059,13 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 
 	root->database = insert_attribute(root->database, attr);
 
-	if (g_dbus_register_interface(btd_get_dbus_connection(), iface->path,
+	if (g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
 					iface, NULL) == FALSE)
 		error("Couldn't register characteristic interface");
+
+	g_free(path);
 }
 
 static void insert_include(uint8_t status, uint16_t handle,
@@ -1075,7 +1118,7 @@ void gatt_discover_attributes(struct btd_device *device)
 		return;
 
 	root.database = device_get_attribute_database(device);
-	root.path = device_get_path(device);
+	root.device = device;
 
 	DBG("device %p", device);
 
