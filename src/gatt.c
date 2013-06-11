@@ -341,7 +341,7 @@ static bool is_characteristic(struct btd_attribute *attr)
 GSList *btd_gatt_get_chars_decl(GList *database, struct btd_attribute *service,
 							bt_uuid_t *type)
 {
-	GList *list = g_list_find_custom(database, service, attribute_cmp);
+	GList *list = g_list_find(database, service);
 	GSList *chars = NULL;
 
 	if (!list)
@@ -374,7 +374,7 @@ struct btd_attribute *btd_gatt_get_char_desc(GList *database,
 						struct btd_attribute *chr,
 						bt_uuid_t *type)
 {
-	GList *list = g_list_find_custom(database, chr, attribute_cmp);
+	GList *list = g_list_find(database, chr);
 
 	if (!list)
 		goto error;
@@ -395,7 +395,7 @@ error:
 struct btd_attribute *btd_gatt_get_char_value(GList *database,
 						struct btd_attribute *chr)
 {
-	GList *list = g_list_find_custom(database, chr, attribute_cmp);
+	GList *list = g_list_find(database, chr);
 
 	if (!list)
 		return NULL;
