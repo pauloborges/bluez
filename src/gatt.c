@@ -1150,6 +1150,102 @@ static gint find_by_handle(gconstpointer a, gconstpointer b)
 	return attr->handle - GPOINTER_TO_UINT(b);
 }
 
+static void read_by_type(struct channel *channel, const uint8_t *ipdu,
+								size_t ilen)
+{
+	uint8_t opdu[channel->mtu];
+	GList *list;
+	uint16_t start, end;
+	uint8_t vlen;
+	bt_uuid_t uuid;
+	int i = 0;
+
+	if (dec_read_by_type_req(ipdu, ilen, &start, &end, &uuid) == 0) {
+		send_error(channel->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_INVALID_PDU);
+		return;
+	}
+
+	if (start == 0x0000 || start > end) {
+		send_error(channel->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_INVALID_HANDLE);
+		return;
+	}
+
+	for (list = local_attribute_db; list; list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+
+		if (attr->handle < start)
+			continue;
+
+		if (attr->handle > end)
+			break;
+
+		if (bt_uuid_cmp(&attr->type, &uuid) != 0)
+			continue;
+
+		/* If this is the first match then we set attribute opcode,
+		 * length and the first element of attribute data list from
+		 * the Read by Type Response.
+		 */
+		if (i == 0) {
+			opdu[i++] = ATT_OP_READ_BY_TYPE_RESP;
+
+			/* According to Core v4.0 spec, page 1853, if the
+			 * attribute value is longer than (ATT_MTU - 4) or 253
+			 * octets, whichever is smaller, then the first
+			 * (ATT_MTU - 4) or 253 octets shall be included in
+			 * this response.
+			 */
+			if (attr->value_len > MIN(channel->mtu - 4, 253))
+				vlen = MIN(channel->mtu - 4, 253);
+			else
+				vlen = attr->value_len;
+
+			opdu[i++] = 2 + vlen;
+
+			/* Copy attribute handle into opdu */
+			att_put_u16(attr->handle, &opdu[i]);
+			i += 2;
+
+			/* Copy attribute value into opdu */
+			memcpy(&opdu[i], attr->value, vlen);
+			i += vlen;
+
+			continue;
+		}
+
+		/* If there is no more space in the opdu for this handle-value
+		 * pair, the opdu is done.
+		 */
+		if (i + 2 + vlen > channel->mtu)
+			break;
+
+		/* If the attribute value has different length from the others
+		 * then this attribute doesn't belongs to this response and the
+		 * opdu is done.
+		 */
+		if (attr->value_len != vlen)
+			break;
+
+		/* Copy attribute handle into opdu */
+		att_put_u16(attr->handle, &opdu[i]);
+		i += 2;
+
+		/* Copy attribute value into opdu */
+		memcpy(&opdu[i], attr->value, vlen);
+		i += vlen;
+	}
+
+	if (i == 0) {
+		send_error(channel->attrib, ipdu[0], start,
+						ATT_ECODE_ATTR_NOT_FOUND);
+		return;
+	}
+
+	g_attrib_send(channel->attrib, 0, opdu, i, NULL, NULL, NULL);
+}
+
 static void read_request(struct channel *channel, const uint8_t *ipdu,
 								size_t ilen)
 {
@@ -1336,10 +1432,13 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 		read_request(channel, ipdu, ilen);
 		break;
 
+	case ATT_OP_READ_BY_TYPE_REQ:
+		read_by_type(channel, ipdu, ilen);
+		break;
+
 	case ATT_OP_MTU_REQ:
 	case ATT_OP_FIND_INFO_REQ:
 	case ATT_OP_FIND_BY_TYPE_REQ:
-	case ATT_OP_READ_BY_TYPE_REQ:
 	case ATT_OP_READ_BLOB_REQ:
 	case ATT_OP_READ_MULTI_REQ:
 	case ATT_OP_WRITE_REQ:
