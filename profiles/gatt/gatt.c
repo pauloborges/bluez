@@ -24,12 +24,37 @@
 #include <config.h>
 #endif
 
+#include "lib/uuid.h"
 #include "plugin.h"
+#include "adapter.h"
+#include "profile.h"
+#include "service.h"
 #include "log.h"
+
+static int gatt_driver_probe(struct btd_service *service)
+{
+	DBG("Probing device");
+
+	return 0;
+}
+
+static void gatt_driver_remove(struct btd_service *service)
+{
+	DBG("Removing device");
+}
+
+static struct btd_profile gatt_profile = {
+	.name		= "gatt-gap-profile",
+	.remote_uuid	= GATT_UUID,
+	.device_probe	= gatt_driver_probe,
+	.device_remove	= gatt_driver_remove
+};
 
 static int gatt_init(void)
 {
 	DBG("Initializing GATT/GAP plugin");
+
+	btd_profile_register(&gatt_profile);
 
 	return 0;
 }
@@ -37,6 +62,8 @@ static int gatt_init(void)
 static void gatt_exit(void)
 {
 	DBG("Finishing GATT/GAP plugin");
+
+	btd_profile_unregister(&gatt_profile);
 }
 
 BLUETOOTH_PLUGIN_DEFINE(gatt, VERSION, BLUETOOTH_PLUGIN_PRIORITY_DEFAULT,
