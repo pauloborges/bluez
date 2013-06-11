@@ -101,6 +101,31 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 
+static void print_attribute(gpointer a, gpointer b)
+{
+	struct btd_attribute *attr = a;
+	char type[MAX_LEN_UUID_STR];
+	char value_str[attr->value_len * 2 + 1];
+	int i;
+
+	memset(type, 0, sizeof(type));
+	bt_uuid_to_string(&attr->type, type, sizeof(type));
+
+	memset(value_str, 0, sizeof(value_str));
+	for (i = 0; i < attr->value_len; i++)
+		sprintf(&value_str[i * 2], "%02X", attr->value[i]);
+
+	DBG("handle: 0x%04x Type: %s read_cb: %p write_cb: %p value: %s",
+			attr->handle, type, attr->read_cb, attr->write_cb, value_str);
+}
+
+void btd_gatt_dump_local_attribute_database(void)
+{
+	DBG("======== begin =========");
+	g_list_foreach(local_attribute_db, print_attribute, NULL);
+	DBG("========= end ==========");
+}
+
 static void destroy_attribute(struct btd_attribute *attr)
 {
 	if (attr->notifiers != NULL)
@@ -1088,6 +1113,8 @@ static void add_gatt(void)
 	/* Descriptor: <<Client Characteristic Configuration>> */
 	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
 	btd_gatt_add_char_desc(&uuid, NULL, ccc_written_cb);
+
+	btd_gatt_dump_local_attribute_database();
 }
 
 static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
