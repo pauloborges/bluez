@@ -1572,6 +1572,32 @@ done:
 	}
 }
 
+static void write_cmd(struct channel *channel, const uint8_t *ipdu,
+								size_t ilen)
+{
+	uint16_t handle;
+	GList *list;
+	struct btd_attribute *attr;
+	size_t vlen;
+	uint8_t value[channel->mtu];
+
+	if (dec_write_cmd(ipdu, ilen, &handle, value, &vlen) == 0)
+		return;
+
+	list = g_list_find_custom(local_attribute_db,
+				GUINT_TO_POINTER(handle), find_by_handle);
+
+	if (!list)
+		return;
+
+	attr = list->data;
+
+	if (attr->write_cb == NULL)
+		return;
+
+	attr->write_cb(channel->device, attr, value, vlen, 0, NULL, NULL);
+}
+
 static void write_request_result(int err, void *user_data)
 {
 	struct att_transaction *trans = user_data;
@@ -1650,6 +1676,7 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 
 	/* Requests */
 	case ATT_OP_WRITE_CMD:
+		write_cmd(channel, ipdu, ilen);
 		break;
 
 	case ATT_OP_WRITE_REQ:
