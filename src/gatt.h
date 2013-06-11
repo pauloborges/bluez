@@ -37,6 +37,8 @@ typedef void (*btd_attr_write_t) (struct btd_device *device, uint8_t *value,
 
 typedef void (*btd_attr_value_t) (uint8_t *value, size_t len, void *user_data);
 
+void btd_gatt_dump_local_attribute_database(void);
+
 void btd_gatt_service_manager_init(void);
 
 void btd_gatt_service_manager_cleanup(void);
