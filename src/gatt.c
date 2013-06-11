@@ -1567,6 +1567,46 @@ done:
 	}
 }
 
+static void write_request_result(int err, void *user_data)
+{
+	/* FIXME */
+}
+
+static void write_request(struct channel *channel,
+					const uint8_t *ipdu, size_t ilen)
+{
+	GList *list;
+	struct btd_attribute *attr;
+	size_t vlen;
+	uint16_t handle;
+	uint8_t value[channel->mtu];
+
+	if (dec_write_req(ipdu, ilen, &handle, value, &vlen) == 0) {
+		send_error(channel->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_INVALID_PDU);
+		return;
+	}
+
+	list = g_list_find_custom(local_attribute_db, GUINT_TO_POINTER(handle),
+								find_by_handle);
+	if (!list) {
+		send_error(channel->attrib, ipdu[0], handle,
+						ATT_ECODE_INVALID_HANDLE);
+		return;
+	}
+
+	attr = list->data;
+
+	if (attr->write_cb == NULL) {
+		send_error(channel->attrib, ipdu[0], handle,
+						ATT_ECODE_WRITE_NOT_PERM);
+		return;
+	}
+
+	attr->write_cb(channel->device, attr, value, vlen, 0,
+						write_request_result, NULL);
+}
+
 static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
@@ -1588,6 +1628,10 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	case ATT_OP_WRITE_CMD:
 		break;
 
+	case ATT_OP_WRITE_REQ:
+		write_request(channel, ipdu, ilen);
+		break;
+
 	case ATT_OP_READ_REQ:
 		read_request(channel, ipdu, ilen);
 		break;
@@ -1601,7 +1645,6 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	case ATT_OP_FIND_BY_TYPE_REQ:
 	case ATT_OP_READ_BLOB_REQ:
 	case ATT_OP_READ_MULTI_REQ:
-	case ATT_OP_WRITE_REQ:
 	case ATT_OP_PREP_WRITE_REQ:
 	case ATT_OP_EXEC_WRITE_REQ:
 	case ATT_OP_SIGNED_WRITE_CMD:
