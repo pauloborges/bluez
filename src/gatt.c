@@ -79,11 +79,6 @@ struct btd_attribute {
 	uint8_t value[0];
 };
 
-struct device_root {
-	struct btd_device *device;
-	GList *database;
-};
-
 struct attribute_iface {
 	struct btd_device *device;
 	struct btd_attribute *attr;
@@ -804,7 +799,7 @@ static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
 	struct attribute_iface *iface = user_data;
-	GList *database = device_get_attribute_database(iface->device);
+	GList *database = btd_device_get_attribute_database(iface->device);
 	struct btd_attribute *value;
 
 	value = btd_gatt_get_char_value(database, iface->attr);
@@ -947,9 +942,10 @@ static void insert_primary_service(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	struct device_root *root = user_data;
+	struct btd_device *device = user_data;
 	struct attribute_iface *iface;
 	struct btd_attribute *attr;
+	GList *database;
 	char *path;
 	bt_uuid_t uuid;
 
@@ -960,13 +956,16 @@ static void insert_primary_service(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	root->database = insert_attribute(root->database, attr);
+	database = btd_device_get_attribute_database(device);
+
+	device_set_attribute_database(device,
+					insert_attribute(database, attr));
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
-	iface->device = root->device;
+	iface->device = device;
 
-	path = g_strdup_printf("%s/service%d", device_get_path(root->device),
+	path = g_strdup_printf("%s/service%d", device_get_path(device),
 						handle);
 
 	/* FIXME: free how? */
@@ -983,7 +982,8 @@ static void insert_secondary_service(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	struct device_root *root = user_data;
+	struct btd_device *device = user_data;
+	GList *database = btd_device_get_attribute_database(device);
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -994,7 +994,8 @@ static void insert_secondary_service(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	root->database = insert_attribute(root->database, attr);
+	device_set_attribute_database(device,
+					insert_attribute(database, attr));
 }
 
 static struct btd_attribute *find_parent_service(GList *database,
@@ -1020,7 +1021,8 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	struct device_root *root = user_data;
+	struct btd_device *device = user_data;
+	GList *database = btd_device_get_attribute_database(device);
 	struct attribute_iface *iface;
 	struct btd_attribute *attr, *parent;
 	bt_uuid_t uuid, value_uuid;
@@ -1036,13 +1038,14 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
-	iface->device = root->device;
+	iface->device = device;
 
-	root->database = insert_attribute(root->database, attr);
-	parent = find_parent_service(root->database, attr);
+	device_set_attribute_database(device,
+					insert_attribute(database, attr));
+	parent = find_parent_service(database, attr);
 
 	path = g_strdup_printf("%s/service%d/characteristics%d",
-			device_get_path(root->device), parent->handle, handle);
+			device_get_path(device), parent->handle, handle);
 
 	value_handle = att_get_u16(&value[1]);
 
@@ -1057,7 +1060,8 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	attr = new_attribute(&value_uuid, client_read_attribute_cb, NULL);
 	attr->handle = value_handle;
 
-	root->database = insert_attribute(root->database, attr);
+	device_set_attribute_database(device,
+					insert_attribute(database, attr));
 
 	if (g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
@@ -1072,7 +1076,8 @@ static void insert_include(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
 {
-	struct device_root *root = user_data;
+	struct btd_device *device = user_data;
+	GList *database = btd_device_get_attribute_database(device);
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -1083,63 +1088,61 @@ static void insert_include(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	root->database = insert_attribute(root->database, attr);
+	device_set_attribute_database(device,
+					insert_attribute(database, attr));
 }
 
 static void insert_char_descriptor(uint8_t status, uint16_t handle,
 					bt_uuid_t *type, void *user_data)
 {
-	struct device_root *root = user_data;
+	struct btd_device *device = user_data;
+	GList *l, *database = btd_device_get_attribute_database(device);
 	struct btd_attribute *attr;
-	GList *l;
 
 	DBG("status %d handle %#4x", status, handle);
 
 	attr = new_attribute(type, NULL, NULL);
 	attr->handle = handle;
 
-	l = g_list_find_custom(root->database, attr, attribute_cmp);
+	l = g_list_find_custom(database, attr, attribute_cmp);
 	if (l != NULL) {
 		g_free(attr);
 		return;
 	}
 
-	root->database = insert_attribute(root->database, attr);
+	device_set_attribute_database(device,
+					insert_attribute(database, attr));
 }
 
 void gatt_discover_attributes(struct btd_device *device)
 {
 	GAttrib *attrib;
 	bt_uuid_t uuid;
-	struct device_root root;
 
 	attrib = device_get_attrib(device);
 	if (attrib == NULL)
 		return;
 
-	root.database = device_get_attribute_database(device);
-	root.device = device;
-
 	DBG("device %p", device);
 
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_primary_service, &root);
+					insert_primary_service, device);
 
 	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_secondary_service, &root);
+					insert_secondary_service, device);
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_char_declaration, &root);
+					insert_char_declaration, device);
 
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_include, &root);
+					insert_include, device);
 
 	gatt_foreach_by_info(attrib, 0x0001, 0xffff, insert_char_descriptor,
-					&root);
+					device);
 }
 
 static void read_name_cb(struct btd_device *device,
