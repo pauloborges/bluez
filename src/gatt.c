@@ -1501,6 +1501,41 @@ static void read_by_group(struct channel *channel, const uint8_t *ipdu,
 	read_by_group_resp(channel, start, end, &pattern);
 }
 
+static void value_nty(const uint8_t *ipdu, size_t ilen)
+{
+	struct btd_attribute *attr;
+	struct notifier *notif;
+	GHashTableIter iter;
+	GList *list;
+	uint16_t handle;
+	gpointer key, value;
+
+	/* Malformed PDU: Ignore */
+	if (ilen < 5)
+		return;
+
+	handle = att_get_u16(&ipdu[1]);
+
+	list = g_list_find_custom(local_attribute_db,
+				GUINT_TO_POINTER(handle), find_by_handle);
+	if (!list)
+		return;
+
+	attr = list->data;
+
+	if (attr->notifiers == NULL)
+		return;
+
+	g_hash_table_iter_init(&iter, attr->notifiers);
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		notif = value;
+
+		/* Skip opcode and handle */
+		notif->value_cb((uint8_t *) &ipdu[3], ilen - 3,
+							notif->user_data);
+	}
+}
+
 static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
@@ -1564,6 +1599,8 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 
 	/* Notification & Indication */
 	case ATT_OP_HANDLE_NOTIFY:
+		value_nty(ipdu, ilen);
+		break;
 	case ATT_OP_HANDLE_IND:
 		break;
 	}
