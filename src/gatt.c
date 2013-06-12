@@ -101,6 +101,11 @@ struct attr_read_data {
 	void* user_data;
 };
 
+struct att_transaction {
+	struct btd_attribute *attr;
+	struct channel *channel;
+};
+
 static GList *local_attribute_db = NULL;
 static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
@@ -1569,13 +1574,28 @@ done:
 
 static void write_request_result(int err, void *user_data)
 {
-	/* FIXME */
+	struct att_transaction *trans = user_data;
+	struct btd_attribute *attr = trans->attr;
+	struct channel *channel = trans->channel;
+	uint8_t opdu[channel->mtu];
+	uint16_t olen;
+
+	if (err != 0)
+		olen = enc_error_resp(ATT_OP_WRITE_REQ, attr->handle, err,
+							opdu, sizeof(opdu));
+	else
+		olen = enc_write_resp(opdu);
+
+	g_attrib_send(channel->attrib, 0, opdu, olen, NULL, NULL, NULL);
+
+	g_free(trans);
 }
 
 static void write_request(struct channel *channel,
 					const uint8_t *ipdu, size_t ilen)
 {
 	GList *list;
+	struct att_transaction *trans;
 	struct btd_attribute *attr;
 	size_t vlen;
 	uint16_t handle;
@@ -1603,8 +1623,12 @@ static void write_request(struct channel *channel,
 		return;
 	}
 
+	trans = g_new0(struct att_transaction, 1);
+	trans->channel = channel;
+	trans->attr = attr;
+
 	attr->write_cb(channel->device, attr, value, vlen, 0,
-						write_request_result, NULL);
+						write_request_result, trans);
 }
 
 static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
