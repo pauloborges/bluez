@@ -1027,6 +1027,10 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	struct btd_attribute *attr, *parent;
 	bt_uuid_t uuid, value_uuid;
 	uint16_t value_handle;
+	uint8_t value_properties;
+	btd_attr_read_t read_cb = NULL;
+	btd_attr_write_t write_cb = NULL;
+
 	char *path;
 
 	DBG("status %d handle %#4x", status, handle);
@@ -1047,6 +1051,8 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	path = g_strdup_printf("%s/service%d/characteristics%d",
 			device_get_path(device), parent->handle, handle);
 
+	value_properties = value[0];
+
 	value_handle = att_get_u16(&value[1]);
 
 	vlen -= 3; /* Discarding 2 (handle) + 1 (properties) bytes */
@@ -1056,8 +1062,15 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	else if (vlen == 16)
 		value_uuid = att_get_uuid128(&value[3]);
 
+	if (value_properties & ATT_CHAR_PROPER_READ)
+		read_cb = client_read_attribute_cb;
+
 	/* FIXME: missing write callback */
-	attr = new_attribute(&value_uuid, client_read_attribute_cb, NULL);
+	if (value_properties & (ATT_CHAR_PROPER_WRITE |
+					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP))
+		write_cb = NULL;
+
+	attr = new_attribute(&value_uuid, read_cb, write_cb);
 	attr->handle = value_handle;
 
 	device_set_attribute_database(device,
