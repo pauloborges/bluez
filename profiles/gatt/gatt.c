@@ -33,6 +33,7 @@
 #include "profile.h"
 #include "service.h"
 #include "gatt.h"
+#include "attrib/att.h"
 #include "log.h"
 
 static GSList *devices = NULL;
@@ -72,6 +73,42 @@ static void read_device_name_chr(struct btd_device *device, GList *attrib_db,
 								device);
 }
 
+static void read_appearance_chr_cb(int err, uint8_t *value, size_t len,
+							void *user_data)
+{
+	struct btd_device *device = user_data;
+	uint16_t appearance;
+
+	if (err) {
+		error("Error reading <<Appearance>>: %d", err);
+		return;
+	}
+
+	appearance = att_get_u16(value);
+	device_set_appearance(device, appearance);
+}
+
+static void read_appearance_chr(struct btd_device *device, GList *attrib_db,
+						struct btd_attribute *gap)
+{
+	struct btd_attribute *chr, *chr_value;
+	bt_uuid_t uuid;
+	GSList *list;
+
+	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
+	list = btd_gatt_get_chars_decl(attrib_db, gap, &uuid);
+	if (!list) {
+		error("<<Appearance>> characteristic is mandatory");
+		return;
+	}
+
+	chr = list->data;
+
+	chr_value = btd_gatt_get_char_value(attrib_db, chr);
+	btd_gatt_read_attribute(device, chr_value, read_appearance_chr_cb,
+								device);
+}
+
 static void find_gap(struct btd_device *device)
 {
 	struct btd_attribute *gap;
@@ -91,6 +128,7 @@ static void find_gap(struct btd_device *device)
 	gap = list->data;
 
 	read_device_name_chr(device, attrib_db, gap);
+	read_appearance_chr(device, attrib_db, gap);
 }
 
 static int gatt_driver_probe(struct btd_service *service)
