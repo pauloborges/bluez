@@ -1501,14 +1501,17 @@ static void read_by_group(struct channel *channel, const uint8_t *ipdu,
 	read_by_group_resp(channel, start, end, &pattern);
 }
 
-static void value_nty(const uint8_t *ipdu, size_t ilen)
+static void value_changed(struct channel *channel, const uint8_t *ipdu,
+								size_t ilen)
 {
+	uint8_t opdu[channel->mtu];
 	struct btd_attribute *attr;
 	struct notifier *notif;
 	GHashTableIter iter;
 	GList *list;
 	uint16_t handle;
 	gpointer key, value;
+	bool cfm = true;
 
 	/* Malformed PDU: Ignore */
 	if (ilen < 5)
@@ -1516,10 +1519,11 @@ static void value_nty(const uint8_t *ipdu, size_t ilen)
 
 	handle = att_get_u16(&ipdu[1]);
 
+	/* TODO: Missing checking for <<CCC>>*/
 	list = g_list_find_custom(local_attribute_db,
 				GUINT_TO_POINTER(handle), find_by_handle);
 	if (!list)
-		return;
+		goto done;
 
 	attr = list->data;
 
@@ -1531,8 +1535,35 @@ static void value_nty(const uint8_t *ipdu, size_t ilen)
 		notif = value;
 
 		/* Skip opcode and handle */
-		notif->value_cb((uint8_t *) &ipdu[3], ilen - 3,
-							notif->user_data);
+		if (!notif->value_cb((uint8_t *) &ipdu[3], ilen - 3,
+							notif->user_data))
+			cfm = false;
+	}
+
+	/*
+	 * Below: Processing Indication. If at least one client/watcher
+	 * didn't get the data properly ATT confirmation should not be sent.
+	 * No further indications to this client shall occur until the
+	 * confirmation has been received by the server.
+	 *
+	 * TODO: Missing a mechanism to avoid blocking indications due
+	 * missing confirmation.
+	 */
+	if (cfm == false)
+		return;
+
+done:
+	/*
+	 * From Core SPEC 4.0 page 1870:
+	 * If the attribute handle or the attribute value is invalid, the
+	 * client shall send a handle value confirmation in response and
+	 * shall discard the handle and value from the received indication.
+	 */
+
+	if (ipdu[0] == ATT_OP_HANDLE_IND) {
+		opdu[0] = ATT_OP_HANDLE_CNF;
+		att_put_u16(handle, &opdu[1]);
+		g_attrib_send(channel->attrib, 0, opdu, 3, NULL, NULL, NULL);
 	}
 }
 
@@ -1599,9 +1630,8 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 
 	/* Notification & Indication */
 	case ATT_OP_HANDLE_NOTIFY:
-		value_nty(ipdu, ilen);
-		break;
 	case ATT_OP_HANDLE_IND:
+		value_changed(channel, ipdu, ilen);
 		break;
 	}
 }
