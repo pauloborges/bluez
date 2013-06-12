@@ -1471,7 +1471,6 @@ static void read_by_group(struct channel *channel, const uint8_t *ipdu,
 {
 	uint16_t decoded, start, end;
 	bt_uuid_t pattern, prim_uuid;
-	char uuid_str[MAX_LEN_UUID_STR];
 
 	decoded = dec_read_by_grp_req(ipdu, ilen, &start, &end, &pattern);
 	if (decoded == 0) {
@@ -1479,9 +1478,6 @@ static void read_by_group(struct channel *channel, const uint8_t *ipdu,
 						ATT_ECODE_INVALID_PDU);
 		return;
 	}
-
-	bt_uuid_to_string(&pattern, uuid_str, sizeof(uuid_str));
-	DBG("Read by Group Type: 0x%04x 0x%04x %s", start, end, uuid_str);
 
 	if (start > end || start == 0x0000) {
 		send_error(channel->attrib, ipdu[0], start,
