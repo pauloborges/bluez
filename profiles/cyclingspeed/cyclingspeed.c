@@ -350,7 +350,7 @@ static void read_supported_locations(struct csc *csc)
 
 	csc->pending_req = req;
 
-	gatt_write_char(csc->attrib, csc->controlpoint_val_handle,
+	gatt_write_char(csc->attrib, csc->controlpoint_val_handle, 0,
 					&req->opcode, sizeof(req->opcode),
 					controlpoint_write_cb, req);
 }
@@ -443,7 +443,7 @@ static bool discover_desc_cb(uint8_t status, GSList *descs, void *user_data)
 			break;
 		}
 
-		gatt_write_char(ch->csc->attrib, desc->handle, attr_val,
+		gatt_write_char(ch->csc->attrib, desc->handle, 0, attr_val,
 					sizeof(attr_val), char_write_cb, msg);
 
 		/* We only want CCC, can break here */
@@ -790,7 +790,7 @@ static void enable_measurement(gpointer data, gpointer user_data)
 	att_put_u16(GATT_CLIENT_CHARAC_CFG_NOTIF_BIT, value);
 	msg = g_strdup("Enable measurement");
 
-	gatt_write_char(csc->attrib, handle, value, sizeof(value),
+	gatt_write_char(csc->attrib, handle, 0, value, sizeof(value),
 							char_write_cb, msg);
 }
 
@@ -807,7 +807,7 @@ static void disable_measurement(gpointer data, gpointer user_data)
 	att_put_u16(0x0000, value);
 	msg = g_strdup("Disable measurement");
 
-	gatt_write_char(csc->attrib, handle, value, sizeof(value),
+	gatt_write_char(csc->attrib, handle, 0, value, sizeof(value),
 							char_write_cb, msg);
 }
 
@@ -1037,7 +1037,7 @@ static void property_set_location(const GDBusPropertyTable *property,
 	att_val[0] = UPDATE_SENSOR_LOC;
 	att_val[1] = loc_val;
 
-	gatt_write_char(csc->attrib, csc->controlpoint_val_handle, att_val,
+	gatt_write_char(csc->attrib, csc->controlpoint_val_handle, 0, att_val,
 				sizeof(att_val), controlpoint_write_cb, req);
 }
 
@@ -1139,7 +1139,7 @@ static DBusMessage *set_cumulative_wheel_rev(DBusConnection *conn,
 	att_val[0] = SET_CUMULATIVE_VALUE;
 	att_put_u32(value, att_val + 1);
 
-	gatt_write_char(csc->attrib, csc->controlpoint_val_handle, att_val,
+	gatt_write_char(csc->attrib, csc->controlpoint_val_handle, 0, att_val,
 		sizeof(att_val), controlpoint_write_cb, req);
 
 	return NULL;
