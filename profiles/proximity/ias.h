@@ -23,3 +23,5 @@
 
 void ias_init(void);
 void ias_exit(void);
+
+const char *ias_get_level(void);
