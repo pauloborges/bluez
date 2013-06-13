@@ -1349,14 +1349,34 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 	g_attrib_send(channel->attrib, 0, opdu, i, NULL, NULL, NULL);
 }
 
+static void read_request_result(int err, uint8_t *value, size_t len,
+								void *user_data)
+{
+	struct att_transaction *trans = user_data;
+	struct channel *channel = trans->channel;
+	struct btd_attribute *attr = trans->attr;
+	uint8_t opdu[channel->mtu];
+	size_t olen;
+
+	g_free(trans);
+
+	if (err) {
+		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle, err);
+		return;
+	}
+
+	olen = enc_read_resp(value, len, opdu, channel->mtu);
+
+	g_attrib_send(channel->attrib, 0, opdu, olen, NULL, NULL, NULL);
+}
+
 static void read_request(struct channel *channel, const uint8_t *ipdu,
 								size_t ilen)
 {
 	uint16_t handle;
 	GList *list;
 	struct btd_attribute *attr;
-	uint8_t opdu[channel->mtu];
-	size_t plen;
+	struct att_transaction *trans;
 
 	if (dec_read_req(ipdu, ilen, &handle) == 0) {
 		send_error(channel->attrib, ipdu[0], 0x0000,
@@ -1374,8 +1394,27 @@ static void read_request(struct channel *channel, const uint8_t *ipdu,
 
 	attr = list->data;
 
-	plen = enc_read_resp(attr->value, attr->value_len, opdu, sizeof(opdu));
-	g_attrib_send(channel->attrib, 0, opdu, plen, NULL, NULL, NULL);
+	if (attr->value_len > 0) {
+		uint8_t opdu[channel->mtu];
+		size_t olen = enc_read_resp(attr->value, attr->value_len, opdu,
+								channel->mtu);
+
+		g_attrib_send(channel->attrib, 0, opdu, olen, NULL, NULL,
+									NULL);
+		return;
+	}
+
+	if (attr->read_cb == NULL) {
+		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
+						ATT_ECODE_READ_NOT_PERM);
+		return;
+	}
+
+	trans = g_new0(struct att_transaction, 1);
+	trans->attr = attr;
+	trans->channel = channel;
+
+	attr->read_cb(channel->device, NULL, read_request_result, trans);
 }
 
 static void read_by_group_resp(struct channel *channel, uint16_t start,
