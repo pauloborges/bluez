@@ -563,7 +563,7 @@ static void process_thermometer_desc(struct characteristic *ch,
 	}
 
 	att_put_u16(val, atval);
-	gatt_write_char(ch->t->attrib, desc->handle, atval, sizeof(atval),
+	gatt_write_char(ch->t->attrib, desc->handle, 0, atval, sizeof(atval),
 							write_ccc_cb, msg);
 }
 
@@ -751,7 +751,7 @@ static void enable_final_measurement(gpointer data, gpointer user_data)
 	att_put_u16(GATT_CLIENT_CHARAC_CFG_IND_BIT, value);
 	msg = g_strdup("Enable Temperature Measurement indications");
 
-	gatt_write_char(t->attrib, handle, value, sizeof(value),
+	gatt_write_char(t->attrib, handle, 0, value, sizeof(value),
 							write_ccc_cb, msg);
 }
 
@@ -768,7 +768,7 @@ static void enable_intermediate_measurement(gpointer data, gpointer user_data)
 	att_put_u16(GATT_CLIENT_CHARAC_CFG_NOTIF_BIT, value);
 	msg = g_strdup("Enable Intermediate Temperature notifications");
 
-	gatt_write_char(t->attrib, handle, value, sizeof(value),
+	gatt_write_char(t->attrib, handle, 0, value, sizeof(value),
 							write_ccc_cb, msg);
 }
 
@@ -785,7 +785,7 @@ static void disable_final_measurement(gpointer data, gpointer user_data)
 	att_put_u16(0x0000, value);
 	msg = g_strdup("Disable Temperature Measurement indications");
 
-	gatt_write_char(t->attrib, handle, value, sizeof(value),
+	gatt_write_char(t->attrib, handle, 0, value, sizeof(value),
 							write_ccc_cb, msg);
 }
 
@@ -802,7 +802,7 @@ static void disable_intermediate_measurement(gpointer data, gpointer user_data)
 	att_put_u16(0x0000, value);
 	msg = g_strdup("Disable Intermediate Temperature notifications");
 
-	gatt_write_char(t->attrib, handle, value, sizeof(value),
+	gatt_write_char(t->attrib, handle, 0, value, sizeof(value),
 							write_ccc_cb, msg);
 }
 
@@ -1034,8 +1034,8 @@ static void property_set_interval(const GDBusPropertyTable *property,
 	interval_data = g_new0(struct tmp_interval_data, 1);
 	interval_data->thermometer = t;
 	interval_data->interval = val;
-	gatt_write_char(t->attrib, t->interval_val_handle, atval, sizeof(atval),
-					write_interval_cb, interval_data);
+	gatt_write_char(t->attrib, t->interval_val_handle, 0, atval,
+			sizeof(atval), write_interval_cb, interval_data);
 
 	g_dbus_pending_property_success(id);
 }

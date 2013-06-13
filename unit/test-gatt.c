@@ -1027,8 +1027,8 @@ static void test_gatt_write_char(void)
 	uint8_t value = 0x08;
 	size_t vlen = sizeof(value);
 
-	gatt_write_char(context->attrib, handle, &value, vlen, write_char_cb,
-								context);
+	gatt_write_char(context->attrib, handle, 0, &value, vlen,
+						write_char_cb, context);
 
 	execute_context(context);
 }
@@ -1048,7 +1048,7 @@ static void test_gatt_write_long_char(void)
 	uint8_t value[] = "1234-5678-90ABCDEF-GHIJ-LMNOP";
 	size_t vlen = sizeof(value);
 
-	gatt_write_char(context->attrib, 0x0001, value, vlen,
+	gatt_write_char(context->attrib, 0x0001, 0, value, vlen,
 						write_long_char_cb, context);
 
 	execute_context(context);

@@ -965,8 +965,9 @@ done:
 	data->func(status, data->user_data);
 }
 
-guint gatt_write_char(GAttrib *attrib, uint16_t handle, const uint8_t *value,
-					size_t vlen, gatt_write_char_cb_t func,
+guint gatt_write_char(GAttrib *attrib, uint16_t handle, uint16_t offset,
+					const uint8_t *value, size_t vlen,
+					gatt_write_char_cb_t func,
 					void *user_data)
 {
 	uint8_t *buf;
@@ -977,7 +978,7 @@ guint gatt_write_char(GAttrib *attrib, uint16_t handle, const uint8_t *value,
 
 	/* Use Write Request if payload fits on a single transfer, including 3
 	 * bytes for the header. */
-	if (vlen <= buflen - 3) {
+	if (vlen <= buflen - 3 && offset == 0) {
 		struct gatt_write_char_data *data;
 
 		uint16_t plen;
@@ -1003,6 +1004,7 @@ guint gatt_write_char(GAttrib *attrib, uint16_t handle, const uint8_t *value,
 	long_write->func = func;
 	long_write->user_data = user_data;
 	long_write->handle = handle;
+	long_write->offset = offset;
 	long_write->value = g_memdup(value, vlen);
 	long_write->vlen = vlen;
 

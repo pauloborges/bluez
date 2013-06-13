@@ -167,7 +167,7 @@ static void write_ccc(uint16_t handle, gpointer user_data)
 	struct hog_device *hogdev = report->hogdev;
 	uint8_t value[] = { 0x01, 0x00 };
 
-	gatt_write_char(hogdev->attrib, handle, value, sizeof(value),
+	gatt_write_char(hogdev->attrib, handle, 0, value, sizeof(value),
 					report_ccc_written_cb, report);
 }
 
@@ -550,7 +550,7 @@ static void forward_report(struct hog_device *hogdev,
 		return;
 
 	if (report->decl->properties & ATT_CHAR_PROPER_WRITE)
-		gatt_write_char(hogdev->attrib, report->decl->value_handle,
+		gatt_write_char(hogdev->attrib, report->decl->value_handle, 0,
 				data, size, output_written_cb, hogdev);
 	else if (report->decl->properties & ATT_CHAR_PROPER_WRITE_WITHOUT_RESP)
 		gatt_write_cmd(hogdev->attrib, report->decl->value_handle,
