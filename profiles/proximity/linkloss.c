@@ -114,17 +114,17 @@ const char *link_loss_get_alert_level(struct btd_device *device)
 	struct connected_device *condev;
 
 	if (!device)
-		return get_alert_level_string(NO_ALERT);
+		return proximity_level2string(NO_ALERT);
 
 	lladapter = find_link_loss_adapter(device_get_adapter(device));
 	if (!lladapter)
-		return get_alert_level_string(NO_ALERT);
+		return proximity_level2string(NO_ALERT);
 
 	condev = find_connected_device(lladapter, device);
 	if (!condev)
-		return get_alert_level_string(NO_ALERT);
+		return proximity_level2string(NO_ALERT);
 
-	return get_alert_level_string(condev->alert_level);
+	return proximity_level2string(condev->alert_level);
 }
 
 static void link_loss_emit_alert_signal(struct connected_device *condev)
@@ -135,7 +135,7 @@ static void link_loss_emit_alert_signal(struct connected_device *condev)
 		return;
 
 	path = device_get_path(condev->device);
-	alert_level_str = get_alert_level_string(condev->alert_level);
+	alert_level_str = proximity_level2string(condev->alert_level);
 
 	DBG("alert %s remote %s", alert_level_str, path);
 
