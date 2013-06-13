@@ -45,6 +45,7 @@
 #include "attio.h"
 #include "dbus-common.h"
 #include "reporter.h"
+#include "proximity.h"
 #include "linkloss.h"
 
 struct link_loss_adapter {
