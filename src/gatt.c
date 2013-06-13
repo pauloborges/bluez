@@ -101,6 +101,11 @@ struct attr_read_data {
 	void* user_data;
 };
 
+struct attr_write_data {
+	btd_attr_write_result_t func;
+	void* user_data;
+};
+
 struct att_transaction {
 	struct btd_attribute *attr;
 	struct channel *channel;
@@ -462,6 +467,36 @@ void btd_gatt_write_attribute(struct btd_device *device,
 						result, user_data);
 	else
 		result(ATT_ECODE_WRITE_NOT_PERM, user_data);
+}
+
+static void client_write_attribute_response(uint8_t status, void *user_data)
+{
+	struct attr_write_data *data = user_data;
+	btd_attr_write_result_t func = data->func;
+
+	func(status, data->user_data);
+	g_free(data);
+}
+
+static void client_write_attribute_cb(struct btd_device *device,
+					struct btd_attribute *attr,
+					uint8_t *value, size_t len,
+					uint16_t offset,
+					btd_attr_write_result_t result,
+					void *user_data)
+{
+	GAttrib *attrib = device_get_attrib(device);
+	struct attr_write_data *data;
+
+	data = g_new0(struct attr_write_data, 1);
+	data->func = result;
+	data->user_data = user_data;
+
+	if (gatt_write_char(attrib, attr->handle, offset, value, len,
+				client_write_attribute_response, data) == 0) {
+		result(ATT_ECODE_UNLIKELY, user_data);
+		g_free(data);
+	}
 }
 
 unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
@@ -1070,10 +1105,9 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	if (value_properties & ATT_CHAR_PROPER_READ)
 		read_cb = client_read_attribute_cb;
 
-	/* FIXME: missing write callback */
 	if (value_properties & (ATT_CHAR_PROPER_WRITE |
 					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP))
-		write_cb = NULL;
+		write_cb = client_write_attribute_cb;
 
 	attr = new_attribute(&value_uuid, read_cb, write_cb);
 	attr->handle = value_handle;
