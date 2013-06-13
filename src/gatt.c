@@ -589,14 +589,27 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
+		bt_uuid_t uuid_value;
+
 		if (srv->uuid != NULL)
 			return;
 
-		g_dbus_proxy_get_property(proxy, "UUID", &iter);
+		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter)) {
+			error("Could not get UUID");
+			return;
+		}
+
+		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
+			error("Invalid type for UUID");
+			return;
+		}
 
 		dbus_message_iter_get_basic(&iter, &uuid);
 
 		srv->uuid = g_strdup(uuid);
+
+		bt_string_to_uuid(&uuid_value, uuid);
+		btd_gatt_add_service(&uuid_value, true);
 
 		DBG("uuid %s", uuid);
 	}
