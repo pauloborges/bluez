@@ -49,6 +49,7 @@
 #include "attrib/gatt_lib.h"
 #include "attrib/att-database.h"
 #include "attrib-server.h"
+#include "proximity.h"
 #include "reporter.h"
 #include "linkloss.h"
 #include "immalert.h"
