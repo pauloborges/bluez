@@ -66,7 +66,7 @@ static void write_ial_cb(struct btd_device *device,
 	 * need to called. Confirmation is not applied.
 	 */
 
-	if (len != 0) {
+	if (len != 1) {
 		DBG("ATT: Invalid PDU");
 		return;
 	}

@@ -116,7 +116,6 @@ static gboolean property_get_immediate_alert_level(
 					const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	struct btd_device *device = data;
 	const char *level;
 
 	level = ias_get_level();
