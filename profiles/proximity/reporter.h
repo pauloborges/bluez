@@ -28,5 +28,3 @@ int reporter_device_probe(struct btd_service *service);
 int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter);
 void reporter_adapter_remove(struct btd_profile *p,
 						struct btd_adapter *adapter);
-
-const char *get_alert_level_string(uint8_t level);

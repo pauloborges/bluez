@@ -98,6 +98,8 @@ builtin_sources += profiles/time/server.c
 builtin_modules += proximity
 builtin_sources += profiles/proximity/main.c profiles/proximity/manager.h \
 			profiles/proximity/manager.c \
+			profiles/proximity/proximity.h \
+			profiles/proximity/proximity.c \
 			profiles/proximity/monitor.h \
 			profiles/proximity/monitor.c \
 			profiles/proximity/reporter.h \

@@ -21,18 +21,20 @@
  *
  */
 
-#define PROXIMITY_REPORTER_INTERFACE "org.bluez.ProximityReporter1"
+#include <stdint.h>
 
-#define IMMEDIATE_ALERT_SVC_UUID	0x1802
-#define LINK_LOSS_SVC_UUID		0x1803
-#define TX_POWER_SVC_UUID		0x1804
-#define ALERT_LEVEL_CHR_UUID		0x2A06
-#define POWER_LEVEL_CHR_UUID		0x2A07
+#include "proximity.h"
 
-enum {
-	NO_ALERT = 0x00,
-	MILD_ALERT = 0x01,
-	HIGH_ALERT = 0x02,
-};
+const char *proximity_level2string(uint8_t level)
+{
+	switch (level) {
+	case NO_ALERT:
+		return "none";
+	case MILD_ALERT:
+		return "mild";
+	case HIGH_ALERT:
+		return "high";
+	}
 
-const char *proximity_level2string(uint8_t level);
+	return "unknown";
+}
