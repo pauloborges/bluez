@@ -385,7 +385,7 @@ static gboolean characteristics_write_req(gpointer user_data)
 		goto error;
 	}
 
-	gatt_write_char(attrib, opt_handle, value, len, char_write_req_cb,
+	gatt_write_char(attrib, opt_handle, 0, value, len, char_write_req_cb,
 									NULL);
 
 	return FALSE;

@@ -415,7 +415,7 @@ static bool discover_ccc_cb(uint8_t status, GSList *descs, void *user_data)
 			msg = g_strdup("Enable measurement");
 		}
 
-		gatt_write_char(hr->attrib, desc->handle, attr_val,
+		gatt_write_char(hr->attrib, desc->handle, 0, attr_val,
 					sizeof(attr_val), char_write_cb, msg);
 
 		break;
@@ -495,7 +495,7 @@ static void enable_measurement(gpointer data, gpointer user_data)
 	att_put_u16(GATT_CLIENT_CHARAC_CFG_NOTIF_BIT, value);
 	msg = g_strdup("Enable measurement");
 
-	gatt_write_char(hr->attrib, handle, value, sizeof(value),
+	gatt_write_char(hr->attrib, handle, 0, value, sizeof(value),
 							char_write_cb, msg);
 }
 
@@ -512,7 +512,7 @@ static void disable_measurement(gpointer data, gpointer user_data)
 	att_put_u16(0x0000, value);
 	msg = g_strdup("Disable measurement");
 
-	gatt_write_char(hr->attrib, handle, value, sizeof(value),
+	gatt_write_char(hr->attrib, handle, 0, value, sizeof(value),
 							char_write_cb, msg);
 }
 
@@ -685,7 +685,7 @@ static DBusMessage *hrcp_reset(DBusConnection *conn, DBusMessage *msg,
 
 	value = 0x01;
 	vmsg = g_strdup("Reset Control Point");
-	gatt_write_char(hr->attrib, hr->hrcp_val_handle, &value,
+	gatt_write_char(hr->attrib, hr->hrcp_val_handle, 0, &value,
 					sizeof(value), char_write_cb, vmsg);
 
 	DBG("Energy Expended Value has been reset");

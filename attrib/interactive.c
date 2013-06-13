@@ -654,7 +654,7 @@ static void cmd_char_write(int argcp, char **argvp)
 	}
 
 	if (g_strcmp0("char-write-req", argvp[0]) == 0)
-		gatt_write_char(attrib, handle, value, plen,
+		gatt_write_char(attrib, handle, 0, value, plen,
 					char_write_req_cb, NULL);
 	else
 		gatt_write_cmd(attrib, handle, value, plen, NULL, NULL);

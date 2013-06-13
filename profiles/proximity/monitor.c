@@ -194,7 +194,7 @@ static bool char_discovered_cb(uint8_t status, GSList *characteristics,
 	chr = characteristics->data;
 	monitor->linklosshandle = chr->value_handle;
 
-	gatt_write_char(monitor->attrib, monitor->linklosshandle, &value, 1,
+	gatt_write_char(monitor->attrib, monitor->linklosshandle, 0, &value, 1,
 						linkloss_written, monitor);
 
 	return true;
@@ -208,7 +208,7 @@ static int write_alert_level(struct monitor *monitor)
 	if (monitor->linklosshandle) {
 		uint8_t value = str2level(monitor->linklosslevel);
 
-		gatt_write_char(monitor->attrib, monitor->linklosshandle,
+		gatt_write_char(monitor->attrib, monitor->linklosshandle, 0,
 					&value, 1, linkloss_written, monitor);
 		return 0;
 	}

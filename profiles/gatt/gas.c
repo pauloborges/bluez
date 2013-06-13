@@ -222,8 +222,8 @@ static void write_ccc(GAttrib *attrib, uint16_t handle, gpointer user_data)
 	uint8_t value[2];
 
 	att_put_u16(GATT_CLIENT_CHARAC_CFG_IND_BIT, value);
-	gatt_write_char(attrib, handle, value, sizeof(value), ccc_written_cb,
-								user_data);
+	gatt_write_char(attrib, handle, 0, value, sizeof(value),
+						ccc_written_cb, user_data);
 }
 
 static bool gatt_descriptors_cb(uint8_t status, GSList *descs, void *user_data)

@@ -125,7 +125,7 @@ static bool discover_descriptor_cb(uint8_t status, GSList *descs,
 			continue;
 
 		att_put_u16(GATT_CLIENT_CHARAC_CFG_NOTIF_BIT, value);
-		gatt_write_char(scan->attrib, desc->handle, value,
+		gatt_write_char(scan->attrib, desc->handle, 0, value,
 				sizeof(value), ccc_written_cb, user_data);
 	}
 
