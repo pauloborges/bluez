@@ -55,20 +55,6 @@
 #include "immalert.h"
 #include "ias.h"
 
-const char *get_alert_level_string(uint8_t level)
-{
-	switch (level) {
-	case NO_ALERT:
-		return "none";
-	case MILD_ALERT:
-		return "mild";
-	case HIGH_ALERT:
-		return "high";
-	}
-
-	return "unknown";
-}
-
 static void register_tx_power(struct btd_adapter *adapter)
 {
 	uint16_t start_handle, h;

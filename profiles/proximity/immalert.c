@@ -112,17 +112,17 @@ const char *imm_alert_get_level(struct btd_device *device)
 	struct connected_device *condev;
 
 	if (!device)
-		return get_alert_level_string(NO_ALERT);
+		return proximity_level2string(NO_ALERT);
 
 	imadapter = find_imm_alert_adapter(device_get_adapter(device));
 	if (!imadapter)
-		return get_alert_level_string(NO_ALERT);
+		return proximity_level2string(NO_ALERT);
 
 	condev = find_connected_device(imadapter, device);
 	if (!condev)
-		return get_alert_level_string(NO_ALERT);
+		return proximity_level2string(NO_ALERT);
 
-	return get_alert_level_string(condev->alert_level);
+	return proximity_level2string(condev->alert_level);
 }
 
 static void imm_alert_emit_alert_signal(struct connected_device *condev,
@@ -134,7 +134,7 @@ static void imm_alert_emit_alert_signal(struct connected_device *condev,
 		return;
 
 	path = device_get_path(condev->device);
-	alert_level_str = get_alert_level_string(alert_level);
+	alert_level_str = proximity_level2string(alert_level);
 
 	DBG("alert %s remote %s", alert_level_str, path);
 
