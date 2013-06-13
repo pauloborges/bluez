@@ -29,9 +29,11 @@
 #include <stdint.h>
 
 #include <glib.h>
+#include <gdbus.h>
 
 #include "lib/uuid.h"
 #include "attrib/att.h"
+#include "dbus-common.h"
 
 #include "adapter.h"
 #include "device.h"
@@ -44,17 +46,45 @@
 static struct btd_attribute *ias = NULL;
 static struct btd_attribute *ial = NULL;
 
+/*
+ * IAS defines a single instance of the <<Alert Level>>
+ * characteristic. The object path used to emit the signal
+ * defines only which device wrote in the characteristic.
+ * TODO: multiple adapters are not properly addressed.
+ */
+static uint8_t level = NO_ALERT;
+
 static void write_ial_cb(struct btd_device *device,
 			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
-	DBG("Immediate Alert Level: 0x%02x", value[0]);
+	const char *path;
 
 	/*
 	 * For Write Without Response "result" callback doesn't
 	 * need to called. Confirmation is not applied.
 	 */
+
+	if (len != 0) {
+		DBG("ATT: Invalid PDU");
+		return;
+	}
+
+	if (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
+					value[0] != HIGH_ALERT) {
+		DBG("Illegal <<Alert Level>> value");
+		return;
+	}
+
+	DBG("Immediate Alert Level: 0x%02x", value[0]);
+
+	level = value[0];
+
+	path = device_get_path(device);
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
+			PROXIMITY_REPORTER_INTERFACE, "ImmediateAlertLevel");
 }
 
 void ias_init(void)
@@ -76,4 +106,9 @@ void ias_init(void)
 void ias_exit(void)
 {
 	btd_gatt_remove_service(ias);
+}
+
+const char *ias_get_level(void)
+{
+	return proximity_level2string(level);
 }

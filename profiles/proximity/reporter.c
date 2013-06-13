@@ -119,7 +119,7 @@ static gboolean property_get_immediate_alert_level(
 	struct btd_device *device = data;
 	const char *level;
 
-	level = imm_alert_get_level(device);
+	level = ias_get_level();
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &level);
 
