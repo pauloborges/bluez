@@ -1478,6 +1478,46 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 	g_attrib_send(channel->attrib, 0, opdu, i, NULL, NULL, NULL);
 }
 
+static GList *get_char_decl_from_attr(GList *attr_node)
+{
+	GList *char_decl_node;
+	struct btd_attribute *attr;
+	bt_uuid_t uuid;
+
+	char_decl_node = g_list_previous(attr_node);
+	if (char_decl_node == NULL)
+		return NULL;
+
+	attr = char_decl_node->data;
+	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
+	if (bt_uuid_cmp(&uuid, &attr->type) != 0)
+		return NULL;
+
+	return char_decl_node;
+}
+
+static bool validate_att_operation(GList *attr_node, uint16_t opcode)
+{
+	GList *char_decl_node;
+	struct btd_attribute *attr;
+
+	attr = attr_node->data;
+
+	char_decl_node = get_char_decl_from_attr(attr_node);
+	if (char_decl_node == NULL)
+		return true;
+
+	attr = char_decl_node->data;
+
+	switch (opcode) {
+	case ATT_OP_WRITE_REQ:
+		if (attr->value[0] & 0x08)
+			return true;
+	}
+
+	return false;
+}
+
 static void read_request_result(int err, uint8_t *value, size_t len,
 								void *user_data)
 {
@@ -1812,6 +1852,12 @@ static void write_request(struct channel *channel,
 	attr = list->data;
 
 	if (attr->write_cb == NULL) {
+		send_error(channel->attrib, ipdu[0], handle,
+						ATT_ECODE_WRITE_NOT_PERM);
+		return;
+	}
+
+	if (!validate_att_operation(list, ATT_OP_WRITE_REQ)) {
 		send_error(channel->attrib, ipdu[0], handle,
 						ATT_ECODE_WRITE_NOT_PERM);
 		return;
