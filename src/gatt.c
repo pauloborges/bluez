@@ -850,10 +850,60 @@ static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 	return NULL;
 }
 
+static void write_value_response(int err, void *user_data)
+{
+	DBusMessage *reply, *msg = user_data;
+
+	if (err) {
+		reply = btd_error_failed(msg, att_ecode2str(err));
+		goto done;
+	}
+
+	reply = dbus_message_new_method_return(msg);
+
+done:
+	g_dbus_send_message(btd_get_dbus_connection(), reply);
+}
+
 static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
-	return dbus_message_new_method_return(msg);
+	struct attribute_iface *iface = user_data;
+	struct btd_attribute *attr;
+	GList *database;
+	DBusMessageIter args, iter;
+	const uint8_t *value;
+	uint16_t offset;
+	int len;
+
+	if (dbus_message_iter_init(msg, &args) == false)
+		goto invalid;
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_UINT16)
+		goto invalid;
+
+	dbus_message_iter_get_basic(&args, &offset);
+
+	dbus_message_iter_next(&args);
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
+		goto invalid;
+
+	dbus_message_iter_recurse(&args, &iter);
+
+	dbus_message_iter_get_fixed_array(&iter, &value, &len);
+
+	database = btd_device_get_attribute_database(iface->device);
+	attr = btd_gatt_get_char_value(database, iface->attr);
+
+	btd_gatt_write_attribute(iface->device, attr, (uint8_t *) value, len,
+					offset, write_value_response,
+					dbus_message_ref(msg));
+
+	return NULL;
+
+invalid:
+	return btd_error_invalid_args(msg);
 }
 
 static const GDBusMethodTable chr_methods[] = {
