@@ -561,6 +561,19 @@ static void destroy_service(void *data)
 	g_free(srv);
 }
 
+static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
+				btd_attr_read_result_t result, void *user_data)
+{
+	DBG("Server: Read characteristic callback");
+}
+
+static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
+			uint8_t *value, size_t len, uint16_t offset,
+			btd_attr_write_result_t result, void *user_data)
+{
+	DBG("Server: Write characteristic callback");
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
 	struct service *srv = user_data;
@@ -575,6 +588,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
 		struct characteristic *chr;
+		bt_uuid_t uuid_value;
+		uint8_t properties;
 
 		path = g_dbus_proxy_get_path(proxy);
 
@@ -583,9 +598,26 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &uuid);
 
+		bt_string_to_uuid(&uuid_value, uuid);
+
 		chr = new_characteristic(path, uuid);
 
 		srv->chrs = g_slist_append(srv->chrs, chr);
+
+		if (!g_dbus_proxy_get_property(proxy, "Properties", &iter)) {
+			error("Could not get Properties");
+			return;
+		}
+
+		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_BYTE) {
+			error("Invalid type for Properties");
+			return;
+		}
+
+		dbus_message_iter_get_basic(&iter, &properties);
+
+		btd_gatt_add_char(&uuid_value, properties, read_char_cb,
+								write_char_cb);
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
