@@ -45,6 +45,7 @@
 #include "attio.h"
 #include "dbus-common.h"
 #include "reporter.h"
+#include "proximity.h"
 #include "immalert.h"
 
 struct imm_alert_adapter {

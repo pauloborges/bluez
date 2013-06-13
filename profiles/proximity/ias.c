@@ -38,10 +38,8 @@
 #include "log.h"
 
 #include "gatt.h"
+#include "proximity.h"
 #include "ias.h"
-
-#define IMMEDIATE_ALERT_SVC_UUID	0x1802
-#define ALERT_LEVEL_CHR_UUID		0x2A06
 
 static struct btd_attribute *ias = NULL;
 static struct btd_attribute *ial = NULL;

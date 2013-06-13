@@ -48,22 +48,14 @@
 #include "attrib/gattrib.h"
 #include "attrib/gatt_lib.h"
 #include "attio.h"
+#include "proximity.h"
 #include "monitor.h"
 #include "textfile.h"
 
 #define PROXIMITY_INTERFACE "org.bluez.ProximityMonitor1"
 
-#define ALERT_LEVEL_CHR_UUID 0x2A06
-#define POWER_LEVEL_CHR_UUID 0x2A07
-
 #define IMMEDIATE_TIMEOUT	5
 #define TX_POWER_SIZE		1
-
-enum {
-	ALERT_NONE = 0,
-	ALERT_MILD,
-	ALERT_HIGH,
-};
 
 struct monitor {
 	struct btd_device *device;
@@ -159,11 +151,11 @@ static char *read_proximity_config(struct btd_device *device, const char *alert)
 static uint8_t str2level(const char *level)
 {
 	if (g_strcmp0("high", level) == 0)
-		return ALERT_HIGH;
+		return HIGH_ALERT;
 	else if (g_strcmp0("mild", level) == 0)
-		return ALERT_MILD;
+		return MILD_ALERT;
 
-	return ALERT_NONE;
+	return NO_ALERT;
 }
 
 static void linkloss_written(uint8_t status, void *user_data)
@@ -296,7 +288,7 @@ static gboolean immediate_timeout(gpointer user_data)
 		return FALSE;
 
 	if (monitor->attrib) {
-		uint8_t value = ALERT_NONE;
+		uint8_t value = NO_ALERT;
 		gatt_write_cmd(monitor->attrib, monitor->immediatehandle,
 				&value, 1, NULL, NULL);
 	}

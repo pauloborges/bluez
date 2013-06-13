@@ -2,8 +2,7 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2011  Nokia Corporation
- *  Copyright (C) 2011  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2013  Instituto Nokia de Tecnologia - INdT
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -22,11 +21,16 @@
  *
  */
 
-void reporter_device_remove(struct btd_service *service);
-int reporter_device_probe(struct btd_service *service);
+#define PROXIMITY_REPORTER_INTERFACE "org.bluez.ProximityReporter1"
 
-int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter);
-void reporter_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter);
+#define IMMEDIATE_ALERT_SVC_UUID	0x1802
+#define LINK_LOSS_SVC_UUID		0x1803
+#define TX_POWER_SVC_UUID		0x1804
+#define ALERT_LEVEL_CHR_UUID		0x2A06
+#define POWER_LEVEL_CHR_UUID		0x2A07
 
-const char *get_alert_level_string(uint8_t level);
+enum {
+	NO_ALERT = 0x00,
+	MILD_ALERT = 0x01,
+	HIGH_ALERT = 0x02,
+};
