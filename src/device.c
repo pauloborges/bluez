@@ -3288,7 +3288,7 @@ static void att_connect_cb(GIOChannel *io, GError *gerr, gpointer user_data)
 	}
 
 	attrib = g_attrib_new(io);
-	device->attachid = attrib_channel_attach(attrib);
+	device->attachid = gatt_channel_attach(attrib);
 	if (device->attachid == 0)
 		error("Attribute server attach failure!");
 
