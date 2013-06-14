@@ -190,7 +190,8 @@ void btd_gatt_char_value_changed(struct btd_attribute *attr,
  * @value_cb:	Callback function to be called when notify.
  * @user_data:	Data to be passed to the value_cb callback function.
  */
-unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
+unsigned int btd_gatt_add_notifier(struct btd_device *device,
+						struct btd_attribute *attr,
 						btd_attr_value_t value_cb,
 						void *user_data);
 

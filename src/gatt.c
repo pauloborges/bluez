@@ -593,7 +593,8 @@ static void client_write_attribute_cb(struct btd_device *device,
 	}
 }
 
-unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
+unsigned int btd_gatt_add_notifier(struct btd_device *device,
+						struct btd_attribute *attr,
 						btd_attr_value_t value_cb,
 						void *user_data)
 {
