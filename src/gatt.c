@@ -1962,19 +1962,17 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	}
 }
 
-static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
+unsigned int gatt_channel_attach(GAttrib *attrib)
 {
-	struct channel *channel;
-	uint16_t mtu, cid;
-	char src[18], dst[18];
 	struct btd_adapter *adapter;
+	struct channel *channel;
+	char src[18], dst[18];
+	uint16_t mtu, cid;
+	GIOChannel *io;
 	bdaddr_t sba;
 	bdaddr_t dba;
 
-	if (gerr) {
-		error("ATT Connect: %s", gerr->message);
-		return;
-	}
+	io = g_attrib_get_channel(attrib);
 
 	channel = g_new0(struct channel, 1);
 
@@ -1985,7 +1983,7 @@ static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
 			BT_IO_OPT_IMTU, &mtu,
 			BT_IO_OPT_INVALID)) {
 		g_free(channel);
-		return;
+		return 0;
 	}
 
 	ba2str(&sba, src);
@@ -1995,16 +1993,17 @@ static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
 	if (!adapter) {
 		error("Can't find adapter %s", src);
 		g_free(channel);
-		return;
+		return 0;
 	}
 
 	channel->device = adapter_find_device(adapter, &dba);
 	if (!channel->device) {
 		error("Can't find device %s", dst);
-		return;
+		g_free(channel);
+		return 0;
 	}
 
-	channel->attrib = g_attrib_new(io);
+	channel->attrib = attrib;
 	channel->mtu = (cid == ATT_CID ? ATT_DEFAULT_LE_MTU : mtu);
 
 	DBG("%p Connected: %s < %s CID: %d, MTU: %d", channel, src, dst,
@@ -2017,6 +2016,18 @@ static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
 	channel->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				channel, (GDestroyNotify) channel_free);
+
+	return channel->id;
+}
+
+static void connect_event(GIOChannel *io, GError *gerr, void *user_data)
+{
+	if (gerr) {
+		error("ATT Connect: %s", gerr->message);
+		return;
+	}
+
+	gatt_channel_attach(g_attrib_new(io));
 }
 
 void btd_gatt_service_manager_init(void)

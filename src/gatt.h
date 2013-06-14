@@ -46,6 +46,8 @@ void btd_gatt_service_manager_init(void);
 
 void btd_gatt_service_manager_cleanup(void);
 
+unsigned int gatt_channel_attach(GAttrib *attrib);
+
 void gatt_discover_attributes(struct btd_device *device);
 
 /* btd_gatt_add_service - Add a service declaration to local attribute database.
