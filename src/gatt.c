@@ -1513,6 +1513,9 @@ static bool validate_att_operation(GList *attr_node, uint16_t opcode)
 	case ATT_OP_WRITE_REQ:
 		if (attr->value[0] & 0x08)
 			return true;
+	case ATT_OP_WRITE_CMD:
+		if (attr->value[0] & 0x04)
+			return true;
 	}
 
 	return false;
@@ -1801,6 +1804,9 @@ static void write_cmd(struct channel *channel, const uint8_t *ipdu,
 	attr = list->data;
 
 	if (attr->write_cb == NULL)
+		return;
+
+	if (!validate_att_operation(list, ATT_OP_WRITE_CMD))
 		return;
 
 	attr->write_cb(channel->device, attr, value, vlen, 0, NULL, NULL);
