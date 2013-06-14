@@ -1516,6 +1516,9 @@ static bool validate_att_operation(GList *attr_node, uint16_t opcode)
 	case ATT_OP_WRITE_CMD:
 		if (attr->value[0] & 0x04)
 			return true;
+	case ATT_OP_READ_REQ:
+		if (attr->value[0] & 0x02)
+			return true;
 	}
 
 	return false;
@@ -1565,6 +1568,12 @@ static void read_request(struct channel *channel, const uint8_t *ipdu,
 	}
 
 	attr = list->data;
+
+	if (!validate_att_operation(list, ATT_OP_READ_REQ)) {
+		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
+						ATT_ECODE_READ_NOT_PERM);
+		return;
+	}
 
 	if (attr->value_len > 0) {
 		uint8_t opdu[channel->mtu];
