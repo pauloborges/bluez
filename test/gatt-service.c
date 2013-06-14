@@ -162,6 +162,23 @@ static gboolean chr_exist_perms(const GDBusPropertyTable *property,
 	return !!(chr->features & CHAR_FEATURE_HAS_PERMS);
 }
 
+
+static gboolean chr_get_props(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	struct characteristic *chr = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &chr->props);
+
+	return TRUE;
+}
+
+static gboolean chr_exist_props(const GDBusPropertyTable *property,
+								void *data)
+{
+	return TRUE;
+}
+
 static gboolean chr_get_auth(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
@@ -205,7 +222,7 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value },
 	{ "Permissions", "y", chr_get_perms, NULL, chr_exist_perms },
 	{ "Authenticate", "b", chr_get_auth, NULL, chr_exist_auth },
-	{ "Properties", "y", chr_get_perms, NULL, chr_exist_perms },
+	{ "Properties", "y", chr_get_props, NULL, chr_exist_props },
 	{ "Descriptors", "a{a{sv}}", chr_get_descriptors, chr_set_descriptors,
 						chr_exist_descriptors },
 	{ }
