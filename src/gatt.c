@@ -160,6 +160,13 @@ static void destroy_attribute(struct btd_attribute *attr)
 	g_free(attr);
 }
 
+/* new_const_attribute - Create a new fixed value attribute.
+ * @type:	Attribute type in ATT byte order.
+ * @value:	Value of the attribute in ATT byte order.
+ * @len:	Length of value in bytes.
+ *
+ * Returns a new attribute.
+ */
 static struct btd_attribute *new_const_attribute(bt_uuid_t *type,
 							uint8_t *value,
 							uint16_t len)
