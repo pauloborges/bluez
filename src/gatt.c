@@ -52,6 +52,12 @@
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
 
+/*
+ * Internal timeout for asynchronous operations. Prevents
+ * client that never calls the result callback.
+ */
+#define TRANSACTION_TIMEOUT	20
+
 struct characteristic {
 	char *path;
 	char *uuid;
@@ -112,6 +118,15 @@ struct attr_write_data {
 struct att_transaction {
 	struct btd_attribute *attr;
 	struct channel *channel;
+};
+
+struct read_by_type_transaction {
+	struct channel *channel;
+	GList *match;			/* List of matching attributes */
+	unsigned int timeout;		/* Asynchronous operation timeout */
+	size_t vlen;			/* Pattern: length of each value */
+	size_t olen;			/* Output PDU length */
+	uint8_t opdu[0];		/* Output PDU */
 };
 
 static GList *local_attribute_db = NULL;
@@ -1479,15 +1494,89 @@ static gint find_by_handle(gconstpointer a, gconstpointer b)
 	return attr->handle - GPOINTER_TO_UINT(b);
 }
 
+static void read_by_type_result(int err, uint8_t *value, size_t vlen,
+							void *user_data)
+
+{
+	struct read_by_type_transaction *trans = user_data;
+	struct channel *channel = trans->channel;
+	GList *head = trans->match;
+	struct btd_attribute *attr = head->data;
+
+	if (err) {
+		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle, err);
+		goto done;
+	}
+
+	trans->match = g_list_delete_link(trans->match, head);
+
+	/* According to Core v4.0 spec, page 1853, if the attribute
+	 * value is longer than (ATT_MTU - 4) or 253 octets, whichever
+	 * is smaller, then the first (ATT_MTU - 4) or 253 octets shall
+	 * be included in this response.
+	 */
+
+	if (trans->olen == 0) {
+		trans->vlen = MIN((uint16_t) (channel->mtu - 4),
+							MIN(vlen, 253));
+
+		/* First entry: Set handle-value length */
+		trans->opdu[trans->olen++] = ATT_OP_READ_BY_TYPE_RESP;
+		trans->opdu[trans->olen++] = 2 + trans->vlen;
+	} else if (trans->vlen != MIN(vlen, 253))
+		/* Length doesn't match with handle-value length */
+		goto send;
+
+	/* It there space enough for another handle-value pair? */
+	if (trans->olen + 2 + trans->vlen > channel->mtu)
+		goto send;
+
+	/* Copy attribute handle into opdu */
+	att_put_u16(attr->handle, &trans->opdu[trans->olen]);
+	trans->olen += 2;
+
+	/* Copy attribute value into opdu */
+	memcpy(&trans->opdu[trans->olen], value, trans->vlen);
+	trans->olen += trans->vlen;
+
+	if (trans->match == NULL)
+		goto send;
+
+	/* Getting the next attribute */
+	attr = trans->match->data;
+
+	if (attr->value_len)
+		read_by_type_result(0, attr->value, attr->value_len, trans);
+	else
+		attr->read_cb(channel->device, attr, read_by_type_result,
+									trans);
+	return;
+
+send:
+	g_attrib_send(channel->attrib, 0, trans->opdu, trans->olen, NULL,
+								NULL, NULL);
+
+done:
+	g_source_remove(trans->timeout);
+	g_list_free(trans->match);
+	g_free(trans);
+}
+
+static gboolean transaction_timeout(gpointer user_data)
+{
+	read_by_type_result(ATT_ECODE_UNLIKELY, NULL, 0, user_data);
+
+	return FALSE;
+}
+
 static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 								size_t ilen)
 {
-	uint8_t opdu[channel->mtu];
+	struct read_by_type_transaction *trans;
+	struct btd_attribute *attr;
 	GList *list;
 	uint16_t start, end;
-	uint8_t vlen;
 	bt_uuid_t uuid;
-	int i = 0;
 
 	if (dec_read_by_type_req(ipdu, ilen, &start, &end, &uuid) == 0) {
 		send_error(channel->attrib, ipdu[0], 0x0000,
@@ -1501,8 +1590,11 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 		return;
 	}
 
+	trans = g_malloc0(sizeof(*trans) + channel->mtu);
+	trans->channel = channel; /* Weak reference */
+
 	for (list = local_attribute_db; list; list = g_list_next(list)) {
-		struct btd_attribute *attr = list->data;
+		attr = list->data;
 
 		if (attr->handle < start)
 			continue;
@@ -1513,66 +1605,31 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 		if (bt_uuid_cmp(&attr->type, &uuid) != 0)
 			continue;
 
-		/* If this is the first match then we set attribute opcode,
-		 * length and the first element of attribute data list from
-		 * the Read by Type Response.
-		 */
-		if (i == 0) {
-			opdu[i++] = ATT_OP_READ_BY_TYPE_RESP;
-
-			/* According to Core v4.0 spec, page 1853, if the
-			 * attribute value is longer than (ATT_MTU - 4) or 253
-			 * octets, whichever is smaller, then the first
-			 * (ATT_MTU - 4) or 253 octets shall be included in
-			 * this response.
-			 */
-			if (attr->value_len > MIN(channel->mtu - 4, 253))
-				vlen = MIN(channel->mtu - 4, 253);
-			else
-				vlen = attr->value_len;
-
-			opdu[i++] = 2 + vlen;
-
-			/* Copy attribute handle into opdu */
-			att_put_u16(attr->handle, &opdu[i]);
-			i += 2;
-
-			/* Copy attribute value into opdu */
-			memcpy(&opdu[i], attr->value, vlen);
-			i += vlen;
-
+		/* Checking attribute consistency */
+		if (attr->value_len == 0 && attr->read_cb == NULL)
 			continue;
-		}
 
-		/* If there is no more space in the opdu for this handle-value
-		 * pair, the opdu is done.
-		 */
-		if (i + 2 + vlen > channel->mtu)
-			break;
-
-		/* If the attribute value has different length from the others
-		 * then this attribute doesn't belongs to this response and the
-		 * opdu is done.
-		 */
-		if (attr->value_len != vlen)
-			break;
-
-		/* Copy attribute handle into opdu */
-		att_put_u16(attr->handle, &opdu[i]);
-		i += 2;
-
-		/* Copy attribute value into opdu */
-		memcpy(&opdu[i], attr->value, vlen);
-		i += vlen;
+		trans->match = g_list_append(trans->match, attr);
 	}
 
-	if (i == 0) {
+	if (trans->match == NULL) {
 		send_error(channel->attrib, ipdu[0], start,
 						ATT_ECODE_ATTR_NOT_FOUND);
+		g_free(trans);
 		return;
 	}
 
-	g_attrib_send(channel->attrib, 0, opdu, i, NULL, NULL, NULL);
+	trans->timeout = g_timeout_add_seconds(TRANSACTION_TIMEOUT,
+						transaction_timeout, trans);
+
+	/* Processing the first element */
+	attr = trans->match->data;
+
+	if (attr->value_len)
+		read_by_type_result(0, attr->value, attr->value_len, trans);
+	else
+		attr->read_cb(channel->device, attr, read_by_type_result,
+								trans);
 }
 
 static GList *get_char_decl_from_attr(GList *attr_node)
