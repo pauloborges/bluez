@@ -1037,13 +1037,21 @@ static gboolean chr_exist_auth(const GDBusPropertyTable *property, void *data)
 static gboolean chr_get_props(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
+	struct attribute_iface *iface = data;
+	struct btd_attribute *attr = iface->attr;
+	uint8_t prop;
+
+	prop = attr->value[0];
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &prop);
+
 	return TRUE;
 }
 
 static gboolean chr_exist_props(const GDBusPropertyTable *property,
 								void *data)
 {
-	return FALSE;
+	return TRUE;
 }
 
 static gboolean chr_get_descriptors(const GDBusPropertyTable *property,
