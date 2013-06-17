@@ -27,6 +27,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
@@ -40,6 +42,7 @@
 #include "error.h"
 #include "uuid.h"
 #include "btio.h"
+#include "textfile.h"
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
 #include "attrib/gatt_lib.h"
@@ -1089,6 +1092,71 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ }
 };
 
+static char *buf2str(const uint8_t *buf, size_t buflen)
+{
+	size_t i;
+	char *str;
+
+	if (buflen == 0)
+		return NULL;
+
+	str = g_try_new0(char, (buflen * 2) + 1);
+	if (str == NULL)
+		return NULL;
+
+	for (i = 0; i < buflen; i++)
+		sprintf(str + (i * 2), "%2.2x", buf[i]);
+
+	return str;
+}
+
+static void store_attribute(struct btd_device *device,
+					struct btd_attribute *attr)
+{
+	struct btd_adapter *adapter = device_get_adapter(device);
+	char srcaddr[18], dstaddr[18], handle[6], uuidstr[MAX_LEN_UUID_STR];
+	char filename[PATH_MAX + 1], *data;
+	const bdaddr_t *src, *dst;
+	GKeyFile *key_file;
+	size_t len;
+
+	if (device_is_bonded(device) == FALSE)
+		return;
+
+	src = adapter_get_address(adapter);
+	ba2str(src, srcaddr);
+
+	dst = device_get_address(device);
+	ba2str(dst, dstaddr);
+
+	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attrib-database",
+							srcaddr, dstaddr);
+	key_file = g_key_file_new();
+
+	g_key_file_load_from_file(key_file, filename, G_KEY_FILE_NONE, NULL);
+
+	snprintf(handle, sizeof(handle), "%hu", attr->handle);
+
+	bt_uuid_to_string(&attr->type, uuidstr, sizeof(uuidstr));
+	g_key_file_set_string(key_file, handle, "Type", uuidstr);
+
+	if (attr->value_len > 0) {
+		char *str;
+
+		str = buf2str(attr->value, attr->value_len);
+		g_key_file_set_string(key_file, handle, "Value", str);
+
+		g_free(str);
+	}
+
+	data = g_key_file_to_data(key_file, &len, NULL);
+	if (len > 0) {
+		create_file(filename, S_IRUSR | S_IWUSR);
+		g_file_set_contents(filename, data, len, NULL);
+	}
+
+}
+
 static void insert_primary_service(uint8_t status, uint16_t handle,
 					uint8_t *value, size_t vlen,
 					void *user_data)
@@ -1111,6 +1179,8 @@ static void insert_primary_service(uint8_t status, uint16_t handle,
 
 	device_set_attribute_database(device,
 					insert_attribute(database, attr));
+
+	store_attribute(device, attr);
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
@@ -1147,6 +1217,8 @@ static void insert_secondary_service(uint8_t status, uint16_t handle,
 
 	device_set_attribute_database(device,
 					insert_attribute(database, attr));
+
+	store_attribute(device, attr);
 }
 
 static struct btd_attribute *find_parent_service(GList *database,
@@ -1197,6 +1269,9 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 
 	device_set_attribute_database(device,
 					insert_attribute(database, attr));
+
+	store_attribute(device, attr);
+
 	parent = find_parent_service(database, attr);
 
 	path = g_strdup_printf("%s/service%d/characteristics%d",
@@ -1226,6 +1301,8 @@ static void insert_char_declaration(uint8_t status, uint16_t handle,
 	device_set_attribute_database(device,
 					insert_attribute(database, attr));
 
+	store_attribute(device, attr);
+
 	if (g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
@@ -1253,6 +1330,8 @@ static void insert_include(uint8_t status, uint16_t handle,
 
 	device_set_attribute_database(device,
 					insert_attribute(database, attr));
+
+	store_attribute(device, attr);
 }
 
 static void insert_char_descriptor(uint8_t status, uint16_t handle,
@@ -1275,6 +1354,8 @@ static void insert_char_descriptor(uint8_t status, uint16_t handle,
 
 	device_set_attribute_database(device,
 					insert_attribute(database, attr));
+
+	store_attribute(device, attr);
 }
 
 void gatt_discover_attributes(struct btd_device *device)
