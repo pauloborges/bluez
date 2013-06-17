@@ -959,10 +959,11 @@ invalid:
 }
 
 static const GDBusMethodTable chr_methods[] = {
-	{ GDBUS_EXPERIMENTAL_METHOD("ReadValue", GDBUS_ARGS({"offset", "q"}),
+	{ GDBUS_EXPERIMENTAL_ASYNC_METHOD("ReadValue",
+				GDBUS_ARGS({"offset", "q"}),
 				GDBUS_ARGS({"value", "ay"}),
 				chr_read_value) },
-	{ GDBUS_EXPERIMENTAL_METHOD("WriteValue",
+	{ GDBUS_EXPERIMENTAL_ASYNC_METHOD("WriteValue",
 				GDBUS_ARGS({"offset", "q"}, {"value", "ay"}),
 				NULL, chr_write_value) },
 	{ }
