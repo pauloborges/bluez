@@ -70,7 +70,12 @@
 #define ATT_ECODE_INSUFF_ENC			0x0F
 #define ATT_ECODE_UNSUPP_GRP_TYPE		0x10
 #define ATT_ECODE_INSUFF_RESOURCES		0x11
-/* Application error */
+
+/*
+ * Reference: Core SPEC page 1845. Application error "0x80 to
+ * 0xff" codes are defined by a higher layer specification.
+ * The error codes below are BlueZ specific.
+ */
 #define ATT_ECODE_IO				0x80
 #define ATT_ECODE_TIMEOUT			0x81
 #define ATT_ECODE_ABORTED			0x82
