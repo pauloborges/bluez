@@ -83,6 +83,9 @@ struct btd_attribute {
 	bt_uuid_t type;
 	btd_attr_read_t read_cb;
 	btd_attr_write_t write_cb;
+	int read_sec;
+	int write_sec;
+	int key_size;
 	GHashTable *notifiers;
 	uint16_t value_len;
 	uint8_t value[0];
@@ -289,7 +292,9 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					btd_attr_read_t read_cb,
-					btd_attr_write_t write_cb)
+					btd_attr_write_t write_cb,
+					int read_sec, int write_sec,
+					int key_size)
 {
 	struct btd_attribute *char_decl, *char_value;
 	bt_uuid_t type;
@@ -319,6 +324,10 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	 * Create and add the characteristic value attribute
 	 */
 	char_value = new_attribute(uuid, read_cb, write_cb);
+	char_value->read_sec = read_sec;
+	char_value->write_sec = write_sec;
+	char_value->key_size = key_size;
+
 	add_attribute(char_value);
 
 	/* Update characteristic value handle in characteristic declaration
@@ -330,9 +339,15 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 }
 
 void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
-				btd_attr_write_t write_cb)
+				btd_attr_write_t write_cb,
+				int read_sec, int write_sec, int key_size)
 {
-	struct btd_attribute *attr = new_attribute(uuid, read_cb, write_cb);
+	struct btd_attribute *attr;
+
+	attr = new_attribute(uuid, read_cb, write_cb);
+	attr->read_sec = read_sec;
+	attr->write_sec = write_sec;
+	attr->key_size = key_size;
 
 	add_attribute(attr);
 }
@@ -642,7 +657,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		dbus_message_iter_get_basic(&iter, &properties);
 
 		btd_gatt_add_char(&uuid_value, properties, read_char_cb,
-								write_char_cb);
+					write_char_cb, BT_SECURITY_LOW,
+					BT_SECURITY_LOW, 0);
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
@@ -1449,12 +1465,13 @@ static void add_gap(void)
 
 	/* Declaration and Value: <<Device Name>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_DEVICE_NAME);
-	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_name_cb, NULL);
+	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_name_cb, NULL,
+					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
 
 	/* Declaration and Value: <<Appearance>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_appearance_cb,
-								NULL);
+				NULL, BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
 }
 
 static void add_gatt(void)
@@ -1467,11 +1484,13 @@ static void add_gatt(void)
 
 	/* Declaration and Value: <<Service Changed>> */
 	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
-	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE, NULL, NULL);
+	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE, NULL, NULL,
+					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
 
 	/* Descriptor: <<Client Characteristic Configuration>> */
 	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
-	btd_gatt_add_char_desc(&uuid, NULL, ccc_written_cb);
+	btd_gatt_add_char_desc(&uuid, NULL, ccc_written_cb, BT_SECURITY_LOW,
+							BT_SECURITY_LOW, 0);
 
 	btd_gatt_dump_local_attribute_database();
 }
