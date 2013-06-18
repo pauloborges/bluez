@@ -27,8 +27,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
@@ -1164,6 +1166,23 @@ static char *buf2str(const uint8_t *buf, size_t buflen)
 	return str;
 }
 
+static int str2buf(const char *str, uint8_t *buf, size_t blen)
+{
+	int i, dlen;
+
+	if (str == NULL)
+		return -EINVAL;
+
+	memset(buf, 0, blen);
+
+	dlen = MIN((strlen(str) / 2), blen);
+
+	for (i = 0; i < dlen; i++)
+		sscanf(str + (i * 2), "%02hhX", &buf[i]);
+
+	return dlen;
+}
+
 static void store_attribute(struct btd_device *device,
 					struct btd_attribute *attr)
 {
@@ -1410,6 +1429,92 @@ static void insert_char_descriptor(uint8_t status, uint16_t handle,
 					insert_attribute(database, attr));
 
 	store_attribute(device, attr);
+}
+
+bool gatt_load_from_storage(struct btd_device *device)
+{
+	struct btd_adapter *adapter = device_get_adapter(device);
+	char srcaddr[18], dstaddr[18];
+	char filename[PATH_MAX + 1];
+	char **groups, **group;
+	const bdaddr_t *src, *dst;
+	GKeyFile *key_file;
+
+	src = adapter_get_address(adapter);
+	ba2str(src, srcaddr);
+
+	dst = device_get_address(device);
+	ba2str(dst, dstaddr);
+
+	DBG("src %s dst %s", dstaddr, srcaddr);
+
+	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attrib-database",
+							srcaddr, dstaddr);
+	key_file = g_key_file_new();
+
+	if (g_key_file_load_from_file(key_file, filename,
+					G_KEY_FILE_NONE, NULL) == FALSE) {
+		g_key_file_free(key_file);
+		return false;
+	}
+
+	groups = g_key_file_get_groups(key_file, NULL);
+
+	for (group = groups; *group; group++) {
+		uint16_t handle;
+		size_t buflen;
+		uint8_t buf[32];
+		char *uuidstr, *valuestr;
+		bt_uuid_t uuid;
+
+		DBG("group %s", *group);
+
+		handle = strtol(*group, NULL, 10);
+
+		uuidstr = g_key_file_get_string(key_file, *group, "Type",
+								NULL);
+		bt_string_to_uuid(&uuid, uuidstr);
+
+		valuestr = g_key_file_get_string(key_file, *group, "Value",
+								NULL);
+
+		buflen = 0;
+		if (valuestr)
+			buflen = str2buf(valuestr, buf, sizeof(buf));
+
+		if (uuid.type == BT_UUID16) {
+			switch (uuid.value.u16) {
+			case GATT_PRIM_SVC_UUID:
+				insert_primary_service(0, handle, buf,
+							buflen, device);
+				break;
+			case GATT_SND_SVC_UUID:
+				insert_secondary_service(0, handle, buf,
+							buflen, device);
+				break;
+			case GATT_CHARAC_UUID:
+				insert_char_declaration(0, handle, buf,
+							buflen, device);
+				break;
+			case GATT_INCLUDE_UUID:
+				insert_include(0, handle, buf, buflen,
+								device);
+				break;
+			default:
+				insert_char_descriptor(0, handle, &uuid,
+								device);
+			}
+		} else {
+			insert_char_descriptor(0, handle, &uuid, device);
+		}
+
+		g_free(valuestr);
+		g_free(uuidstr);
+	}
+
+	g_strfreev(groups);
+
+	return true;
 }
 
 void gatt_discover_attributes(struct btd_device *device)
