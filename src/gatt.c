@@ -1415,6 +1415,16 @@ static void read_name_cb(struct btd_device *device,
 	result(0, (uint8_t *) name, strlen(name), user_data);
 }
 
+static void read_appearance_cb(struct btd_device *device,
+				struct btd_attribute *attr,
+				btd_attr_read_result_t result,
+				void *user_data)
+{
+	uint8_t appearance[] = { 0x00, 0x00 };
+
+	result(0, appearance, sizeof(appearance), user_data);
+}
+
 static void ccc_written_cb(struct btd_device *device,
 			struct btd_attribute *attr, uint8_t *value,
 			size_t len, uint16_t offset,
@@ -1431,10 +1441,7 @@ static void ccc_written_cb(struct btd_device *device,
 
 static void add_gap(void)
 {
-	struct btd_attribute *char_value, *char_decl;
 	bt_uuid_t uuid;
-	uint8_t value[5];
-	uint8_t appearance[2];
 
 	/* Primary Service: <<GAP Service>> */
 	bt_uuid16_create(&uuid, GENERIC_ACCESS_PROFILE_ID);
@@ -1444,22 +1451,10 @@ static void add_gap(void)
 	bt_uuid16_create(&uuid, GATT_CHARAC_DEVICE_NAME);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_name_cb, NULL);
 
-	/* Declaration: <<Appearance >>*/
-	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
-	value[0] = ATT_CHAR_PROPER_READ;
-	att_put_u16(GATT_CHARAC_APPEARANCE, &value[3]);
-	char_decl = new_const_attribute(&uuid, value, sizeof(value));
-	add_attribute(char_decl);
-
-	/* Value: <<Appearance>> */
+	/* Declaration and Value: <<Appearance>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
-	att_put_u16(0x0000, &appearance);
-	char_value = new_const_attribute(&uuid, appearance,
-						sizeof(appearance));
-	add_attribute(char_value);
-
-	/* Setting handle in the <<Appearance>> Declaration */
-	att_put_u16(char_value->handle, &char_decl->value[1]);
+	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_appearance_cb,
+								NULL);
 }
 
 static void add_gatt(void)
