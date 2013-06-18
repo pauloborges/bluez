@@ -45,9 +45,23 @@ Properties	string UUID [read-only]
 			Value of the characteristic, if present, the value will be cached
 			by bluetoothd and updated when the PropertyChanged is emitted.
 
-		byte Permissions [read-only, optional]
+		string ReadSecurity [read-only, optional]
 
-		bool Authenticate [read-only, optional]
+			Defines the minimum security level requirement to
+			read this characteristic. Default value is "low".
+			Possible values:
+				"low": No Encryption, No Authentication
+				"medium": Encryption, No Authentication
+				"high": Encryption, Authentication
+
+		string WriteSecurity [read-only, optional]
+
+			Defines the minimum security level requirement to
+			write this characteristic. Default value is "low".
+			Possible values:
+				"low": No Encryption, No Authentication
+				"medium": Encryption, No Authentication
+				"high": Encryption, Authentication
 
 		byte Properties [read-only, optional]
 
