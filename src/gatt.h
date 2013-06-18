@@ -73,13 +73,20 @@ void btd_gatt_remove_service(struct btd_attribute *service);
  *		attribute is read.
  * @write_cb:	Callback that should be called once the characteristic value
  *		attribute is written.
+ * @read_sec:	Security level for reading the characterisct value
+ *		(BT_SECURITY_LOW, BT_SECURITY_MEDIUM or BT_SECURITY_HIGH).
+ * @write_sec:	Security level for writing the characterisct value
+ *		(BT_SECURITY_LOW, BT_SECURITY_MEDIUM or BT_SECURITY_HIGH).
+ * @key_size:	Minimum encryption key size.
  *
  * Returns a reference to characteristic value attribute. In case of error,
  * NULL is returned.
  */
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					btd_attr_read_t read_cb,
-					btd_attr_write_t write_cb);
+					btd_attr_write_t write_cb,
+					int read_sec, int write_sec,
+					int key_size);
 
 /* btd_gatt_add_char_desc - Add a characteristic descriptor to local attribute
  * database.
@@ -88,9 +95,16 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
  *		descriptor attribute is read.
  * @write_cb:	Callback that should be called once the characteristic
  *		descriptor attribute is written.
+ * @read_sec:	Security level for reading the characterisct value
+ *		(BT_SECURITY_LOW, BT_SECURITY_MEDIUM or BT_SECURITY_HIGH).
+ * @write_sec:	Security level for writing the characterisct value
+ *		(BT_SECURITY_LOW, BT_SECURITY_MEDIUM or BT_SECURITY_HIGH).
+ * @key_size:	Minimum encryption key size.
+ *
  */
 void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
-				btd_attr_write_t write_cb);
+				btd_attr_write_t write_cb,
+				int read_sec, int write_sec, int key_size);
 
 /* btd_gatt_get_services - Get a list with all services whose UUID matches the
  * searched one.
