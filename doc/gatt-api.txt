@@ -63,6 +63,11 @@ Properties	string UUID [read-only]
 				"medium": Encryption, No Authentication
 				"high": Encryption, Authentication
 
+		byte KeySize [read-only, optional]
+
+			Defines the minimum encryption key size when ReadSecurity
+			and/or WriteSecurity are set to "medium" or "high".
+
 		byte Properties [read-only, optional]
 
 		array{dict} Descriptors [read-write, optional]
