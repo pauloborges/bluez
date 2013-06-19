@@ -712,6 +712,32 @@ gboolean g_attrib_is_encrypted(GAttrib *attrib)
 	return sec_level > BT_IO_SEC_LOW;
 }
 
+int g_attrib_get_sec_level(GAttrib *attrib)
+{
+	int sec_level;
+
+	if (!bt_io_get(attrib->io, NULL, BT_IO_OPT_SEC_LEVEL, &sec_level,
+							BT_IO_OPT_INVALID)) {
+		warn("%s: error on bt_io_get()", __FUNCTION__);
+		return 0;
+	}
+
+	return sec_level;
+}
+
+int g_attrib_get_key_size(GAttrib *attrib)
+{
+	int key_size;
+
+	if (!bt_io_get(attrib->io, NULL, BT_IO_OPT_KEY_SIZE, &key_size,
+							BT_IO_OPT_INVALID)) {
+		warn("%s: error on bt_io_get()", __FUNCTION__);
+		return 0;
+	}
+
+	return key_size;
+}
+
 gboolean g_attrib_unregister(GAttrib *attrib, guint id)
 {
 	struct event *evt;
