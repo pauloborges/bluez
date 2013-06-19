@@ -140,6 +140,25 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 
+static GSList *attr_proxy_list = NULL;
+
+struct attr_proxy {
+	struct btd_attribute *attr;
+	GDBusProxy *proxy;
+};
+
+static void attr_set_proxy(struct btd_attribute *attr, GDBusProxy *proxy)
+{
+	struct attr_proxy *attr_proxy;
+
+	attr_proxy = g_new0(struct attr_proxy, 1);
+
+	attr_proxy->proxy = g_dbus_proxy_ref(proxy);
+	attr_proxy->attr = attr;
+
+	attr_proxy_list = g_slist_append(attr_proxy_list, attr_proxy);
+}
+
 static void print_attribute(gpointer a, gpointer b)
 {
 	struct btd_attribute *attr = a;
@@ -654,6 +673,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
 		bt_uuid_t uuid_value;
 		uint8_t properties, key_size = 0;
+		struct btd_attribute *attr;
 
 		path = g_dbus_proxy_get_path(proxy);
 
@@ -699,8 +719,10 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		srv->chrs = g_slist_append(srv->chrs, chr);
 
-		btd_gatt_add_char(&uuid_value, properties, read_char_cb,
+		attr = btd_gatt_add_char(&uuid_value, properties, read_char_cb,
 				write_char_cb, read_sec, write_sec, key_size);
+
+		attr_set_proxy(attr, proxy);
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
