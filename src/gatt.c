@@ -163,6 +163,16 @@ void btd_gatt_dump_local_attribute_database(void)
 	DBG("========= end ==========");
 }
 
+static int seclevel_string2int(const char *level)
+{
+	if (strcmp("high", level) == 0)
+		return BT_SECURITY_HIGH;
+	else if (strcmp("medium", level) == 0)
+		return BT_SECURITY_MEDIUM;
+	else
+		return BT_SECURITY_LOW;
+}
+
 static void send_error(GAttrib *attrib, uint8_t opcode, uint16_t handle,
 								uint8_t ecode)
 {
@@ -628,6 +638,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
 		struct characteristic *chr;
+		const char *security;
+		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
 		bt_uuid_t uuid_value;
 		uint8_t properties;
 
@@ -637,6 +649,18 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			return;
 
 		dbus_message_iter_get_basic(&iter, &uuid);
+
+		if (g_dbus_proxy_get_property(proxy, "ReadSecurity", &iter)) {
+			dbus_message_iter_get_basic(&iter, &security);
+			DBG("ReadSecurity: %s", security);
+			read_sec = seclevel_string2int(security);
+		}
+
+		if (g_dbus_proxy_get_property(proxy, "WriteSecurity", &iter)) {
+			dbus_message_iter_get_basic(&iter, &security);
+			DBG("WriteSecurity: %s", security);
+			write_sec = seclevel_string2int(security);
+		}
 
 		bt_string_to_uuid(&uuid_value, uuid);
 
@@ -657,8 +681,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		dbus_message_iter_get_basic(&iter, &properties);
 
 		btd_gatt_add_char(&uuid_value, properties, read_char_cb,
-					write_char_cb, BT_SECURITY_LOW,
-					BT_SECURITY_LOW, 0);
+					write_char_cb, read_sec, write_sec, 0);
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
