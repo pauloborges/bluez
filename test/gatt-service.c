@@ -296,12 +296,11 @@ static bool register_services(DBusConnection *conn, const char *path)
 
 }
 
-static void populate_service(DBusConnection *conn)
+static bool populate_service(DBusConnection *conn, const char **path)
 {
-	struct characteristic *chr;
 	struct service *service;
+	static char service_path[64];
 	static int id = 1;
-	char service_path[64], chr_path[64];
 
 	snprintf(service_path, sizeof(service_path), SERVICE_PATH, id++);
 
@@ -313,8 +312,20 @@ static void populate_service(DBusConnection *conn)
 					NULL, NULL, service_properties,
 					service, NULL) == FALSE) {
 		fprintf(stderr, "Couldn't register service interface\n");
-		return;
+		return false;
 	}
+
+	*path = service_path;
+
+	return true;
+}
+
+static bool populate_characteristic(DBusConnection *conn,
+						const char *service_path)
+{
+	struct characteristic *chr;
+	char chr_path[64];
+	static int id = 1;
 
 	snprintf(chr_path, sizeof(chr_path), "%s" CHARACTERISTIC_PATH,
 							service_path, id++);
@@ -334,16 +345,24 @@ static void populate_service(DBusConnection *conn)
 					chr_methods, NULL, chr_properties,
 					chr, NULL) == FALSE) {
 		fprintf(stderr, "Couldn't register service interface\n");
-		return;
+		return false;
 	}
 
-	if (register_services(conn, service_path) == false)
-		fprintf(stderr, "Could not send RegisterServices\n");
+	return true;
 }
 
-static void connect_handler(DBusConnection *connection, void *user_data)
+static void connect_handler(DBusConnection *conn, void *user_data)
 {
-	populate_service(dbus_conn);
+	const char *service_path;
+
+	if (!populate_service(conn, &service_path))
+		return;
+
+	if (!populate_characteristic(conn, service_path))
+		return;
+
+	if (!register_services(conn, service_path))
+		fprintf(stderr, "Could not send RegisterServices\n");
 }
 
 static gboolean signal_handler(GIOChannel *channel, GIOCondition cond,
