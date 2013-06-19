@@ -159,6 +159,20 @@ static void attr_set_proxy(struct btd_attribute *attr, GDBusProxy *proxy)
 	attr_proxy_list = g_slist_append(attr_proxy_list, attr_proxy);
 }
 
+static GDBusProxy *attr_get_proxy(struct btd_attribute *attr)
+{
+	GSList *list;
+
+	for (list = attr_proxy_list; list; list = g_slist_next(list)) {
+		struct attr_proxy *attr_proxy = list->data;
+
+		if (attr_proxy->attr == attr)
+			return attr_proxy->proxy;
+	}
+
+	return NULL;
+}
+
 static void print_attribute(gpointer a, gpointer b)
 {
 	struct btd_attribute *attr = a;
@@ -645,7 +659,15 @@ static void destroy_service(void *data)
 static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
-	DBG("Server: Read characteristic callback");
+	GDBusProxy *proxy;
+	const char *path;
+
+	proxy = attr_get_proxy(attr);
+	path = g_dbus_proxy_get_path(proxy);
+
+	DBG("Server: Read characteristic callback %s", path);
+
+	// TODO Call result callback.
 }
 
 static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
