@@ -653,7 +653,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		const char *security;
 		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
 		bt_uuid_t uuid_value;
-		uint8_t properties;
+		uint8_t properties, key_size = 0;
 
 		path = g_dbus_proxy_get_path(proxy);
 
@@ -672,6 +672,13 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			dbus_message_iter_get_basic(&iter, &security);
 			DBG("WriteSecurity: %s", security);
 			write_sec = seclevel_string2int(security);
+		}
+
+		if ((read_sec != BT_SECURITY_LOW ||
+			write_sec != BT_SECURITY_LOW) &&
+			g_dbus_proxy_get_property(proxy, "KeySize", &iter)) {
+			dbus_message_iter_get_basic(&iter, &key_size);
+			DBG("KeySize: %d", key_size);
 		}
 
 		if (!g_dbus_proxy_get_property(proxy, "Properties", &iter)) {
@@ -693,7 +700,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		srv->chrs = g_slist_append(srv->chrs, chr);
 
 		btd_gatt_add_char(&uuid_value, properties, read_char_cb,
-					write_char_cb, read_sec, write_sec, 0);
+				write_char_cb, read_sec, write_sec, key_size);
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
