@@ -497,6 +497,11 @@ static void client_read_attribute_cb(struct btd_device *device,
 	GAttrib *attrib = device_get_attrib(device);
 	struct attr_read_data *data;
 
+	if (attrib == NULL) {
+		result(ATT_ECODE_IO, NULL, 0, user_data);
+		return;
+	}
+
 	data = g_new0(struct attr_read_data, 1);
 	data->func = result;
 	data->user_data = user_data;
@@ -539,6 +544,11 @@ static void client_write_attribute_cb(struct btd_device *device,
 {
 	GAttrib *attrib = device_get_attrib(device);
 	struct attr_write_data *data;
+
+	if (attrib == NULL) {
+		result(ATT_ECODE_IO, user_data);
+		return;
+	}
 
 	data = g_new0(struct attr_write_data, 1);
 	data->func = result;
