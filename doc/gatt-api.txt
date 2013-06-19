@@ -48,7 +48,8 @@ Properties	string UUID [read-only]
 		string ReadSecurity [read-only, optional]
 
 			Defines the minimum security level requirement to
-			read this characteristic. Default value is "low".
+			read this characteristic. Applied to GATT server
+			implementations only. Default value is "low".
 			Possible values:
 				"low": No Encryption, No Authentication
 				"medium": Encryption, No Authentication
@@ -57,7 +58,8 @@ Properties	string UUID [read-only]
 		string WriteSecurity [read-only, optional]
 
 			Defines the minimum security level requirement to
-			write this characteristic. Default value is "low".
+			write this characteristic. Applied to GATT sever
+			implementations only. Default value is "low".
 			Possible values:
 				"low": No Encryption, No Authentication
 				"medium": Encryption, No Authentication
