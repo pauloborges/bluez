@@ -1501,6 +1501,52 @@ static void channel_free(struct channel *channel)
 	g_free(channel);
 }
 
+static uint8_t check_attribute_security(struct btd_attribute *attr,
+						struct channel *channel,
+						uint16_t opcode)
+{
+	int op_sec_level, chan_sec_level;
+	int key_size;
+
+	switch (opcode) {
+	case ATT_OP_READ_BY_TYPE_REQ:
+	case ATT_OP_READ_REQ:
+	case ATT_OP_READ_BLOB_REQ:
+	case ATT_OP_READ_MULTI_REQ:
+	case ATT_OP_READ_BY_GROUP_REQ:
+		op_sec_level = attr->read_sec;
+		break;
+	case ATT_OP_WRITE_REQ:
+	case ATT_OP_WRITE_CMD:
+	case ATT_OP_PREP_WRITE_REQ:
+	case ATT_OP_EXEC_WRITE_REQ:
+	case ATT_OP_SIGNED_WRITE_CMD:
+		op_sec_level = attr->write_sec;
+		break;
+	default:
+		return 0;
+	}
+
+	if (op_sec_level == BT_SECURITY_LOW)
+		return 0;
+
+	chan_sec_level = g_attrib_get_sec_level(channel->attrib);
+
+	if (chan_sec_level < op_sec_level) {
+		if (op_sec_level == BT_SECURITY_HIGH)
+			return ATT_ECODE_AUTHENTICATION;
+		else
+			return ATT_ECODE_INSUFF_ENC;
+	}
+
+	key_size = g_attrib_get_key_size(channel->attrib);
+
+	if (key_size < attr->key_size)
+		return ATT_ECODE_INSUFF_ENCR_KEY_SIZE;
+
+	return 0;
+}
+
 static gint find_by_handle(gconstpointer a, gconstpointer b)
 {
 	const struct btd_attribute *attr = a;
@@ -1591,6 +1637,7 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 	GList *list;
 	uint16_t start, end;
 	bt_uuid_t uuid;
+	uint8_t status = 0;
 
 	if (dec_read_by_type_req(ipdu, ilen, &start, &end, &uuid) == 0) {
 		send_error(channel->attrib, ipdu[0], 0x0000,
@@ -1623,11 +1670,18 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 		if (attr->value_len == 0 && attr->read_cb == NULL)
 			continue;
 
+		status = check_attribute_security(attr, channel, ipdu[0]);
+		if (status)
+			break;
+
 		trans->match = g_list_append(trans->match, attr);
 	}
 
 	if (trans->match == NULL) {
-		send_error(channel->attrib, ipdu[0], start,
+		if (status)
+			send_error(channel->attrib, ipdu[0], start, status);
+		else
+			send_error(channel->attrib, ipdu[0], start,
 						ATT_ECODE_ATTR_NOT_FOUND);
 		g_free(trans);
 		return;
@@ -1720,6 +1774,7 @@ static void read_request(struct channel *channel, const uint8_t *ipdu,
 	GList *list;
 	struct btd_attribute *attr;
 	struct att_transaction *trans;
+	uint8_t status;
 
 	if (dec_read_req(ipdu, ilen, &handle) == 0) {
 		send_error(channel->attrib, ipdu[0], 0x0000,
@@ -1736,6 +1791,13 @@ static void read_request(struct channel *channel, const uint8_t *ipdu,
 	}
 
 	attr = list->data;
+
+	status = check_attribute_security(attr, channel, ipdu[0]);
+	if (status) {
+		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
+								status);
+		return;
+	}
 
 	if (!validate_att_operation(list, ATT_OP_READ_REQ)) {
 		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
@@ -1968,6 +2030,7 @@ static void write_cmd(struct channel *channel, const uint8_t *ipdu,
 	struct btd_attribute *attr;
 	size_t vlen;
 	uint8_t value[channel->mtu];
+	uint8_t status;
 
 	if (dec_write_cmd(ipdu, ilen, &handle, value, &vlen) == 0)
 		return;
@@ -1981,6 +2044,10 @@ static void write_cmd(struct channel *channel, const uint8_t *ipdu,
 	attr = list->data;
 
 	if (attr->write_cb == NULL)
+		return;
+
+	status = check_attribute_security(attr, channel, ipdu[0]);
+	if (status)
 		return;
 
 	if (!validate_att_operation(list, ATT_OP_WRITE_CMD))
@@ -2017,6 +2084,7 @@ static void write_request(struct channel *channel,
 	size_t vlen;
 	uint16_t handle;
 	uint8_t value[channel->mtu];
+	uint8_t status;
 
 	if (dec_write_req(ipdu, ilen, &handle, value, &vlen) == 0) {
 		send_error(channel->attrib, ipdu[0], 0x0000,
@@ -2037,6 +2105,13 @@ static void write_request(struct channel *channel,
 	if (attr->write_cb == NULL) {
 		send_error(channel->attrib, ipdu[0], handle,
 						ATT_ECODE_WRITE_NOT_PERM);
+		return;
+	}
+
+	status = check_attribute_security(attr, channel, ipdu[0]);
+	if (status) {
+		send_error(channel->attrib, ATT_OP_WRITE_REQ, attr->handle,
+								status);
 		return;
 	}
 

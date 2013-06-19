@@ -66,6 +66,8 @@ guint g_attrib_register(GAttrib *attrib, guint8 opcode, guint16 handle,
 				GDestroyNotify notify);
 
 gboolean g_attrib_is_encrypted(GAttrib *attrib);
+int g_attrib_get_sec_level(GAttrib *attrib);
+int g_attrib_get_key_size(GAttrib *attrib);
 
 uint8_t *g_attrib_get_buffer(GAttrib *attrib, size_t *len);
 gboolean g_attrib_set_mtu(GAttrib *attrib, int mtu);
