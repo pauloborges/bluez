@@ -662,12 +662,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			write_sec = seclevel_string2int(security);
 		}
 
-		bt_string_to_uuid(&uuid_value, uuid);
-
-		chr = new_characteristic(path, uuid);
-
-		srv->chrs = g_slist_append(srv->chrs, chr);
-
 		if (!g_dbus_proxy_get_property(proxy, "Properties", &iter)) {
 			error("Could not get Properties");
 			return;
@@ -679,6 +673,12 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		}
 
 		dbus_message_iter_get_basic(&iter, &properties);
+
+		bt_string_to_uuid(&uuid_value, uuid);
+
+		chr = new_characteristic(path, uuid);
+
+		srv->chrs = g_slist_append(srv->chrs, chr);
 
 		btd_gatt_add_char(&uuid_value, properties, read_char_cb,
 					write_char_cb, read_sec, write_sec, 0);
