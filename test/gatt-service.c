@@ -42,8 +42,8 @@
 #define SERVICE_PATH "/service%d"
 #define CHARACTERISTIC_PATH "/characteristic%d"
 
-#define IMMEDIATE_ALERT_UUID "00001802-0000-1000-8000-00805f9b34fb"
-#define ALERT_LEVEL_CHR_UUID "00002a06-0000-1000-8000-00805f9b34fb"
+#define IMMEDIATE_ALERT_UUID16 "1802"
+#define ALERT_LEVEL_CHR_UUID16 "2a06"
 
 static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
@@ -302,7 +302,7 @@ static void populate_service(DBusConnection *conn)
 
 	service = g_new0(struct service, 1);
 
-	service->uuid = g_strdup(IMMEDIATE_ALERT_UUID);
+	service->uuid = g_strdup(IMMEDIATE_ALERT_UUID16);
 
 	if (g_dbus_register_interface(conn, service_path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties,
@@ -316,7 +316,7 @@ static void populate_service(DBusConnection *conn)
 
 	chr = g_new0(struct characteristic, 1);
 
-	chr->uuid = g_strdup(ALERT_LEVEL_CHR_UUID);
+	chr->uuid = g_strdup(ALERT_LEVEL_CHR_UUID16);
 
 	chr->value = g_new0(uint8_t, 1);
 	chr->vlen = sizeof(uint8_t);
