@@ -1970,7 +1970,7 @@ static void read_request(struct channel *channel, const uint8_t *ipdu,
 	trans->attr = attr;
 	trans->channel = channel;
 
-	attr->read_cb(channel->device, NULL, read_request_result, trans);
+	attr->read_cb(channel->device, attr, read_request_result, trans);
 }
 
 static void read_by_group_resp(struct channel *channel, uint16_t start,
