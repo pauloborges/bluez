@@ -119,6 +119,7 @@ struct browse_req {
 	int search_uuid;
 	int reconnect_attempt;
 	guint listener_id;
+	unsigned int watch_id;
 };
 
 struct included_search {
@@ -433,6 +434,8 @@ static void browse_request_free(struct browse_req *req)
 {
 	if (req->listener_id)
 		g_dbus_remove_watch(dbus_conn, req->listener_id);
+	if (req->watch_id)
+		g_source_remove(req->watch_id);
 	if (req->msg)
 		dbus_message_unref(req->msg);
 	g_slist_free_full(req->profiles_added, g_free);
@@ -3391,56 +3394,64 @@ static int connect_le(struct btd_device *dev)
 		return -EIO;
 	}
 
+
+
 	/* Keep this, so we can cancel the connection */
 	dev->att_io = io;
 
 	return 0;
 }
 
-static void att_browse_error_cb(const GError *gerr, gpointer user_data)
+static gboolean error_cb(GIOChannel *io, GIOCondition cond,
+						gpointer user_data)
 {
-	struct att_callbacks *attcb = user_data;
-	struct btd_device *device = attcb->user_data;
+	struct btd_device *device = user_data;
 	struct browse_req *req = device->browse;
+	struct included_search *search;
+	int sock, err;
+	socklen_t len = sizeof(err);
+	const char *str;
+
+	if (req == NULL)
+		return FALSE;
+
+	sock = g_io_channel_unix_get_fd(io);
+
+	if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
+		str = strerror(errno);
+	else
+		str = strerror(err);
+
+	DBG("ATT: %s", str);
 
 	if (req->msg) {
 		DBusMessage *reply;
 
-		reply = btd_error_failed(req->msg, gerr->message);
+		reply = btd_error_failed(req->msg, str);
 		g_dbus_send_message(dbus_conn, reply);
 	}
 
 	device->browse = NULL;
 	browse_request_free(req);
-}
 
-static void discover_gatt_services(struct btd_device *device)
-{
-	struct included_search *search;
-
-	/* Do a "Discover All Primary Services" procedure, followed by
-	 * recursive "Find Included Services" on each found service (up to one
-	 * level).
+	/*
+	 * FIXME: Remove discovery from device.c moving it to
+	 * gatt.c. UUIDs probe can be called from gatt.c
+	 * Dead code below: keeping the code just to compile and
+	 * avoid losing implemented features/code.
 	 */
+
 	search = g_new0(struct included_search, 1);
 	search->req = device->browse;
-	gatt_discover_primary(device->attrib, NULL, primary_cb, search);
 
-	gatt_discover_attributes(device);
-}
+	primary_cb(0, NULL, search);
 
-static void att_browse_cb(gpointer user_data)
-{
-	struct att_callbacks *attcb = user_data;
-	struct btd_device *device = attcb->user_data;
-
-	discover_gatt_services(device);
+	return FALSE;
 }
 
 static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 {
 	struct btd_adapter *adapter = device->adapter;
-	struct att_callbacks *attcb;
 	struct browse_req *req;
 
 	if (device->browse)
@@ -3451,18 +3462,9 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 
 	device->browse = req;
 
-	if (device->attrib) {
-		discover_gatt_services(device);
-		goto done;
-	}
-
-	attcb = g_new0(struct att_callbacks, 1);
-	attcb->err = att_browse_error_cb;
-	attcb->success = att_browse_cb;
-	attcb->user_data = device;
-
-	device->att_io = bt_io_connect(att_connect_cb,
-				attcb, NULL, NULL,
+	/* FIXME: already connected? */
+	device->att_io = bt_io_connect(gatt_connect_cb,
+				NULL, NULL, NULL,
 				BT_IO_OPT_SOURCE_BDADDR,
 				btd_adapter_get_address(adapter),
 				BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
@@ -3474,11 +3476,12 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 	if (device->att_io == NULL) {
 		device->browse = NULL;
 		browse_request_free(req);
-		g_free(attcb);
 		return -EIO;
 	}
 
-done:
+	req->watch_id = g_io_add_watch(device->att_io,
+					G_IO_ERR | G_IO_HUP | G_IO_NVAL,
+					error_cb, device);
 
 	if (msg) {
 		const char *sender = dbus_message_get_sender(msg);
