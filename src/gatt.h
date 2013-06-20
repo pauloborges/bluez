@@ -50,6 +50,16 @@ void gatt_discover_attributes(struct btd_device *device);
 
 bool gatt_load_from_storage(struct btd_device *device);
 
+/*
+ * gatt_connect_cb - Add internal watchers to track ATT protocol
+ * requests. Incoming and outgoing connection should use this connection
+ * callback in order to access the local GATT services.
+ * @io:		ATT GIOChannel
+ * @gerr:	GError containing possible connect error
+ * @user_data:	User defined error
+ */
+void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data);
+
 /* btd_gatt_add_service - Add a service declaration to local attribute database.
  * @uuid:	Service UUID.
  * @primary:	Set to 'true' if this is a primary services. Otherwise, it will
