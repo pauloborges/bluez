@@ -33,6 +33,9 @@
 #include <dbus/dbus.h>
 #include <gdbus/gdbus.h>
 
+#include "uuid.h"
+#include "attrib/att.h"
+
 #define SERVICE_MANAGER_INTERFACE "org.bluez.gatt.ServiceManager1"
 
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
@@ -320,6 +323,7 @@ static void populate_service(DBusConnection *conn)
 
 	chr->value = g_new0(uint8_t, 1);
 	chr->vlen = sizeof(uint8_t);
+	chr->props = ATT_CHAR_PROPER_WRITE_WITHOUT_RESP;
 
 	chr->features = CHAR_FEATURE_PROP_VALUE;
 
