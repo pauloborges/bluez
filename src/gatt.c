@@ -609,6 +609,14 @@ static void destroy_ccc(gpointer data)
 	g_slist_free_full(list, g_free);
 }
 
+static int ccc_client_cmp(gconstpointer a, gconstpointer b)
+{
+	const struct ccc_client *client = a;
+	const struct btd_device *device = b;
+
+	return client->device != device;
+}
+
 static void ccc_read_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_read_result_t result,
 				void *user_data)
@@ -628,12 +636,31 @@ static void ccc_write_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_write_result_t result,
 				void *user_data)
 {
+	struct ccc_client *client = NULL;
+	GSList *list, *ptr;
 	char addr[18];
 	uint16_t ccc_value = att_get_u16(value);
 
 	ba2str(device_get_address(device), addr);
 
 	DBG("Device %s handle %u ccc 0x%04x", addr, attr->handle, ccc_value);
+
+	list = g_hash_table_lookup(ccc, attr);
+	if (list) {
+		ptr = g_slist_find_custom(list, device, ccc_client_cmp);
+		if (ptr)
+			client = ptr->data;
+	}
+
+	if (client == NULL) {
+		client = g_new0(struct ccc_client, 1);
+		client->device = device;
+	}
+
+	client->value = ccc_value;
+
+	list = g_slist_prepend(list, client);
+	g_hash_table_insert(ccc, attr, list);
 
 	result(0, user_data);
 }
