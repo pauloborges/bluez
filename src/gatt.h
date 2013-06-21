@@ -176,6 +176,15 @@ void btd_gatt_write_attribute(struct btd_device *device,
 				btd_attr_write_result_t result,
 				void *user_data);
 
+/* btd_gatt_chara_value_changed - Send an ATT command informing the new
+ * characteristic value.
+ * @attr:	Modified characteristic declaration.
+ * @value:	New characteristic value.
+ * @len:	Length of the value.
+ */
+void btd_gatt_char_value_changed(struct btd_attribute *attr,
+						uint8_t *value, size_t len);
+
 /* btd_gatt_add_notifier - Add a notifier to an attribute.
  * @attr:	Target attribute.
  * @value_cb:	Callback function to be called when notify.

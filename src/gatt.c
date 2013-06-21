@@ -679,6 +679,41 @@ static void ccc_write_cb(struct btd_device *device, struct btd_attribute *attr,
 	result(0, user_data);
 }
 
+void btd_gatt_char_value_changed(struct btd_attribute *attr,
+						uint8_t *value, size_t len)
+{
+	struct ccc_client *client;
+	GAttrib *attrib;
+	uint16_t plen;
+	size_t buflen;
+	uint8_t *buf;
+	GSList *list;
+
+	DBG("handle 0x%04x", attr->handle);
+
+	list = g_hash_table_lookup(ccc, attr);
+	if (list == NULL)
+		return;
+
+	for (; list; list = g_slist_next(list)) {
+		client = list->data;
+		attrib = device_get_attrib(client->device);
+		buf = g_attrib_get_buffer(attrib, &buflen);
+
+		if (client->value & ATT_CHAR_PROPER_NOTIFY) {
+			plen = enc_notification(attr->handle, value, len, buf,
+								buflen);
+			g_attrib_send(attrib, 0, buf, plen, NULL, NULL, NULL);
+		}
+
+		if (client->value & ATT_CHAR_PROPER_INDICATE) {
+			plen = enc_notification(attr->handle, value, len, buf,
+								buflen);
+			g_attrib_send(attrib, 0, buf, plen, NULL, NULL, NULL);
+		}
+	}
+}
+
 static struct characteristic *new_characteristic(const char *path,
 							const char *uuid)
 {
