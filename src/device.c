@@ -84,6 +84,7 @@ struct btd_disconnect_data {
 struct bonding_req {
 	DBusMessage *msg;
 	guint listener_id;
+	unsigned int watch_id;
 	struct btd_device *device;
 	struct agent *agent;
 	struct btd_adapter_pin_cb_iter *cb_iter;
@@ -1355,31 +1356,33 @@ resolve_services:
 	return NULL;
 }
 
-static int connect_le(struct btd_device *dev);
+static GIOChannel *connect_le(struct btd_device *dev, GError **gerr);
 
 static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
 	struct btd_device *dev = user_data;
+	GError *gerr = NULL;
 
-	if (device_is_le(dev)) {
-		int err;
+	if (device_is_le(dev) == false)
+		return connect_profiles(dev, msg, NULL);
 
-		if (device_is_connected(dev))
-			return dbus_message_new_method_return(msg);
+	if (device_is_connected(dev))
+		return dbus_message_new_method_return(msg);
 
-		btd_device_set_temporary(dev, FALSE);
+	btd_device_set_temporary(dev, FALSE);
 
-		err = connect_le(dev);
-		if (err < 0)
-			return btd_error_failed(msg, strerror(-err));
-
-		dev->connect = dbus_message_ref(msg);
-
-		return NULL;
+	dev->att_io = connect_le(dev, &gerr);
+	if (gerr) {
+		DBusMessage *reply = btd_error_failed(msg, gerr->message);
+		g_error_free(gerr);
+		return reply;
 	}
 
-	return connect_profiles(dev, msg, NULL);
+	/* FIXME: */
+	dev->connect = dbus_message_ref(msg);
+
+	return NULL;
 }
 
 static DBusMessage *connect_profile(DBusConnection *conn, DBusMessage *msg,
@@ -1550,6 +1553,38 @@ static struct bonding_req *bonding_request_new(DBusMessage *msg,
 	return bonding;
 }
 
+static void bonding_request_free(struct bonding_req *bonding)
+{
+	if (!bonding)
+		return;
+
+	if (bonding->watch_id)
+		g_source_remove(bonding->watch_id);
+
+	if (bonding->listener_id)
+		g_dbus_remove_watch(dbus_conn, bonding->listener_id);
+
+	if (bonding->msg)
+		dbus_message_unref(bonding->msg);
+
+	if (bonding->cb_iter)
+		g_free(bonding->cb_iter);
+
+	if (bonding->agent) {
+		agent_cancel(bonding->agent);
+		agent_unref(bonding->agent);
+		bonding->agent = NULL;
+	}
+
+	if (bonding->retry_timer)
+		g_source_remove(bonding->retry_timer);
+
+	if (bonding->device)
+		bonding->device->bonding = NULL;
+
+	g_free(bonding);
+}
+
 void device_bonding_restart_timer(struct btd_device *device)
 {
 	if (!device || !device->bonding)
@@ -1611,11 +1646,12 @@ static DBusMessage *pair_device(DBusConnection *conn, DBusMessage *msg,
 {
 	struct btd_device *device = data;
 	struct btd_adapter *adapter = device->adapter;
+	DBusMessage *reply = NULL;
 	const char *sender;
 	struct agent *agent;
 	struct bonding_req *bonding;
 	uint8_t io_cap;
-	int err;
+	int err = 0;
 
 	btd_device_set_temporary(device, FALSE);
 
@@ -1653,16 +1689,25 @@ static DBusMessage *pair_device(DBusConnection *conn, DBusMessage *msg,
 	 * channel first and only then start pairing (there's code for
 	 * this in the ATT connect callback)
 	 */
-	if (device_is_le(device) && !device_is_connected(device))
-		err = connect_le(device);
-	else
+	if (device_is_le(device) && !device_is_connected(device)) {
+		GError *gerr = NULL;
+
+		device->att_io = connect_le(device, &gerr);
+		if (gerr) {
+			reply = btd_error_failed(msg, gerr->message);
+			g_error_free(gerr);
+		}
+	} else {
 		err = adapter_create_bonding(adapter, &device->bdaddr,
-						device->bdaddr_type, io_cap);
+				device->bdaddr_type, io_cap);
+		if (err < 0)
+			reply = btd_error_failed(msg, strerror(-err));
+	}
 
-	if (err < 0)
-		return btd_error_failed(msg, strerror(-err));
+	if (reply)
+		bonding_request_free(device->bonding);
 
-	return NULL;
+	return reply;
 }
 
 static DBusMessage *new_authentication_return(DBusMessage *msg, uint8_t status)
@@ -1695,35 +1740,6 @@ static DBusMessage *new_authentication_return(DBusMessage *msg, uint8_t status)
 				ERROR_INTERFACE ".AuthenticationFailed",
 				"Authentication Failed");
 	}
-}
-
-static void bonding_request_free(struct bonding_req *bonding)
-{
-	if (!bonding)
-		return;
-
-	if (bonding->listener_id)
-		g_dbus_remove_watch(dbus_conn, bonding->listener_id);
-
-	if (bonding->msg)
-		dbus_message_unref(bonding->msg);
-
-	if (bonding->cb_iter)
-		g_free(bonding->cb_iter);
-
-	if (bonding->agent) {
-		agent_cancel(bonding->agent);
-		agent_unref(bonding->agent);
-		bonding->agent = NULL;
-	}
-
-	if (bonding->retry_timer)
-		g_source_remove(bonding->retry_timer);
-
-	if (bonding->device)
-		bonding->device->bonding = NULL;
-
-	g_free(bonding);
 }
 
 static void device_cancel_bonding(struct btd_device *device, uint8_t status)
@@ -3101,7 +3117,7 @@ static gboolean attrib_disconnected_cb(GIOChannel *io, GIOCondition cond,
 	 * is connection timeout, remote user terminated connection.
 	 */
 	if (err == ETIMEDOUT || err == ECONNRESET) {
-		connect_le(device);
+		device->att_io = connect_le(device, NULL);
 		return FALSE;
 	}
 
@@ -3242,42 +3258,16 @@ static bool primary_cb(uint8_t status, GSList *services, void *user_data)
 	return true;
 }
 
-static void att_connect_cb(GIOChannel *io, GError *gerr, gpointer user_data)
+static gboolean pair_cb(GIOChannel *io, GIOCondition cond,
+						gpointer user_data)
 {
-	struct att_callbacks *attcb = user_data;
-	struct btd_device *device = attcb->user_data;
+	struct btd_device *device = user_data;
 	DBusMessage *reply;
+	const char *str;
+	int err;
 	uint8_t io_cap;
-	GAttrib *attrib;
-	int err = 0;
 
-	g_io_channel_unref(device->att_io);
-	device->att_io = NULL;
-
-	if (gerr) {
-		DBG("%s", gerr->message);
-
-		if (attcb->err)
-			attcb->err(gerr, user_data);
-
-		err = -ECONNABORTED;
-		goto done;
-	}
-
-	attrib = g_attrib_new(io);
-	device->attachid = attrib_channel_attach(attrib);
-	if (device->attachid == 0)
-		error("Attribute server attach failure!");
-
-	device->attrib = attrib;
-	device->cleanup_id = g_io_add_watch(io, G_IO_HUP,
-					attrib_disconnected_cb, device);
-
-	if (attcb->success)
-		attcb->success(user_data);
-
-	if (!device->bonding)
-		goto done;
+	DBG("device: %p", device);
 
 	if (device->bonding->agent)
 		io_cap = agent_get_io_capability(device->bonding->agent);
@@ -3285,79 +3275,69 @@ static void att_connect_cb(GIOChannel *io, GError *gerr, gpointer user_data)
 		io_cap = IO_CAPABILITY_NOINPUTNOOUTPUT;
 
 	err = adapter_create_bonding(device->adapter, &device->bdaddr,
-					device->bdaddr_type, io_cap);
-done:
-	if (device->bonding && err < 0) {
-		reply = btd_error_failed(device->bonding->msg, strerror(-err));
-		g_dbus_send_message(dbus_conn, reply);
-		bonding_request_cancel(device->bonding);
-		bonding_request_free(device->bonding);
-	}
+						device->bdaddr_type, io_cap);
+	if (err == 0)
+		return FALSE;
 
-	if (device->connect) {
-		if (!device->svc_resolved)
-			device_browse_primary(device, NULL);
+	str = strerror(-err);
 
-		if (err < 0)
-			reply = btd_error_failed(device->connect,
-							strerror(-err));
-		else
-			reply = dbus_message_new_method_return(device->connect);
+	reply = btd_error_failed(device->bonding->msg, str);
+	g_dbus_send_message(dbus_conn, reply);
 
-		g_dbus_send_message(dbus_conn, reply);
-		dbus_message_unref(device->connect);
-		device->connect = NULL;
-	}
+	bonding_request_cancel(device->bonding);
+	bonding_request_free(device->bonding);
 
-	g_free(attcb);
+	return FALSE;
 }
 
-static void att_error_cb(const GError *gerr, gpointer user_data)
+static gboolean pair_error_cb(GIOChannel *io, GIOCondition cond,
+						gpointer user_data)
 {
-	struct att_callbacks *attcb = user_data;
-	struct btd_device *device = attcb->user_data;
+	struct btd_device *device = user_data;
+	DBusMessage *reply;
+	const char *str;
+	int err, sock;
+	socklen_t len = sizeof(err);
 
-	if (g_error_matches(gerr, BT_IO_ERROR, ECONNABORTED))
-		return;
+	DBG("device: %p", device);
 
-	if (device->attios) {
-		DBG("Enabling automatic connections");
-		connect_le(device);
-	}
+	sock = g_io_channel_unix_get_fd(io);
+
+	if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
+		str = strerror(errno);
+	else
+		str = strerror(err);
+
+	reply = btd_error_failed(device->bonding->msg, str);
+	g_dbus_send_message(dbus_conn, reply);
+
+	bonding_request_cancel(device->bonding);
+	bonding_request_free(device->bonding);
+
+	 /*
+	  * Dead code below: keeping the code just to compile and
+	  * avoid losing implemented features/code.
+	  */
+
+	attrib_disconnected_cb(io, cond, device);
+
+	return FALSE;
 }
 
-static void att_success_cb(gpointer user_data)
-{
-	struct att_callbacks *attcb = user_data;
-	struct btd_device *device = attcb->user_data;
-
-	if (device->attios == NULL)
-		return;
-
-	g_slist_foreach(device->attios, attio_connected, device->attrib);
-}
-
-static int connect_le(struct btd_device *dev)
+static GIOChannel *connect_le(struct btd_device *dev, GError **gerr)
 {
 	struct btd_adapter *adapter = dev->adapter;
-	struct att_callbacks *attcb;
 	BtIOSecLevel sec_level;
 	GIOChannel *io;
-	GError *gerr = NULL;
 	char addr[18];
 
-	/* There is one connection attempt going on */
+	/* FIXME: There is one connection attempt going on */
 	if (dev->att_io)
-		return -EALREADY;
+		return dev->att_io;
 
 	ba2str(&dev->bdaddr, addr);
 
 	DBG("Connection attempt to: %s", addr);
-
-	attcb = g_new0(struct att_callbacks, 1);
-	attcb->err = att_error_cb;
-	attcb->success = att_success_cb;
-	attcb->user_data = dev;
 
 	if (dev->paired)
 		sec_level = BT_IO_SEC_MEDIUM;
@@ -3368,7 +3348,7 @@ static int connect_le(struct btd_device *dev)
 	 * This connection will help us catch any PDUs that comes before
 	 * pairing finishes
 	 */
-	io = bt_io_connect(att_connect_cb, attcb, NULL, &gerr,
+	io = bt_io_connect(gatt_connect_cb, dev, NULL, gerr,
 			BT_IO_OPT_SOURCE_BDADDR,
 			btd_adapter_get_address(adapter),
 			BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
@@ -3378,28 +3358,17 @@ static int connect_le(struct btd_device *dev)
 			BT_IO_OPT_SEC_LEVEL, sec_level,
 			BT_IO_OPT_INVALID);
 
-	if (io == NULL) {
-		if (dev->bonding) {
-			DBusMessage *reply = btd_error_failed(
-					dev->bonding->msg, gerr->message);
+	if (dev->bonding == NULL)
+		return io;
 
-			g_dbus_send_message(dbus_conn, reply);
-			bonding_request_cancel(dev->bonding);
-			bonding_request_free(dev->bonding);
-		}
+	/* FIXME: Remove watches */
+	g_io_add_watch(io, G_IO_OUT, pair_cb, dev);
 
-		error("ATT bt_io_connect(%s): %s", addr, gerr->message);
-		g_error_free(gerr);
-		g_free(attcb);
-		return -EIO;
-	}
+	dev->bonding->watch_id = g_io_add_watch(io,
+					G_IO_ERR | G_IO_HUP | G_IO_NVAL,
+					pair_error_cb, dev);
 
-
-
-	/* Keep this, so we can cancel the connection */
-	dev->att_io = io;
-
-	return 0;
+	return io;
 }
 
 static gboolean error_cb(GIOChannel *io, GIOCondition cond,
@@ -4405,7 +4374,7 @@ static void powered_cb(bool powered, void *user_data)
 	if (powered == false)
 		return;
 
-	connect_le(device);
+	device->att_io = connect_le(device, NULL);
 }
 
 guint btd_device_add_attio_callback(struct btd_device *device,
@@ -4442,7 +4411,7 @@ guint btd_device_add_attio_callback(struct btd_device *device,
 	}
 
 	if (btd_adapter_get_powered(device->adapter))
-		connect_le(device);
+		device->att_io = connect_le(device, NULL);
 
 	return attio->id;
 }

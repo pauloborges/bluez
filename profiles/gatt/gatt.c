@@ -49,7 +49,7 @@ static void read_device_name_chr_cb(int err, uint8_t *value, size_t len,
 	}
 
 	value[len - 1] = '\0';
-	device_set_name(device, (char *) value);
+	btd_device_device_set_name(device, (const char *) value);
 }
 
 static void read_device_name_chr(struct btd_device *device, GList *attrib_db,

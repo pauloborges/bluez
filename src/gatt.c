@@ -1308,7 +1308,7 @@ static void store_attribute(struct btd_device *device,
 	if (device_is_bonded(device) == FALSE)
 		return;
 
-	src = adapter_get_address(adapter);
+	src = btd_adapter_get_address(adapter);
 	ba2str(src, srcaddr);
 
 	dst = device_get_address(device);
@@ -1552,7 +1552,7 @@ bool gatt_load_from_storage(struct btd_device *device)
 	const bdaddr_t *src, *dst;
 	GKeyFile *key_file;
 
-	src = adapter_get_address(adapter);
+	src = btd_adapter_get_address(adapter);
 	ba2str(src, srcaddr);
 
 	dst = device_get_address(device);
@@ -2477,7 +2477,7 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		return;
 	}
 
-	channel->device = adapter_find_device(adapter, &dba);
+	channel->device = btd_adapter_find_device(adapter, &dba);
 	if (!channel->device) {
 		error("Can't find device %s", dst);
 		return;
