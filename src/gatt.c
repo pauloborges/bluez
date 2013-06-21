@@ -132,6 +132,12 @@ struct read_by_type_transaction {
 	uint8_t opdu[0];		/* Output PDU */
 };
 
+struct ccc_client {
+	struct btd_device *device;
+	uint16_t value;
+};
+
+static GHashTable *ccc = NULL;
 static GList *local_attribute_db = NULL;
 static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
@@ -300,6 +306,15 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 	}
 }
 
+static void ccc_read_cb(struct btd_device *device, struct btd_attribute *attr,
+				btd_attr_read_result_t result,
+				void *user_data);
+
+static void ccc_write_cb(struct btd_device *device, struct btd_attribute *attr,
+				uint8_t *value, size_t len, uint16_t offset,
+				btd_attr_write_result_t result,
+				void *user_data);
+
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					btd_attr_read_t read_cb,
 					btd_attr_write_t write_cb,
@@ -344,6 +359,16 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	 * attribute.
 	 */
 	att_put_u16(char_value->handle, &char_decl->value[1]);
+
+	/*
+	 * Create CCC characteristic descriptor attribute if the characteristic
+	 * has notify or indicate properties.
+	 */
+	if (properties & (ATT_CHAR_PROPER_NOTIFY | ATT_CHAR_PROPER_INDICATE)) {
+		bt_uuid16_create(&type, GATT_CLIENT_CHARAC_CFG_UUID);
+		btd_gatt_add_char_desc(&type, ccc_read_cb, ccc_write_cb,
+					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+	}
 
 	return char_value;
 }
@@ -575,6 +600,42 @@ void btd_gatt_remove_notifier(struct btd_attribute *attr, unsigned int id)
 		return;
 
 	g_hash_table_remove(attr->notifiers, &id);
+}
+
+static void destroy_ccc(gpointer data)
+{
+	GSList *list = data;
+
+	g_slist_free_full(list, g_free);
+}
+
+static void ccc_read_cb(struct btd_device *device, struct btd_attribute *attr,
+				btd_attr_read_result_t result,
+				void *user_data)
+{
+	char addr[18];
+	uint8_t ccc_value[2] = {0x00, 0x00};
+
+	ba2str(device_get_address(device), addr);
+
+	DBG("Device %s handle %u", addr, attr->handle);
+
+	result(0, ccc_value, 2, user_data);
+}
+
+static void ccc_write_cb(struct btd_device *device, struct btd_attribute *attr,
+				uint8_t *value, size_t len, uint16_t offset,
+				btd_attr_write_result_t result,
+				void *user_data)
+{
+	char addr[18];
+	uint16_t ccc_value = att_get_u16(value);
+
+	ba2str(device_get_address(device), addr);
+
+	DBG("Device %s handle %u ccc 0x%04x", addr, attr->handle, ccc_value);
+
+	result(0, user_data);
 }
 
 static struct characteristic *new_characteristic(const char *path,
@@ -2319,6 +2380,9 @@ void btd_gatt_service_manager_init(void)
 	add_gap();
 	add_gatt();
 
+	ccc = g_hash_table_new_full(NULL, NULL, NULL, destroy_ccc);
+	/* TODO deallocate ccc */
+
 	g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
@@ -2338,4 +2402,7 @@ void btd_gatt_service_manager_cleanup(void)
 		g_io_channel_shutdown(bredr_io, FALSE, NULL);
 		g_io_channel_unref(bredr_io);
 	}
+
+	g_hash_table_destroy(ccc);
+	ccc = NULL;
 }
