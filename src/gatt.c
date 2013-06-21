@@ -62,19 +62,24 @@
 
 struct characteristic {
 	char *path;
-	char *uuid;
+	bt_uuid_t uuid;
+	uint8_t properties;
+	int read_sec;
+	int write_sec;
+	int key_size;
+	GDBusProxy *proxy;
 };
 
 struct service {
 	char *path;
-	char *uuid;
-	GDBusClient *client;
-	GSList *chrs;
+	bt_uuid_t uuid;
 };
 
 struct application {
 	char *owner;
 	GSList *services;
+	GSList *chrs;
+	GDBusClient *client;
 	unsigned int watch;
 };
 
@@ -660,25 +665,12 @@ void btd_gatt_remove_notifier(struct btd_attribute *attr, unsigned int id)
 	g_hash_table_remove(attr->notifiers, &id);
 }
 
-static struct characteristic *new_characteristic(const char *path,
-							const char *uuid)
-{
-	struct characteristic *chr;
-
-	chr = g_new0(struct characteristic, 1);
-
-	chr->path = g_strdup(path);
-	chr->uuid = g_strdup(uuid);
-
-	return chr;
-}
-
 static void destroy_char(void *user_data)
 {
 	struct characteristic *chr = user_data;
 
 	g_free(chr->path);
-	g_free(chr->uuid);
+	g_dbus_proxy_unref(chr->proxy);
 	g_free(chr);
 }
 
@@ -687,10 +679,6 @@ static void destroy_service(void *data)
 	struct service *srv = data;
 
 	g_free(srv->path);
-	g_free(srv->uuid);
-
-	g_dbus_client_unref(srv->client);
-
 	g_free(srv);
 }
 
@@ -824,28 +812,34 @@ static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
 	DBG("Server: Write characteristic callback %s", path);
 }
 
+static int service_path_cmp(gconstpointer a, gconstpointer b)
+{
+	const struct service *srv = a;
+	const char *path = b;
+
+	return strcmp(srv->path, path);
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
-	struct service *srv = user_data;
+	struct application *app = user_data;
 	DBusMessageIter iter;
 	const char *interface;
 	const char *path;
 	const char *uuid;
 
 	interface = g_dbus_proxy_get_interface(proxy);
+	path = g_dbus_proxy_get_path(proxy);
 
-	DBG("iface %s", interface);
+	DBG("path %s iface %s", path, interface);
 
 	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
 		struct characteristic *chr;
 		const char *security;
 		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
-		bt_uuid_t uuid_value;
 		uint8_t properties, key_size = 0;
 		struct btd_attribute *attr;
 		gboolean ret;
-
-		path = g_dbus_proxy_get_path(proxy);
 
 		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
 			return;
@@ -887,23 +881,32 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &properties);
 
-		bt_string_to_uuid(&uuid_value, uuid);
+		chr = g_new0(struct characteristic, 1);
+		chr->path = g_strdup(path);
+		bt_string_to_uuid(&chr->uuid, uuid);
+		chr->properties = properties;
+		chr->read_sec = read_sec;
+		chr->write_sec = write_sec;
+		chr->key_size = key_size;
+		chr->proxy = g_dbus_proxy_ref(proxy);
 
-		chr = new_characteristic(path, uuid);
+		app->chrs = g_slist_append(app->chrs, chr);
 
-		srv->chrs = g_slist_append(srv->chrs, chr);
-
-		attr = btd_gatt_add_char(&uuid_value, properties, read_char_cb,
+		attr = btd_gatt_add_char(&chr->uuid, properties, read_char_cb,
 				write_char_cb, read_sec, write_sec, key_size);
 
 		attr_set_proxy(attr, proxy);
 
 		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
-		bt_uuid_t uuid_value;
+		struct service *srv;
+		GSList *l;
 
-		if (srv->uuid != NULL)
+		l = g_slist_find_custom(app->services, path, service_path_cmp);
+		if (l == NULL) {
+			DBG("Ignoring service not registered: %s", path);
 			return;
+		}
 
 		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter)) {
 			error("Could not get UUID");
@@ -917,49 +920,22 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &uuid);
 
-		srv->uuid = g_strdup(uuid);
+		srv = l->data;
+		bt_string_to_uuid(&srv->uuid, uuid);
 
-		bt_string_to_uuid(&uuid_value, uuid);
-		btd_gatt_add_service(&uuid_value, true);
+		btd_gatt_add_service(&srv->uuid, true);
 
-		DBG("uuid %s", uuid);
+		DBG("new service %s uuid %s", path, uuid);
 	}
-}
-
-static int char_by_path(const void *a, const void *b)
-{
-	const struct characteristic *chr = a;
-	const char *path = b;
-
-	return g_strcmp0(chr->path, path);
 }
 
 static void proxy_removed(GDBusProxy *proxy, void *user_data)
 {
-	GSList *l;
-	struct service *srv = user_data;
-	struct characteristic *chr;
 	const char *interface;
-	const char *path;
 
 	interface = g_dbus_proxy_get_interface(proxy);
 
 	DBG("iface %s", interface);
-
-	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) != 0)
-		return;
-
-	path = g_dbus_proxy_get_path(proxy);
-
-	l = g_slist_find_custom(srv->chrs, path, char_by_path);
-	if (l == NULL)
-		return;
-
-	chr = l->data;
-
-	srv->chrs = g_slist_remove(srv->chrs, chr);
-
-	destroy_char(chr);
 }
 
 static void property_changed(GDBusProxy *proxy, const char *name,
@@ -972,26 +948,6 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 	DBG("iface %s", interface);
 }
 
-static struct service *new_service(const char *sender, const char *path)
-{
-	struct service *srv;
-
-	srv = g_new0(struct service, 1);
-
-	srv->path = g_strdup(path);
-	srv->client = g_dbus_client_new(btd_get_dbus_connection(),
-							sender, path);
-	if (srv->client == NULL) {
-		destroy_service(srv);
-		return NULL;
-	}
-
-	g_dbus_client_set_proxy_handlers(srv->client, proxy_added,
-					proxy_removed, property_changed, srv);
-
-	return srv;
-}
-
 static void destroy_application(void *data)
 {
 	struct application *app = data;
@@ -1000,6 +956,7 @@ static void destroy_application(void *data)
 
 	g_free(app->owner);
 	g_slist_free_full(app->services, destroy_service);
+	g_slist_free_full(app->chrs, destroy_char);
 
 	if (app->watch > 0)
 		g_dbus_remove_watch(btd_get_dbus_connection(), app->watch);
@@ -1054,15 +1011,27 @@ static DBusMessage *register_services(DBusConnection *conn,
 
 	DBG("new app %p", app);
 
+	app->client = g_dbus_client_new(conn, app->owner, "/");
+	if (app->client == NULL) {
+		destroy_application(app);
+		return btd_error_failed(msg, "Not enough resources");
+	}
+
+	g_dbus_client_set_proxy_handlers(app->client, proxy_added,
+					proxy_removed, property_changed, app);
+
 	dbus_message_iter_recurse(&args, &iter);
 
 	while (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_OBJECT_PATH) {
+		struct service *srv;
 		const char *path;
 
 		dbus_message_iter_get_basic(&iter, &path);
 
-		app->services = g_slist_append(app->services,
-						new_service(app->owner, path));
+		srv = g_new0(struct service, 1);
+		srv->path = g_strdup(path);
+
+		app->services = g_slist_append(app->services, srv);
 
 		DBG("path %s", path);
 
