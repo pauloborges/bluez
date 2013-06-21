@@ -656,6 +656,18 @@ static void destroy_service(void *data)
 	g_free(srv);
 }
 
+static void read_char_setup(DBusMessageIter *iter, void *user_data)
+{
+	uint16_t value[] = { 0x0000 };
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, value);
+}
+
+static void read_char_reply(DBusMessage *msg, void *user_data)
+{
+	/* TODO Call result callback */
+}
+
 static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
@@ -665,9 +677,16 @@ static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 	proxy = attr_get_proxy(attr);
 	path = g_dbus_proxy_get_path(proxy);
 
-	DBG("Server: Read characteristic callback %s", path);
+	if (!g_dbus_proxy_method_call(proxy, "ReadValue",
+						read_char_setup,
+						read_char_reply,
+						NULL, NULL)) {
+		error("Could not call ReadValue dbus method");
+		result(ATT_ECODE_IO, NULL, 0, user_data);
+		return;
+	}
 
-	// TODO Call result callback.
+	DBG("Server: Read characteristic callback %s", path);
 }
 
 static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
