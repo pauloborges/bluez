@@ -271,10 +271,11 @@ static const GDBusMethodTable chr_methods[] = {
 	{ }
 };
 
-static bool register_services(DBusConnection *conn, const char *path)
+static bool register_services(DBusConnection *conn, GSList *paths)
 {
 	DBusMessage *msg;
 	DBusMessageIter iter, array;
+	GSList *l;
 
 	msg = dbus_message_new_method_call("org.bluez", "/org/bluez",
 				SERVICE_MANAGER_INTERFACE, "RegisterServices");
@@ -288,7 +289,11 @@ static bool register_services(DBusConnection *conn, const char *path)
 	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
 				DBUS_TYPE_OBJECT_PATH_AS_STRING, &array);
 
-	dbus_message_iter_append_basic(&array, DBUS_TYPE_OBJECT_PATH, &path);
+	for (l = paths; l != NULL; l = g_slist_next(l)) {
+		const char *path = l->data;
+		dbus_message_iter_append_basic(&array, DBUS_TYPE_OBJECT_PATH,
+								&path);
+	}
 
 	dbus_message_iter_close_container(&iter, &array);
 
@@ -296,7 +301,8 @@ static bool register_services(DBusConnection *conn, const char *path)
 
 }
 
-static bool populate_service(DBusConnection *conn, const char **path)
+static bool populate_service(DBusConnection *conn, const char *uuid,
+							const char **path)
 {
 	struct service *service;
 	static char service_path[64];
@@ -306,7 +312,7 @@ static bool populate_service(DBusConnection *conn, const char **path)
 
 	service = g_new0(struct service, 1);
 
-	service->uuid = g_strdup(IMMEDIATE_ALERT_UUID16);
+	service->uuid = g_strdup(uuid);
 
 	if (g_dbus_register_interface(conn, service_path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties,
@@ -320,8 +326,8 @@ static bool populate_service(DBusConnection *conn, const char **path)
 	return true;
 }
 
-static bool populate_characteristic(DBusConnection *conn,
-						const char *service_path)
+static bool populate_characteristic(DBusConnection *conn, const char *uuid,
+					uint8_t props, const char *service_path)
 {
 	struct characteristic *chr;
 	char chr_path[64];
@@ -332,11 +338,11 @@ static bool populate_characteristic(DBusConnection *conn,
 
 	chr = g_new0(struct characteristic, 1);
 
-	chr->uuid = g_strdup(ALERT_LEVEL_CHR_UUID16);
+	chr->uuid = g_strdup(uuid);
 
 	chr->value = g_new0(uint8_t, 1);
 	chr->vlen = sizeof(uint8_t);
-	chr->props = ATT_CHAR_PROPER_WRITE_WITHOUT_RESP;
+	chr->props = props;
 
 	chr->features = CHAR_FEATURE_PROP_VALUE;
 
@@ -354,15 +360,22 @@ static bool populate_characteristic(DBusConnection *conn,
 static void connect_handler(DBusConnection *conn, void *user_data)
 {
 	const char *service_path;
+	GSList *services = NULL;
 
-	if (!populate_service(conn, &service_path))
+	if (!populate_service(conn, IMMEDIATE_ALERT_UUID16, &service_path))
 		return;
 
-	if (!populate_characteristic(conn, service_path))
+	if (!populate_characteristic(conn, ALERT_LEVEL_CHR_UUID16,
+					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
+					service_path))
 		return;
 
-	if (!register_services(conn, service_path))
+	services = g_slist_append(services, g_strdup(service_path));
+
+	if (!register_services(conn, services))
 		fprintf(stderr, "Could not send RegisterServices\n");
+
+	g_slist_free_full(services, g_free);
 }
 
 static gboolean signal_handler(GIOChannel *channel, GIOCondition cond,
