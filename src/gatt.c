@@ -621,6 +621,8 @@ static void ccc_read_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_read_result_t result,
 				void *user_data)
 {
+	struct ccc_client *client;
+	GSList *list;
 	char addr[18];
 	uint8_t ccc_value[2] = {0x00, 0x00};
 
@@ -628,6 +630,18 @@ static void ccc_read_cb(struct btd_device *device, struct btd_attribute *attr,
 
 	DBG("Device %s handle %u", addr, attr->handle);
 
+	list = g_hash_table_lookup(ccc, attr);
+	if (list == NULL)
+		goto done;
+
+	list = g_slist_find_custom(list, device, ccc_client_cmp);
+	if (list == NULL)
+		goto done;
+
+	client = list->data;
+	att_put_u16(client->value, ccc_value);
+
+done:
 	result(0, ccc_value, 2, user_data);
 }
 
