@@ -767,6 +767,21 @@ static void destroy_service(void *data)
 	g_free(srv);
 }
 
+static struct btd_attribute *proxy_to_attr(GDBusProxy *proxy)
+{
+	GSList *list;
+
+	for (list = attr_proxy_list; list; list = g_slist_next(list)) {
+		struct attr_proxy *attr_proxy = list->data;
+
+		if (attr_proxy->proxy == proxy)
+			return attr_proxy->attr;
+	}
+
+	return NULL;
+
+}
+
 static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
@@ -914,6 +929,27 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 	interface = g_dbus_proxy_get_interface(proxy);
 
 	DBG("iface %s", interface);
+
+	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
+		struct btd_attribute *attr;
+		DBusMessageIter iter;
+		const uint8_t *value;
+		int len;
+
+		attr = proxy_to_attr(proxy);
+		if (attr == NULL)
+			return;
+
+		if (g_strcmp0(name, "Value") != 0)
+			return;
+
+		if (g_dbus_proxy_get_property(proxy, "Value", &iter) == FALSE)
+			return;
+
+		dbus_message_iter_get_fixed_array(&iter, &value, &len);
+
+		btd_gatt_char_value_changed(attr, (uint8_t *) value, len);
+	}
 }
 
 static struct service *new_service(const char *sender, const char *path)
