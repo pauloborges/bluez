@@ -48,6 +48,7 @@
 #define CHARACTERISTIC_PATH "/characteristic%d"
 
 #define IMMEDIATE_ALERT_UUID16 "1802"
+#define LINK_LOSS_UUID16 "1803"
 #define ALERT_LEVEL_CHR_UUID16 "2a06"
 
 static GMainLoop *main_loop;
@@ -362,12 +363,26 @@ static void connect_handler(DBusConnection *conn, void *user_data)
 	const char *service_path;
 	GSList *services = NULL;
 
+	/* Immediate Alert Service (IAS) */
+
 	if (!populate_service(conn, IMMEDIATE_ALERT_UUID16, &service_path))
 		return;
 
 	if (!populate_characteristic(conn, ALERT_LEVEL_CHR_UUID16,
 					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
 					service_path))
+		return;
+
+	services = g_slist_append(services, g_strdup(service_path));
+
+	/* Link Loss Service (LLS) */
+
+	if (!populate_service(conn, LINK_LOSS_UUID16, &service_path))
+		return;
+
+	if (!populate_characteristic(conn, ALERT_LEVEL_CHR_UUID16,
+				ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_WRITE,
+				service_path))
 		return;
 
 	services = g_slist_append(services, g_strdup(service_path));
