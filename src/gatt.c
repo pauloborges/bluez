@@ -665,7 +665,15 @@ static void read_char_setup(DBusMessageIter *iter, void *user_data)
 
 static void read_char_reply(DBusMessage *msg, void *user_data)
 {
-	/* TODO Call result callback */
+	struct attr_read_data *rd = user_data;
+	uint8_t value[] = { 0x00 };
+
+	rd->func(0, value, sizeof(value), rd->user_data);
+}
+
+static void read_char_destroy(void *user_data)
+{
+	g_free(user_data);
 }
 
 static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
@@ -673,6 +681,11 @@ static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 {
 	GDBusProxy *proxy;
 	const char *path;
+	struct attr_read_data *rd;
+
+	rd = g_new0(struct attr_read_data, 1);
+	rd->func = result;
+	rd->user_data = user_data;
 
 	proxy = attr_get_proxy(attr);
 	path = g_dbus_proxy_get_path(proxy);
@@ -680,9 +693,11 @@ static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 	if (!g_dbus_proxy_method_call(proxy, "ReadValue",
 						read_char_setup,
 						read_char_reply,
-						NULL, NULL)) {
+						rd,
+						read_char_destroy)) {
 		error("Could not call ReadValue dbus method");
 		result(ATT_ECODE_IO, NULL, 0, user_data);
+		read_char_destroy(rd);
 		return;
 	}
 
