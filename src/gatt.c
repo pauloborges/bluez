@@ -1629,37 +1629,6 @@ bool gatt_load_from_storage(struct btd_device *device)
 	return true;
 }
 
-void gatt_discover_attributes(struct btd_device *device)
-{
-	GAttrib *attrib;
-	bt_uuid_t uuid;
-
-	attrib = device_get_attrib(device);
-	if (attrib == NULL)
-		return;
-
-	DBG("device %p", device);
-
-	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_primary_service, device);
-
-	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_secondary_service, device);
-
-	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_char_declaration, device);
-
-	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					insert_include, device);
-
-	gatt_foreach_by_info(attrib, 0x0001, 0xffff, insert_char_descriptor,
-					device);
-}
-
 static void read_name_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result,
@@ -2447,6 +2416,7 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	uint16_t mtu, cid;
 	char src[18], dst[18];
 	struct btd_adapter *adapter;
+	bt_uuid_t uuid;
 	bdaddr_t sba;
 	bdaddr_t dba;
 
@@ -2496,6 +2466,31 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	channel->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				channel, (GDestroyNotify) channel_free);
+
+	/*
+	 * FIXME: Check storage before triggering attributes discovery.
+	 * Missing probe mechanism and reply for connect or pair. Fix
+	 * device weak reference and disconnection when ATT operation
+	 * are still pending. Fix core reverse service discovery.
+	 */
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+				insert_primary_service, channel->device);
+
+	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
+	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+				insert_secondary_service, channel->device);
+
+	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
+	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+				insert_char_declaration, channel->device);
+
+	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
+	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+					insert_include, channel->device);
+
+	gatt_foreach_by_info(channel->attrib, 0x0001, 0xffff,
+				insert_char_descriptor, channel->device);
 }
 
 void btd_gatt_service_manager_init(void)
