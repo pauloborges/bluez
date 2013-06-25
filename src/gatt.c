@@ -666,9 +666,26 @@ static void read_char_setup(DBusMessageIter *iter, void *user_data)
 static void read_char_reply(DBusMessage *msg, void *user_data)
 {
 	struct attr_read_data *rd = user_data;
-	uint8_t value[] = { 0x00 };
+	DBusMessageIter args, iter;
+	const uint8_t *value;
+	int len;
 
-	rd->func(0, value, sizeof(value), rd->user_data);
+	if (dbus_message_iter_init(msg, &args) == false)
+		goto invalid;
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
+		goto invalid;
+
+	dbus_message_iter_recurse(&args, &iter);
+	dbus_message_iter_get_fixed_array(&iter, &value, &len);
+
+	rd->func(0, (uint8_t *) value, len, rd->user_data);
+
+	return;
+
+invalid:
+	rd->func(ATT_ECODE_IO, NULL, 0, rd->user_data);
+	DBG("Invalid parameters");
 }
 
 static void read_char_destroy(void *user_data)
