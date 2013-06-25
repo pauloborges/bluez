@@ -164,7 +164,6 @@ struct btd_device {
 	GSList		*disconnects;		/* disconnects message */
 	DBusMessage	*connect;		/* connect message */
 	DBusMessage	*disconnect;		/* disconnect message */
-	GAttrib		*attrib;
 
 	gboolean	connected;
 
@@ -4038,11 +4037,6 @@ GList *btd_device_get_attribute_database(struct btd_device *device)
 void device_set_attribute_database(struct btd_device *device, GList *database)
 {
 	device->attribute_database = database;
-}
-
-GAttrib *device_get_attrib(struct btd_device *device)
-{
-	return device->attrib;
 }
 
 void btd_device_init(void)

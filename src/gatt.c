@@ -139,6 +139,7 @@ static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
+static GHashTable *channels = NULL;
 
 static GSList *attr_proxy_list = NULL;
 
@@ -527,10 +528,11 @@ static void client_read_attribute_cb(struct btd_device *device,
 						btd_attr_read_result_t result,
 						void *user_data)
 {
-	GAttrib *attrib = device_get_attrib(device);
+	struct channel *channel;
 	struct attr_read_data *data;
 
-	if (attrib == NULL) {
+	channel = g_hash_table_lookup(channels, device);
+	if (channel == NULL || channel->attrib == NULL) {
 		result(ATT_ECODE_IO, NULL, 0, user_data);
 		return;
 	}
@@ -539,7 +541,7 @@ static void client_read_attribute_cb(struct btd_device *device,
 	data->func = result;
 	data->user_data = user_data;
 
-	if (gatt_read_char(attrib, attr->handle,
+	if (gatt_read_char(channel->attrib, attr->handle,
 				client_read_attribute_response, data) == 0) {
 		result(ATT_ECODE_UNLIKELY, NULL, 0, user_data);
 		g_free(data);
@@ -575,10 +577,11 @@ static void client_write_attribute_cb(struct btd_device *device,
 					btd_attr_write_result_t result,
 					void *user_data)
 {
-	GAttrib *attrib = device_get_attrib(device);
+	struct channel *channel;
 	struct attr_write_data *data;
 
-	if (attrib == NULL) {
+	channel = g_hash_table_lookup(channels, device);
+	if (channel == NULL || channel->attrib == NULL) {
 		result(ATT_ECODE_IO, user_data);
 		return;
 	}
@@ -587,7 +590,7 @@ static void client_write_attribute_cb(struct btd_device *device,
 	data->func = result;
 	data->user_data = user_data;
 
-	if (gatt_write_char(attrib, attr->handle, offset, value, len,
+	if (gatt_write_char(channel->attrib, attr->handle, offset, value, len,
 				client_write_attribute_response, data) == 0) {
 		result(ATT_ECODE_UNLIKELY, user_data);
 		g_free(data);
@@ -1704,10 +1707,18 @@ static void add_gatt(void)
 	btd_gatt_dump_local_attribute_database();
 }
 
-static void channel_free(struct channel *channel)
+static void channel_free(gpointer user_data)
 {
+	struct channel *channel = user_data;
+
 	g_attrib_unref(channel->attrib);
+	btd_device_unref(channel->device);
 	g_free(channel);
+}
+
+static void channel_remove(gpointer user_data)
+{
+	g_hash_table_remove(channels, user_data);
 }
 
 static uint8_t check_attribute_security(struct btd_attribute *attr,
@@ -2416,6 +2427,7 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	uint16_t mtu, cid;
 	char src[18], dst[18];
 	struct btd_adapter *adapter;
+	struct btd_device *device;
 	bt_uuid_t uuid;
 	bdaddr_t sba;
 	bdaddr_t dba;
@@ -2425,17 +2437,13 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		return;
 	}
 
-	channel = g_new0(struct channel, 1);
-
 	if (!bt_io_get(io, NULL,
 			BT_IO_OPT_SOURCE_BDADDR, &sba,
 			BT_IO_OPT_DEST_BDADDR, &dba,
 			BT_IO_OPT_CID, &cid,
 			BT_IO_OPT_IMTU, &mtu,
-			BT_IO_OPT_INVALID)) {
-		g_free(channel);
+			BT_IO_OPT_INVALID))
 		return;
-	}
 
 	ba2str(&sba, src);
 	ba2str(&dba, dst);
@@ -2443,18 +2451,21 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	adapter = adapter_find(&sba);
 	if (!adapter) {
 		error("Can't find adapter %s", src);
-		g_free(channel);
 		return;
 	}
 
-	channel->device = btd_adapter_find_device(adapter, &dba);
-	if (!channel->device) {
+	device = btd_adapter_find_device(adapter, &dba);
+	if (device == NULL) {
 		error("Can't find device %s", dst);
 		return;
 	}
 
+	channel = g_new0(struct channel, 1);
+	channel->device = btd_device_ref(device);
 	channel->attrib = g_attrib_new(io);
 	channel->mtu = (cid == ATT_CID ? ATT_DEFAULT_LE_MTU : mtu);
+
+	g_hash_table_insert(channels, device, channel);
 
 	DBG("%p Connected: %s < %s CID: %d, MTU: %d", channel, src, dst,
 								cid, mtu);
@@ -2465,7 +2476,7 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	channel->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
-				channel, (GDestroyNotify) channel_free);
+				channel, (GDestroyNotify) channel_remove);
 
 	/*
 	 * FIXME: Check storage before triggering attributes discovery.
@@ -2475,22 +2486,22 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 */
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
-				insert_primary_service, channel->device);
+				insert_primary_service, device);
 
 	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
 	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
-				insert_secondary_service, channel->device);
+				insert_secondary_service, device);
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
 	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
-				insert_char_declaration, channel->device);
+				insert_char_declaration, device);
 
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
 	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
-					insert_include, channel->device);
+					insert_include, device);
 
 	gatt_foreach_by_info(channel->attrib, 0x0001, 0xffff,
-				insert_char_descriptor, channel->device);
+				insert_char_descriptor, device);
 }
 
 void btd_gatt_service_manager_init(void)
@@ -2533,6 +2544,9 @@ void btd_gatt_service_manager_init(void)
 	g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
+
+	channels = g_hash_table_new_full(g_int_hash, g_int_equal, NULL,
+							channel_free);
 }
 
 void btd_gatt_service_manager_cleanup(void)
@@ -2549,4 +2563,6 @@ void btd_gatt_service_manager_cleanup(void)
 		g_io_channel_shutdown(bredr_io, FALSE, NULL);
 		g_io_channel_unref(bredr_io);
 	}
+
+	g_hash_table_destroy(channels);
 }
