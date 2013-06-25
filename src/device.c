@@ -52,7 +52,6 @@
 #include "hcid.h"
 #include "adapter.h"
 #include "attrib/gattrib.h"
-#include "attio.h"
 #include "device.h"
 #include "profile.h"
 #include "service.h"
@@ -64,7 +63,6 @@
 #include "gatt.h"
 #include "agent.h"
 #include "storage.h"
-#include "attrib-server.h"
 
 #define IO_CAPABILITY_NOINPUTNOOUTPUT	0x03
 
@@ -129,30 +127,12 @@ struct included_search {
 	GSList *current;
 };
 
-struct attio_data {
-	guint id;
-	unsigned int idle_id;
-	attio_connect_cb cfunc;
-	attio_disconnect_cb dcfunc;
-	struct btd_device *device;
-	gpointer user_data;
-};
-
 struct svc_callback {
 	unsigned int id;
 	guint idle_id;
 	struct btd_device *dev;
 	device_svc_cb_t func;
 	void *user_data;
-};
-
-typedef void (*attio_error_cb) (const GError *gerr, gpointer user_data);
-typedef void (*attio_success_cb) (gpointer user_data);
-
-struct att_callbacks {
-	attio_error_cb err;		/* Callback for error */
-	attio_success_cb success;	/* Callback for success */
-	gpointer user_data;
 };
 
 struct btd_device {
@@ -191,8 +171,6 @@ struct btd_device {
 	DBusMessage	*connect;		/* connect message */
 	DBusMessage	*disconnect;		/* disconnect message */
 	GAttrib		*attrib;
-	GSList		*attios;
-	guint		attachid;		/* Attrib server attach */
 
 	gboolean	connected;
 
@@ -446,40 +424,12 @@ static void browse_request_free(struct browse_req *req)
 	g_free(req);
 }
 
-static void attio_cleanup(struct btd_device *device)
-{
-	if (device->attachid) {
-		attrib_channel_detach(device->attrib, device->attachid);
-		device->attachid = 0;
-	}
-
-	if (device->cleanup_id) {
-		g_source_remove(device->cleanup_id);
-		device->cleanup_id = 0;
-	}
-
-	if (device->att_io) {
-		g_io_channel_shutdown(device->att_io, FALSE, NULL);
-		g_io_channel_unref(device->att_io);
-		device->att_io = NULL;
-	}
-
-	if (device->attrib) {
-		GAttrib *attrib = device->attrib;
-		device->attrib = NULL;
-		g_attrib_cancel_all(attrib);
-		g_attrib_unref(attrib);
-	}
-}
-
 static void browse_request_cancel(struct browse_req *req)
 {
 	struct btd_device *device = req->device;
 	struct btd_adapter *adapter = device->adapter;
 
 	bt_cancel_discovery(btd_adapter_get_address(adapter), &device->bdaddr);
-
-	attio_cleanup(device);
 
 	device->browse = NULL;
 	browse_request_free(req);
@@ -503,10 +453,7 @@ static void device_free(gpointer user_data)
 
 	g_slist_free_full(device->uuids, g_free);
 	g_slist_free_full(device->primaries, g_free);
-	g_slist_free_full(device->attios, g_free);
 	g_slist_free_full(device->svc_callbacks, svc_dev_remove);
-
-	attio_cleanup(device);
 
 	if (device->tmp_records)
 		sdp_list_free(device->tmp_records,
@@ -3072,61 +3019,6 @@ static void store_services(struct btd_device *device)
 	g_key_file_free(key_file);
 }
 
-static void attio_connected(gpointer data, gpointer user_data)
-{
-	struct attio_data *attio = data;
-	GAttrib *attrib = user_data;
-
-	if (attio->cfunc)
-		attio->cfunc(attrib, attio->user_data);
-}
-
-static void attio_disconnected(gpointer data, gpointer user_data)
-{
-	struct attio_data *attio = data;
-
-	if (attio->dcfunc)
-		attio->dcfunc(attio->user_data);
-}
-
-static gboolean attrib_disconnected_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
-{
-	struct btd_device *device = user_data;
-	int sock, err = 0;
-	socklen_t len;
-
-	if (device->browse)
-		goto done;
-
-	sock = g_io_channel_unix_get_fd(io);
-	len = sizeof(err);
-	getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len);
-
-	DBG("%s (%d)", strerror(err), err);
-
-	g_slist_foreach(device->attios, attio_disconnected, NULL);
-
-	if (device->attios == NULL) {
-		DBG("Automatic connection disabled");
-		goto done;
-	}
-
-	/*
-	 * Keep scanning/re-connection active if disconnection reason
-	 * is connection timeout, remote user terminated connection.
-	 */
-	if (err == ETIMEDOUT || err == ECONNRESET) {
-		device->att_io = connect_le(device, NULL);
-		return FALSE;
-	}
-
-done:
-	attio_cleanup(device);
-
-	return FALSE;
-}
-
 static void register_all_services(struct browse_req *req, GSList *services)
 {
 	struct btd_device *device = req->device;
@@ -3140,9 +3032,6 @@ static void register_all_services(struct browse_req *req, GSList *services)
 	device_register_primaries(device, g_slist_copy(services));
 
 	device_probe_profiles(device, req->profiles_added);
-
-	if (device->attios == NULL)
-		attio_cleanup(device);
 
 	g_dbus_emit_property_changed(dbus_conn, device->path,
 						DEVICE_INTERFACE, "UUIDs");
@@ -3313,13 +3202,6 @@ static gboolean pair_error_cb(GIOChannel *io, GIOCondition cond,
 
 	bonding_request_cancel(device->bonding);
 	bonding_request_free(device->bonding);
-
-	 /*
-	  * Dead code below: keeping the code just to compile and
-	  * avoid losing implemented features/code.
-	  */
-
-	attrib_disconnected_cb(io, cond, device);
 
 	return FALSE;
 }
@@ -4343,120 +4225,6 @@ void device_set_appearance(struct btd_device *device, uint16_t value)
 
 	device->appearance = value;
 	store_device_info(device);
-}
-
-static gboolean notify_attio(gpointer user_data)
-{
-	struct attio_data *attio = user_data;
-	struct btd_device *device = attio->device;
-
-	attio->idle_id = 0;
-
-	if (device->attrib == NULL)
-		return FALSE;
-
-	attio_connected(attio, device->attrib);
-
-	return FALSE;
-}
-
-static void powered_cb(bool powered, void *user_data)
-{
-	struct btd_device *device = user_data;
-
-	/*
-	 * When the adapter is powered down the scanning
-	 * and the active connections are closed by the
-	 * kernel. ATT/GATT control variables are cleaned
-	 * when the error callback gets called.
-	 */
-
-	if (powered == false)
-		return;
-
-	device->att_io = connect_le(device, NULL);
-}
-
-guint btd_device_add_attio_callback(struct btd_device *device,
-						attio_connect_cb cfunc,
-						attio_disconnect_cb dcfunc,
-						gpointer user_data)
-{
-	struct attio_data *attio;
-	static guint attio_id = 0;
-
-	DBG("%p registered ATT connection callback", device);
-
-	attio = g_new0(struct attio_data, 1);
-	attio->id = ++attio_id;
-	attio->cfunc = cfunc;
-	attio->dcfunc = dcfunc;
-	attio->device = btd_device_ref(device);
-	attio->user_data = user_data;
-
-	if (device->attios == NULL)
-		device->powered_id =
-			btd_adapter_register_powered_cb(device->adapter,
-							powered_cb, device);
-
-	device->attios = g_slist_append(device->attios, attio);
-
-	/*
-	 * If ATT channel is established already: notify the client
-	 * in the in the next loop iteraction.
-	 */
-	if (device->attrib && cfunc) {
-		attio->idle_id = g_idle_add(notify_attio, attio);
-		return attio->id;
-	}
-
-	if (btd_adapter_get_powered(device->adapter))
-		device->att_io = connect_le(device, NULL);
-
-	return attio->id;
-}
-
-static int attio_id_cmp(gconstpointer a, gconstpointer b)
-{
-	const struct attio_data *attio = a;
-	guint id = GPOINTER_TO_UINT(b);
-
-	return attio->id - id;
-}
-
-gboolean btd_device_remove_attio_callback(struct btd_device *device, guint id)
-{
-	struct attio_data *attio;
-	GSList *l;
-
-	l = g_slist_find_custom(device->attios, GUINT_TO_POINTER(id),
-								attio_id_cmp);
-	if (!l)
-		return FALSE;
-
-	attio = l->data;
-
-	/*
-	 * Safe-guard: remove source if register and unregistered gets called
-	 * in the same loop iteraction.
-	 */
-	if (attio->idle_id)
-		g_source_remove(attio->idle_id);
-
-	device->attios = g_slist_remove(device->attios, attio);
-
-	btd_device_unref(attio->device);
-	g_free(attio);
-
-	if (device->attios != NULL)
-		return TRUE;
-
-	btd_adapter_unregister_powered_cb(device->adapter, device->powered_id);
-	device->powered_id = 0;
-
-	attio_cleanup(device);
-
-	return TRUE;
 }
 
 void btd_device_set_pnpid(struct btd_device *device, uint16_t source,
