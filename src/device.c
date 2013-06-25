@@ -121,12 +121,6 @@ struct browse_req {
 	unsigned int watch_id;
 };
 
-struct included_search {
-	struct browse_req *req;
-	GSList *services;
-	GSList *current;
-};
-
 struct svc_callback {
 	unsigned int id;
 	guint idle_id;
@@ -2791,33 +2785,6 @@ next:
 	}
 }
 
-static int primary_cmp(gconstpointer a, gconstpointer b)
-{
-	return memcmp(a, b, sizeof(struct gatt_primary));
-}
-
-static void update_gatt_services(struct browse_req *req, GSList *current,
-								GSList *found)
-{
-	GSList *l, *lmatch;
-
-	/* Added Profiles */
-	for (l = found; l; l = g_slist_next(l)) {
-		struct gatt_primary *prim = l->data;
-
-		/* Entry found ? */
-		lmatch = g_slist_find_custom(current, prim, primary_cmp);
-		if (lmatch)
-			continue;
-
-		/* New entry */
-		req->profiles_added = g_slist_append(req->profiles_added,
-							g_strdup(prim->uuid));
-
-		DBG("UUID Added: %s", prim->uuid);
-	}
-}
-
 static GSList *device_services_from_record(struct btd_device *device,
 							GSList *profiles)
 {
@@ -2944,209 +2911,6 @@ done:
 	search_cb(recs, err, user_data);
 }
 
-static void store_services(struct btd_device *device)
-{
-	struct btd_adapter *adapter = device->adapter;
-	char filename[PATH_MAX + 1];
-	char src_addr[18], dst_addr[18];
-	uuid_t uuid;
-	char *prim_uuid;
-	GKeyFile *key_file;
-	GSList *l;
-	char *data;
-	gsize length = 0;
-
-	if (device_address_is_private(device)) {
-		warn("Can't store services for private addressed device %s",
-								device->path);
-		return;
-	}
-
-	sdp_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	prim_uuid = bt_uuid2string(&uuid);
-	if (prim_uuid == NULL)
-		return;
-
-	ba2str(btd_adapter_get_address(adapter), src_addr);
-	ba2str(&device->bdaddr, dst_addr);
-
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attributes", src_addr,
-								dst_addr);
-	filename[PATH_MAX] = '\0';
-
-	key_file = g_key_file_new();
-
-	for (l = device->primaries; l; l = l->next) {
-		struct gatt_primary *primary = l->data;
-		char handle[6], uuid_str[33];
-		int i;
-
-		sprintf(handle, "%hu", primary->range.start);
-
-		bt_string2uuid(&uuid, primary->uuid);
-		sdp_uuid128_to_uuid(&uuid);
-
-		switch (uuid.type) {
-		case SDP_UUID16:
-			sprintf(uuid_str, "%4.4X", uuid.value.uuid16);
-			break;
-		case SDP_UUID32:
-			sprintf(uuid_str, "%8.8X", uuid.value.uuid32);
-			break;
-		case SDP_UUID128:
-			for (i = 0; i < 16; i++)
-				sprintf(uuid_str + (i * 2), "%2.2X",
-						uuid.value.uuid128.data[i]);
-			break;
-		default:
-			uuid_str[0] = '\0';
-		}
-
-		g_key_file_set_string(key_file, handle, "UUID", prim_uuid);
-		g_key_file_set_string(key_file, handle, "Value", uuid_str);
-		g_key_file_set_integer(key_file, handle, "EndGroupHandle",
-					primary->range.end);
-	}
-
-	data = g_key_file_to_data(key_file, &length, NULL);
-	if (length > 0) {
-		create_file(filename, S_IRUSR | S_IWUSR);
-		g_file_set_contents(filename, data, length, NULL);
-	}
-
-	g_free(prim_uuid);
-	g_free(data);
-	g_key_file_free(key_file);
-}
-
-static void register_all_services(struct browse_req *req, GSList *services)
-{
-	struct btd_device *device = req->device;
-
-	btd_device_set_temporary(device, FALSE);
-
-	update_gatt_services(req, device->primaries, services);
-	g_slist_free_full(device->primaries, g_free);
-	device->primaries = NULL;
-
-	device_register_primaries(device, g_slist_copy(services));
-
-	device_probe_profiles(device, req->profiles_added);
-
-	g_dbus_emit_property_changed(dbus_conn, device->path,
-						DEVICE_INTERFACE, "UUIDs");
-
-	device_svc_resolved(device, 0);
-
-	store_services(device);
-
-	browse_request_free(req);
-}
-
-static int service_by_range_cmp(gconstpointer a, gconstpointer b)
-{
-	const struct gatt_primary *prim = a;
-	const struct att_range *range = b;
-
-	return memcmp(&prim->range, range, sizeof(*range));
-}
-
-static bool find_included_cb(uint8_t status, GSList *includes, void *user_data)
-{
-	struct included_search *search = user_data;
-	struct btd_device *device = search->req->device;
-	struct gatt_primary *prim;
-	GSList *l;
-
-	if (device->attrib == NULL) {
-		error("Disconnected while doing included discovery");
-		g_slist_free(search->services);
-		g_free(search);
-		goto done;
-	}
-
-	if (status != 0) {
-		error("Find included services failed: %s (%d)",
-					att_ecode2str(status), status);
-		goto done;
-	}
-
-	if (includes == NULL)
-		goto done;
-
-	for (l = includes; l; l = l->next) {
-		struct gatt_included *incl = l->data;
-
-		if (g_slist_find_custom(search->services, &incl->range,
-						service_by_range_cmp))
-			continue;
-
-		prim = g_new0(struct gatt_primary, 1);
-		memcpy(prim->uuid, incl->uuid, sizeof(prim->uuid));
-		memcpy(&prim->range, &incl->range, sizeof(prim->range));
-
-		search->services = g_slist_append(search->services, prim);
-	}
-
-done:
-	search->current = search->current->next;
-	if (search->current == NULL) {
-		register_all_services(search->req, search->services);
-		g_slist_free(search->services);
-		g_free(search);
-		return true;
-	}
-
-	prim = search->current->data;
-	gatt_find_included(device->attrib, prim->range.start, prim->range.end,
-					find_included_cb, search);
-
-	return true;
-}
-
-static bool primary_cb(uint8_t status, GSList *services, void *user_data)
-{
-	struct included_search *search = user_data;
-	struct browse_req *req = search->req;
-	struct btd_device *device = req->device;
-	struct gatt_primary *prim;
-	GSList *l;
-
-	if (status == ATT_ECODE_ATTR_NOT_FOUND) {
-		search->current = search->services;
-		prim = search->current->data;
-		gatt_find_included(device->attrib, prim->range.start,
-					prim->range.end, find_included_cb,
-					search);
-
-		return false;
-	}
-
-	if (status) {
-		if (req->msg) {
-			DBusMessage *reply;
-			reply = btd_error_failed(req->msg,
-							att_ecode2str(status));
-			g_dbus_send_message(dbus_conn, reply);
-		}
-
-		device->browse = NULL;
-		browse_request_free(req);
-		g_slist_free_full(search->services, g_free);
-		g_free(search);
-
-		return false;
-	}
-
-	for (l = services; l != NULL; l = g_slist_next(l)) {
-		prim = l->data;
-		search->services = g_slist_append(search->services,
-						g_memdup(prim, sizeof(*prim)));
-	}
-
-	return true;
-}
-
 static gboolean pair_cb(GIOChannel *io, GIOCondition cond,
 						gpointer user_data)
 {
@@ -3258,7 +3022,6 @@ static gboolean error_cb(GIOChannel *io, GIOCondition cond,
 {
 	struct btd_device *device = user_data;
 	struct browse_req *req = device->browse;
-	struct included_search *search;
 	int sock, err;
 	socklen_t len = sizeof(err);
 	const char *str;
@@ -3284,18 +3047,6 @@ static gboolean error_cb(GIOChannel *io, GIOCondition cond,
 
 	device->browse = NULL;
 	browse_request_free(req);
-
-	/*
-	 * FIXME: Remove discovery from device.c moving it to
-	 * gatt.c. UUIDs probe can be called from gatt.c
-	 * Dead code below: keeping the code just to compile and
-	 * avoid losing implemented features/code.
-	 */
-
-	search = g_new0(struct included_search, 1);
-	search->req = device->browse;
-
-	primary_cb(0, NULL, search);
 
 	return FALSE;
 }
