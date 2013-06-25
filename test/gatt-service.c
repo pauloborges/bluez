@@ -240,7 +240,7 @@ static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 
 	reply = dbus_message_new_method_return(msg);
 
-	dbus_message_iter_init(reply, &iter);
+	dbus_message_iter_init_append(reply, &iter);
 
 	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
 					DBUS_TYPE_BYTE_AS_STRING, &array);
