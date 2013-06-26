@@ -1766,9 +1766,9 @@ static void read_by_type_result(int err, uint8_t *value, size_t vlen,
 	struct read_by_type_transaction *trans = user_data;
 	struct btd_device *device = trans->device;
 	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
-	uint16_t mtu = g_attrib_get_mtu(attrib);
 	GList *head = trans->match;
 	struct btd_attribute *attr = head->data;
+	uint16_t mtu;
 
 	if (attrib == NULL)
 		goto done;
@@ -1786,6 +1786,7 @@ static void read_by_type_result(int err, uint8_t *value, size_t vlen,
 	 * be included in this response.
 	 */
 
+	mtu = g_attrib_get_mtu(attrib);
 	if (trans->olen == 0) {
 		trans->vlen = MIN((uint16_t) (mtu - 4), MIN(vlen, 253));
 
@@ -1957,19 +1958,22 @@ static void read_request_result(int err, uint8_t *value, size_t len,
 	struct att_transaction *trans = user_data;
 	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, trans->device);
 	struct btd_attribute *attr = trans->attr;
-	uint8_t opdu[g_attrib_get_mtu(attrib)];
-	size_t olen;
 
 	g_free(trans);
 
-	if (err) {
-		send_error(attrib, ATT_OP_READ_REQ, attr->handle, err);
-		return;
+	if (attrib) {
+		uint8_t opdu[g_attrib_get_mtu(attrib)];
+		size_t olen;
+
+		if (err) {
+			send_error(attrib, ATT_OP_READ_REQ, attr->handle, err);
+			return;
+		}
+
+		olen = enc_read_resp(value, len, opdu, sizeof(opdu));
+
+		g_attrib_send(attrib, 0, opdu, olen, NULL, NULL, NULL);
 	}
-
-	olen = enc_read_resp(value, len, opdu, sizeof(opdu));
-
-	g_attrib_send(attrib, 0, opdu, olen, NULL, NULL, NULL);
 }
 
 static void read_request(struct btd_device *device, GAttrib *attrib,
