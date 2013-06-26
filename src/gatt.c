@@ -2465,7 +2465,7 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	channel->attrib = g_attrib_new(io);
 	channel->mtu = (cid == ATT_CID ? ATT_DEFAULT_LE_MTU : mtu);
 
-	g_hash_table_insert(channels, device, channel);
+	g_hash_table_insert(channels, btd_device_ref(device), channel);
 
 	DBG("%p Connected: %s < %s CID: %d, MTU: %d", channel, src, dst,
 								cid, mtu);
@@ -2545,8 +2545,9 @@ void btd_gatt_service_manager_init(void)
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
 
-	channels = g_hash_table_new_full(g_int_hash, g_int_equal, NULL,
-							channel_free);
+	channels = g_hash_table_new_full(g_int_hash, g_int_equal,
+					(GDestroyNotify) btd_device_unref,
+					channel_free);
 }
 
 void btd_gatt_service_manager_cleanup(void)
