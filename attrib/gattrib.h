@@ -71,6 +71,7 @@ int g_attrib_get_key_size(GAttrib *attrib);
 
 uint8_t *g_attrib_get_buffer(GAttrib *attrib, size_t *len);
 gboolean g_attrib_set_mtu(GAttrib *attrib, int mtu);
+int g_attrib_get_mtu(GAttrib *attrib);
 
 gboolean g_attrib_unregister(GAttrib *attrib, guint id);
 gboolean g_attrib_unregister_all(GAttrib *attrib);
