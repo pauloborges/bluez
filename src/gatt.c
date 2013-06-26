@@ -103,12 +103,6 @@ struct notifier {
 	void *user_data;
 };
 
-struct channel {
-	struct btd_device *device;
-	GAttrib *attrib;
-	unsigned int id;
-};
-
 struct attr_read_data {
 	btd_attr_read_result_t func;
 	void* user_data;
@@ -121,11 +115,11 @@ struct attr_write_data {
 
 struct att_transaction {
 	struct btd_attribute *attr;
-	struct channel *channel;
+	struct btd_device *device;
 };
 
 struct read_by_type_transaction {
-	struct channel *channel;
+	struct btd_device *device;
 	GList *match;			/* List of matching attributes */
 	unsigned int timeout;		/* Asynchronous operation timeout */
 	size_t vlen;			/* Pattern: length of each value */
@@ -138,7 +132,7 @@ static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
-static GHashTable *channels = NULL;
+static GHashTable *gattrib_hash = NULL;
 
 static GSList *attr_proxy_list = NULL;
 
@@ -527,11 +521,12 @@ static void client_read_attribute_cb(struct btd_device *device,
 						btd_attr_read_result_t result,
 						void *user_data)
 {
-	struct channel *channel;
+	GAttrib *attrib;
 	struct attr_read_data *data;
 
-	channel = g_hash_table_lookup(channels, device);
-	if (channel == NULL || channel->attrib == NULL) {
+	attrib = g_hash_table_lookup(gattrib_hash, device);
+	if (attrib == NULL) {
+		DBG("ATT disconnected");
 		result(ATT_ECODE_IO, NULL, 0, user_data);
 		return;
 	}
@@ -540,7 +535,7 @@ static void client_read_attribute_cb(struct btd_device *device,
 	data->func = result;
 	data->user_data = user_data;
 
-	if (gatt_read_char(channel->attrib, attr->handle,
+	if (gatt_read_char(attrib, attr->handle,
 				client_read_attribute_response, data) == 0) {
 		result(ATT_ECODE_UNLIKELY, NULL, 0, user_data);
 		g_free(data);
@@ -576,11 +571,11 @@ static void client_write_attribute_cb(struct btd_device *device,
 					btd_attr_write_result_t result,
 					void *user_data)
 {
-	struct channel *channel;
+	GAttrib *attrib;
 	struct attr_write_data *data;
 
-	channel = g_hash_table_lookup(channels, device);
-	if (channel == NULL || channel->attrib == NULL) {
+	attrib = g_hash_table_lookup(gattrib_hash, device);
+	if (attrib == NULL) {
 		result(ATT_ECODE_IO, user_data);
 		return;
 	}
@@ -589,7 +584,7 @@ static void client_write_attribute_cb(struct btd_device *device,
 	data->func = result;
 	data->user_data = user_data;
 
-	if (gatt_write_char(channel->attrib, attr->handle, offset, value, len,
+	if (gatt_write_char(attrib, attr->handle, offset, value, len,
 				client_write_attribute_response, data) == 0) {
 		result(ATT_ECODE_UNLIKELY, user_data);
 		g_free(data);
@@ -1706,22 +1701,13 @@ static void add_gatt(void)
 	btd_gatt_dump_local_attribute_database();
 }
 
-static void channel_free(gpointer user_data)
-{
-	struct channel *channel = user_data;
-
-	g_attrib_unref(channel->attrib);
-	btd_device_unref(channel->device);
-	g_free(channel);
-}
-
 static void channel_remove(gpointer user_data)
 {
-	g_hash_table_remove(channels, user_data);
+	g_hash_table_remove(gattrib_hash, user_data);
 }
 
 static uint8_t check_attribute_security(struct btd_attribute *attr,
-						struct channel *channel,
+						GAttrib *attrib,
 						uint16_t opcode)
 {
 	int op_sec_level, chan_sec_level;
@@ -1749,7 +1735,7 @@ static uint8_t check_attribute_security(struct btd_attribute *attr,
 	if (op_sec_level == BT_SECURITY_LOW)
 		return 0;
 
-	chan_sec_level = g_attrib_get_sec_level(channel->attrib);
+	chan_sec_level = g_attrib_get_sec_level(attrib);
 
 	if (chan_sec_level < op_sec_level) {
 		if (op_sec_level == BT_SECURITY_HIGH)
@@ -1758,7 +1744,7 @@ static uint8_t check_attribute_security(struct btd_attribute *attr,
 			return ATT_ECODE_INSUFF_ENC;
 	}
 
-	key_size = g_attrib_get_key_size(channel->attrib);
+	key_size = g_attrib_get_key_size(attrib);
 
 	if (key_size < attr->key_size)
 		return ATT_ECODE_INSUFF_ENCR_KEY_SIZE;
@@ -1778,13 +1764,17 @@ static void read_by_type_result(int err, uint8_t *value, size_t vlen,
 
 {
 	struct read_by_type_transaction *trans = user_data;
-	struct channel *channel = trans->channel;
-	uint16_t mtu = g_attrib_get_mtu(channel->attrib);
+	struct btd_device *device = trans->device;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	uint16_t mtu = g_attrib_get_mtu(attrib);
 	GList *head = trans->match;
 	struct btd_attribute *attr = head->data;
 
+	if (attrib == NULL)
+		goto done;
+
 	if (err) {
-		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle, err);
+		send_error(attrib, ATT_OP_READ_REQ, attr->handle, err);
 		goto done;
 	}
 
@@ -1827,13 +1817,11 @@ static void read_by_type_result(int err, uint8_t *value, size_t vlen,
 	if (attr->value_len)
 		read_by_type_result(0, attr->value, attr->value_len, trans);
 	else
-		attr->read_cb(channel->device, attr, read_by_type_result,
-									trans);
+		attr->read_cb(device, attr, read_by_type_result, trans);
 	return;
 
 send:
-	g_attrib_send(channel->attrib, 0, trans->opdu, trans->olen, NULL,
-								NULL, NULL);
+	g_attrib_send(attrib, 0, trans->opdu, trans->olen, NULL, NULL, NULL);
 
 done:
 	g_source_remove(trans->timeout);
@@ -1848,8 +1836,8 @@ static gboolean transaction_timeout(gpointer user_data)
 	return FALSE;
 }
 
-static void read_by_type(struct channel *channel, const uint8_t *ipdu,
-								size_t ilen)
+static void read_by_type(struct btd_device *device, GAttrib *attrib,
+					const uint8_t *ipdu, size_t ilen)
 {
 	struct read_by_type_transaction *trans;
 	struct btd_attribute *attr;
@@ -1859,19 +1847,18 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 	uint8_t status = 0;
 
 	if (dec_read_by_type_req(ipdu, ilen, &start, &end, &uuid) == 0) {
-		send_error(channel->attrib, ipdu[0], 0x0000,
+		send_error(attrib, ipdu[0], 0x0000,
 						ATT_ECODE_INVALID_PDU);
 		return;
 	}
 
 	if (start == 0x0000 || start > end) {
-		send_error(channel->attrib, ipdu[0], 0x0000,
-						ATT_ECODE_INVALID_HANDLE);
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_HANDLE);
 		return;
 	}
 
-	trans = g_malloc0(sizeof(*trans) + g_attrib_get_mtu(channel->attrib));
-	trans->channel = channel; /* Weak reference */
+	trans = g_malloc0(sizeof(*trans) + g_attrib_get_mtu(attrib));
+	trans->device = device;
 
 	for (list = local_attribute_db; list; list = g_list_next(list)) {
 		attr = list->data;
@@ -1889,7 +1876,7 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 		if (attr->value_len == 0 && attr->read_cb == NULL)
 			continue;
 
-		status = check_attribute_security(attr, channel, ipdu[0]);
+		status = check_attribute_security(attr, attrib, ipdu[0]);
 		if (status)
 			break;
 
@@ -1898,9 +1885,9 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 
 	if (trans->match == NULL) {
 		if (status)
-			send_error(channel->attrib, ipdu[0], start, status);
+			send_error(attrib, ipdu[0], start, status);
 		else
-			send_error(channel->attrib, ipdu[0], start,
+			send_error(attrib, ipdu[0], start,
 						ATT_ECODE_ATTR_NOT_FOUND);
 		g_free(trans);
 		return;
@@ -1915,8 +1902,7 @@ static void read_by_type(struct channel *channel, const uint8_t *ipdu,
 	if (attr->value_len)
 		read_by_type_result(0, attr->value, attr->value_len, trans);
 	else
-		attr->read_cb(channel->device, attr, read_by_type_result,
-								trans);
+		attr->read_cb(device, attr, read_by_type_result, trans);
 }
 
 static GList *get_char_decl_from_attr(GList *attr_node)
@@ -1966,28 +1952,28 @@ static bool validate_att_operation(GList *attr_node, uint16_t opcode)
 }
 
 static void read_request_result(int err, uint8_t *value, size_t len,
-								void *user_data)
+							void *user_data)
 {
 	struct att_transaction *trans = user_data;
-	struct channel *channel = trans->channel;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, trans->device);
 	struct btd_attribute *attr = trans->attr;
-	uint8_t opdu[g_attrib_get_mtu(channel->attrib)];
+	uint8_t opdu[g_attrib_get_mtu(attrib)];
 	size_t olen;
 
 	g_free(trans);
 
 	if (err) {
-		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle, err);
+		send_error(attrib, ATT_OP_READ_REQ, attr->handle, err);
 		return;
 	}
 
 	olen = enc_read_resp(value, len, opdu, sizeof(opdu));
 
-	g_attrib_send(channel->attrib, 0, opdu, olen, NULL, NULL, NULL);
+	g_attrib_send(attrib, 0, opdu, olen, NULL, NULL, NULL);
 }
 
-static void read_request(struct channel *channel, const uint8_t *ipdu,
-								size_t ilen)
+static void read_request(struct btd_device *device, GAttrib *attrib,
+					const uint8_t *ipdu, size_t ilen)
 {
 	uint16_t handle;
 	GList *list;
@@ -1996,61 +1982,57 @@ static void read_request(struct channel *channel, const uint8_t *ipdu,
 	uint8_t status;
 
 	if (dec_read_req(ipdu, ilen, &handle) == 0) {
-		send_error(channel->attrib, ipdu[0], 0x0000,
-						ATT_ECODE_INVALID_PDU);
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_PDU);
 		return;
 	}
 
 	list = g_list_find_custom(local_attribute_db,
 				GUINT_TO_POINTER(handle), find_by_handle);
 	if (!list) {
-		send_error(channel->attrib, ipdu[0], 0x0000,
-						ATT_ECODE_INVALID_HANDLE);
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_HANDLE);
 		return;
 	}
 
 	attr = list->data;
 
-	status = check_attribute_security(attr, channel, ipdu[0]);
+	status = check_attribute_security(attr, attrib, ipdu[0]);
 	if (status) {
-		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
-								status);
+		send_error(attrib, ATT_OP_READ_REQ, attr->handle, status);
 		return;
 	}
 
 	if (!validate_att_operation(list, ATT_OP_READ_REQ)) {
-		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
+		send_error(attrib, ATT_OP_READ_REQ, attr->handle,
 						ATT_ECODE_READ_NOT_PERM);
 		return;
 	}
 
 	if (attr->value_len > 0) {
-		uint8_t opdu[g_attrib_get_mtu(channel->attrib)];
+		uint8_t opdu[g_attrib_get_mtu(attrib)];
 		size_t olen = enc_read_resp(attr->value, attr->value_len, opdu,
 								sizeof(opdu));
 
-		g_attrib_send(channel->attrib, 0, opdu, olen, NULL, NULL,
-									NULL);
+		g_attrib_send(attrib, 0, opdu, olen, NULL, NULL, NULL);
 		return;
 	}
 
 	if (attr->read_cb == NULL) {
-		send_error(channel->attrib, ATT_OP_READ_REQ, attr->handle,
+		send_error(attrib, ATT_OP_READ_REQ, attr->handle,
 						ATT_ECODE_READ_NOT_PERM);
 		return;
 	}
 
 	trans = g_new0(struct att_transaction, 1);
 	trans->attr = attr;
-	trans->channel = channel;
+	trans->device = device;
 
-	attr->read_cb(channel->device, attr, read_request_result, trans);
+	attr->read_cb(device, attr, read_request_result, trans);
 }
 
-static void read_by_group_resp(struct channel *channel, uint16_t start,
+static void read_by_group_resp(GAttrib *attrib, uint16_t start,
 					uint16_t end, bt_uuid_t *pattern)
 {
-	uint16_t mtu = g_attrib_get_mtu(channel->attrib);
+	uint16_t mtu = g_attrib_get_mtu(attrib);
 	uint8_t opdu[mtu];
 	GList *list;
 	struct btd_attribute *last = NULL;
@@ -2130,7 +2112,7 @@ static void read_by_group_resp(struct channel *channel, uint16_t start,
 	}
 
 	if (plen == 0) {
-		send_error(channel->attrib, ATT_OP_READ_BY_GROUP_REQ, start,
+		send_error(attrib, ATT_OP_READ_BY_GROUP_REQ, start,
 						ATT_ECODE_ATTR_NOT_FOUND);
 		return;
 	}
@@ -2138,25 +2120,23 @@ static void read_by_group_resp(struct channel *channel, uint16_t start,
 	if (group_end)
 		att_put_u16(last->handle, group_end);
 
-	g_attrib_send(channel->attrib, 0, opdu, plen, NULL, NULL, NULL);
+	g_attrib_send(attrib, 0, opdu, plen, NULL, NULL, NULL);
 }
 
-static void read_by_group(struct channel *channel, const uint8_t *ipdu,
-								size_t ilen)
+static void read_by_group(struct btd_device *device, GAttrib *attrib,
+					const uint8_t *ipdu, size_t ilen)
 {
 	uint16_t decoded, start, end;
 	bt_uuid_t pattern, prim_uuid;
 
 	decoded = dec_read_by_grp_req(ipdu, ilen, &start, &end, &pattern);
 	if (decoded == 0) {
-		send_error(channel->attrib, ipdu[0], 0x0000,
-						ATT_ECODE_INVALID_PDU);
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_PDU);
 		return;
 	}
 
 	if (start > end || start == 0x0000) {
-		send_error(channel->attrib, ipdu[0], start,
-						ATT_ECODE_INVALID_HANDLE);
+		send_error(attrib, ipdu[0], start, ATT_ECODE_INVALID_HANDLE);
 		return;
 	}
 
@@ -2168,18 +2148,16 @@ static void read_by_group(struct channel *channel, const uint8_t *ipdu,
 	  */
 	bt_uuid16_create(&prim_uuid, GATT_PRIM_SVC_UUID);
 	if (bt_uuid_cmp(&pattern, &prim_uuid) != 0) {
-		send_error(channel->attrib, ipdu[0], start,
-					ATT_ECODE_UNSUPP_GRP_TYPE);
+		send_error(attrib, ipdu[0], start, ATT_ECODE_UNSUPP_GRP_TYPE);
 		return;
 	}
 
-	read_by_group_resp(channel, start, end, &pattern);
+	read_by_group_resp(attrib, start, end, &pattern);
 }
 
-static void value_changed(struct channel *channel, const uint8_t *ipdu,
-								size_t ilen)
+static void value_changed(GAttrib *attrib, const uint8_t *ipdu, size_t ilen)
 {
-	uint8_t opdu[g_attrib_get_mtu(channel->attrib)];
+	uint8_t opdu[g_attrib_get_mtu(attrib)];
 	struct btd_attribute *attr;
 	struct notifier *notif;
 	GHashTableIter iter;
@@ -2237,18 +2215,18 @@ done:
 
 	if (ipdu[0] == ATT_OP_HANDLE_IND) {
 		opdu[0] = ATT_OP_HANDLE_CNF;
-		g_attrib_send(channel->attrib, 0, opdu, 1, NULL, NULL, NULL);
+		g_attrib_send(attrib, 0, opdu, 1, NULL, NULL, NULL);
 	}
 }
 
-static void write_cmd(struct channel *channel, const uint8_t *ipdu,
-								size_t ilen)
+static void write_cmd(struct btd_device *device, GAttrib *attrib,
+					const uint8_t *ipdu, size_t ilen)
 {
 	uint16_t handle;
 	GList *list;
 	struct btd_attribute *attr;
 	size_t vlen;
-	uint8_t value[g_attrib_get_mtu(channel->attrib)];
+	uint8_t value[g_attrib_get_mtu(attrib)];
 	uint8_t status;
 
 	if (dec_write_cmd(ipdu, ilen, &handle, value, &vlen) == 0)
@@ -2265,23 +2243,26 @@ static void write_cmd(struct channel *channel, const uint8_t *ipdu,
 	if (attr->write_cb == NULL)
 		return;
 
-	status = check_attribute_security(attr, channel, ipdu[0]);
+	status = check_attribute_security(attr, attrib, ipdu[0]);
 	if (status)
 		return;
 
 	if (!validate_att_operation(list, ATT_OP_WRITE_CMD))
 		return;
 
-	attr->write_cb(channel->device, attr, value, vlen, 0, NULL, NULL);
+	attr->write_cb(device, attr, value, vlen, 0, NULL, NULL);
 }
 
 static void write_request_result(int err, void *user_data)
 {
 	struct att_transaction *trans = user_data;
 	struct btd_attribute *attr = trans->attr;
-	struct channel *channel = trans->channel;
-	uint8_t opdu[g_attrib_get_mtu(channel->attrib)];
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, trans->device);
+	uint8_t opdu[ATT_DEFAULT_LE_MTU];
 	uint16_t olen;
+
+	if (attrib == NULL)
+		goto done;
 
 	if (err != 0)
 		olen = enc_error_resp(ATT_OP_WRITE_REQ, attr->handle, err,
@@ -2289,12 +2270,13 @@ static void write_request_result(int err, void *user_data)
 	else
 		olen = enc_write_resp(opdu);
 
-	g_attrib_send(channel->attrib, 0, opdu, olen, NULL, NULL, NULL);
+	g_attrib_send(attrib, 0, opdu, olen, NULL, NULL, NULL);
 
+done:
 	g_free(trans);
 }
 
-static void write_request(struct channel *channel,
+static void write_request(struct btd_device *device, GAttrib *attrib,
 					const uint8_t *ipdu, size_t ilen)
 {
 	GList *list;
@@ -2302,50 +2284,45 @@ static void write_request(struct channel *channel,
 	struct btd_attribute *attr;
 	size_t vlen;
 	uint16_t handle;
-	uint8_t value[g_attrib_get_mtu(channel->attrib)];
+	uint8_t value[g_attrib_get_mtu(attrib)];
 	uint8_t status;
 
 	if (dec_write_req(ipdu, ilen, &handle, value, &vlen) == 0) {
-		send_error(channel->attrib, ipdu[0], 0x0000,
-						ATT_ECODE_INVALID_PDU);
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_PDU);
 		return;
 	}
 
 	list = g_list_find_custom(local_attribute_db, GUINT_TO_POINTER(handle),
 								find_by_handle);
 	if (!list) {
-		send_error(channel->attrib, ipdu[0], handle,
-						ATT_ECODE_INVALID_HANDLE);
+		send_error(attrib, ipdu[0], handle, ATT_ECODE_INVALID_HANDLE);
 		return;
 	}
 
 	attr = list->data;
 
 	if (attr->write_cb == NULL) {
-		send_error(channel->attrib, ipdu[0], handle,
-						ATT_ECODE_WRITE_NOT_PERM);
+		send_error(attrib, ipdu[0], handle, ATT_ECODE_WRITE_NOT_PERM);
 		return;
 	}
 
-	status = check_attribute_security(attr, channel, ipdu[0]);
+	status = check_attribute_security(attr, attrib, ipdu[0]);
 	if (status) {
-		send_error(channel->attrib, ATT_OP_WRITE_REQ, attr->handle,
-								status);
+		send_error(attrib, ATT_OP_WRITE_REQ, attr->handle, status);
 		return;
 	}
 
 	if (!validate_att_operation(list, ATT_OP_WRITE_REQ)) {
-		send_error(channel->attrib, ipdu[0], handle,
-						ATT_ECODE_WRITE_NOT_PERM);
+		send_error(attrib, ipdu[0], handle, ATT_ECODE_WRITE_NOT_PERM);
 		return;
 	}
 
 	trans = g_new0(struct att_transaction, 1);
-	trans->channel = channel;
+	trans->device = device;
 	trans->attr = attr;
 
-	attr->write_cb(channel->device, attr, value, vlen, 0,
-						write_request_result, trans);
+	attr->write_cb(device, attr, value, vlen, 0, write_request_result,
+								trans);
 }
 
 static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
@@ -2359,7 +2336,8 @@ static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
 static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 							gpointer user_data)
 {
-	struct channel *channel = user_data;
+	struct btd_device *device = user_data;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
 
 	switch (ipdu[0]) {
 	case ATT_OP_ERROR:
@@ -2367,19 +2345,19 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 
 	/* Requests */
 	case ATT_OP_WRITE_CMD:
-		write_cmd(channel, ipdu, ilen);
+		write_cmd(device, attrib, ipdu, ilen);
 		break;
 
 	case ATT_OP_WRITE_REQ:
-		write_request(channel, ipdu, ilen);
+		write_request(device, attrib, ipdu, ilen);
 		break;
 
 	case ATT_OP_READ_REQ:
-		read_request(channel, ipdu, ilen);
+		read_request(device, attrib, ipdu, ilen);
 		break;
 
 	case ATT_OP_READ_BY_TYPE_REQ:
-		read_by_type(channel, ipdu, ilen);
+		read_by_type(device, attrib, ipdu, ilen);
 		break;
 
 	case ATT_OP_MTU_REQ:
@@ -2390,12 +2368,11 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	case ATT_OP_PREP_WRITE_REQ:
 	case ATT_OP_EXEC_WRITE_REQ:
 	case ATT_OP_SIGNED_WRITE_CMD:
-		send_error(channel->attrib, ipdu[0], 0x0000,
-						ATT_ECODE_REQ_NOT_SUPP);
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_REQ_NOT_SUPP);
 		break;
 
 	case ATT_OP_READ_BY_GROUP_REQ:
-		read_by_group(channel, ipdu, ilen);
+		read_by_group(device, attrib, ipdu, ilen);
 		break;
 
 	/* Responses */
@@ -2416,17 +2393,17 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	/* Notification & Indication */
 	case ATT_OP_HANDLE_NOTIFY:
 	case ATT_OP_HANDLE_IND:
-		value_changed(channel, ipdu, ilen);
+		value_changed(attrib, ipdu, ilen);
 		break;
 	}
 }
 
 void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
-	struct channel *channel;
 	char src[18], dst[18];
 	struct btd_adapter *adapter;
 	struct btd_device *device;
+	GAttrib *attrib;
 	bt_uuid_t uuid;
 	bdaddr_t sba;
 	bdaddr_t dba;
@@ -2457,21 +2434,18 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		return;
 	}
 
-	channel = g_new0(struct channel, 1);
-	channel->device = btd_device_ref(device);
-	channel->attrib = g_attrib_new(io);
+	attrib = g_attrib_new(io);
+	g_hash_table_insert(gattrib_hash, btd_device_ref(device), attrib);
 
-	g_hash_table_insert(channels, btd_device_ref(device), channel);
+	DBG("%p Connected: %s < %s", attrib, src, dst);
 
-	DBG("%p Connected: %s < %s", channel, src, dst);
-
-	g_attrib_register(channel->attrib, GATTRIB_ALL_EVENTS,
+	g_attrib_register(attrib, GATTRIB_ALL_EVENTS,
 				GATTRIB_ALL_HANDLES, channel_handler_cb,
-				channel, NULL);
+				device, NULL);
 
-	channel->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
+	g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
-				channel, (GDestroyNotify) channel_remove);
+				attrib, (GDestroyNotify) channel_remove);
 
 	/*
 	 * FIXME: Check storage before triggering attributes discovery.
@@ -2480,22 +2454,22 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 * are still pending. Fix core reverse service discovery.
 	 */
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 				insert_primary_service, device);
 
 	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
-	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 				insert_secondary_service, device);
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
-	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 				insert_char_declaration, device);
 
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
-	gatt_foreach_by_type(channel->attrib, 0x0001, 0xffff, &uuid,
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 					insert_include, device);
 
-	gatt_foreach_by_info(channel->attrib, 0x0001, 0xffff,
+	gatt_foreach_by_info(attrib, 0x0001, 0xffff,
 				insert_char_descriptor, device);
 }
 
@@ -2540,9 +2514,9 @@ void btd_gatt_service_manager_init(void)
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
 
-	channels = g_hash_table_new_full(g_int_hash, g_int_equal,
+	gattrib_hash = g_hash_table_new_full(g_int_hash, g_int_equal,
 					(GDestroyNotify) btd_device_unref,
-					channel_free);
+					(GDestroyNotify) g_attrib_unref);
 }
 
 void btd_gatt_service_manager_cleanup(void)
@@ -2560,5 +2534,5 @@ void btd_gatt_service_manager_cleanup(void)
 		g_io_channel_unref(bredr_io);
 	}
 
-	g_hash_table_destroy(channels);
+	g_hash_table_destroy(gattrib_hash);
 }
