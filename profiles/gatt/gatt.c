@@ -44,7 +44,7 @@ static void read_device_name_chr_cb(int err, uint8_t *value, size_t len,
 	struct btd_device *device = user_data;
 
 	if (err) {
-		error("Error reading <<Device Name>>: %d", err);
+		error("Error reading <<Device Name>>: %s", strerror(err));
 		return;
 	}
 
@@ -80,7 +80,7 @@ static void read_appearance_chr_cb(int err, uint8_t *value, size_t len,
 	uint16_t appearance;
 
 	if (err) {
-		error("Error reading <<Appearance>>: %d", err);
+		error("Error reading <<Appearance>>: %s", strerror(err));
 		return;
 	}
 

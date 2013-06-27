@@ -127,6 +127,11 @@ struct read_by_type_transaction {
 	uint8_t opdu[0];		/* Output PDU */
 };
 
+struct attr_proxy {
+	struct btd_attribute *attr;
+	GDBusProxy *proxy;
+};
+
 static GList *local_attribute_db = NULL;
 static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
@@ -136,10 +141,15 @@ static GHashTable *gattrib_hash = NULL;
 
 static GSList *attr_proxy_list = NULL;
 
-struct attr_proxy {
-	struct btd_attribute *attr;
-	GDBusProxy *proxy;
-};
+static uint8_t errno_to_att(int err)
+{
+	switch (err) {
+	case EACCES:
+		return ATT_ECODE_AUTHORIZATION;
+	default:
+		return ATT_ECODE_UNLIKELY;
+	}
+}
 
 static void attr_set_proxy(struct btd_attribute *attr, GDBusProxy *proxy)
 {
@@ -498,7 +508,7 @@ void btd_gatt_read_attribute(struct btd_device *device,
 	else if (attr->value_len > 0)
 		result(0, attr->value, attr->value_len, user_data);
 	else
-		result(ATT_ECODE_READ_NOT_PERM, NULL, 0, user_data);
+		result(EPERM, NULL, 0, user_data);
 }
 
 static void client_read_attribute_response(uint8_t status,
@@ -527,7 +537,7 @@ static void client_read_attribute_cb(struct btd_device *device,
 	attrib = g_hash_table_lookup(gattrib_hash, device);
 	if (attrib == NULL) {
 		DBG("ATT disconnected");
-		result(ATT_ECODE_IO, NULL, 0, user_data);
+		result(ECOMM, NULL, 0, user_data);
 		return;
 	}
 
@@ -537,7 +547,7 @@ static void client_read_attribute_cb(struct btd_device *device,
 
 	if (gatt_read_char(attrib, attr->handle,
 				client_read_attribute_response, data) == 0) {
-		result(ATT_ECODE_UNLIKELY, NULL, 0, user_data);
+		result(EIO, NULL, 0, user_data);
 		g_free(data);
 	}
 }
@@ -552,7 +562,7 @@ void btd_gatt_write_attribute(struct btd_device *device,
 		attr->write_cb(device, attr, value, len, offset,
 						result, user_data);
 	else
-		result(ATT_ECODE_WRITE_NOT_PERM, user_data);
+		result(EPERM, user_data);
 }
 
 static void client_write_attribute_response(uint8_t status, void *user_data)
@@ -576,7 +586,7 @@ static void client_write_attribute_cb(struct btd_device *device,
 
 	attrib = g_hash_table_lookup(gattrib_hash, device);
 	if (attrib == NULL) {
-		result(ATT_ECODE_IO, user_data);
+		result(ECOMM, user_data);
 		return;
 	}
 
@@ -586,7 +596,7 @@ static void client_write_attribute_cb(struct btd_device *device,
 
 	if (gatt_write_char(attrib, attr->handle, offset, value, len,
 				client_write_attribute_response, data) == 0) {
-		result(ATT_ECODE_UNLIKELY, user_data);
+		result(EIO, user_data);
 		g_free(data);
 	}
 }
@@ -1036,7 +1046,7 @@ static void read_value_response(int err, uint8_t *value, size_t len,
 	DBusMessageIter iter, array;
 
 	if (err) {
-		reply = btd_error_failed(msg, att_ecode2str(err));
+		reply = btd_error_failed(msg, strerror(err));
 		goto done;
 	}
 
@@ -1075,7 +1085,7 @@ static void write_value_response(int err, void *user_data)
 	DBusMessage *reply, *msg = user_data;
 
 	if (err) {
-		reply = btd_error_failed(msg, att_ecode2str(err));
+		reply = btd_error_failed(msg, strerror(err));
 		goto done;
 	}
 
@@ -1886,7 +1896,8 @@ static void read_by_type_result(int err, uint8_t *value, size_t vlen,
 		goto done;
 
 	if (err) {
-		send_error(attrib, ATT_OP_READ_REQ, attr->handle, err);
+		send_error(attrib, ATT_OP_READ_REQ, attr->handle,
+							errno_to_att(err));
 		goto done;
 	}
 
@@ -1944,7 +1955,7 @@ done:
 
 static gboolean transaction_timeout(gpointer user_data)
 {
-	read_by_type_result(ATT_ECODE_UNLIKELY, NULL, 0, user_data);
+	read_by_type_result(ETIMEDOUT, NULL, 0, user_data);
 
 	return FALSE;
 }
@@ -2078,7 +2089,8 @@ static void read_request_result(int err, uint8_t *value, size_t len,
 		size_t olen;
 
 		if (err) {
-			send_error(attrib, ATT_OP_READ_REQ, attr->handle, err);
+			send_error(attrib, ATT_OP_READ_REQ, attr->handle,
+							errno_to_att(err));
 			return;
 		}
 
@@ -2381,8 +2393,8 @@ static void write_request_result(int err, void *user_data)
 		goto done;
 
 	if (err != 0)
-		olen = enc_error_resp(ATT_OP_WRITE_REQ, attr->handle, err,
-							opdu, sizeof(opdu));
+		olen = enc_error_resp(ATT_OP_WRITE_REQ, attr->handle,
+					errno_to_att(err), opdu, sizeof(opdu));
 	else
 		olen = enc_write_resp(opdu);
 

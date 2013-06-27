@@ -23,13 +23,26 @@
 
 struct btd_attribute;
 
+/*
+ * Callbacks from this type are called once the value from the attribute is
+ * ready to be read.
+ * @err:	error in errno format.
+ * @value:	pointer to value
+ * @len:	length of value
+ * @user_data:	user_data passed in btd_attr_read_t callback
+ */
 typedef void (*btd_attr_read_result_t) (int err, uint8_t *value, size_t len,
 					void *user_data);
 typedef void (*btd_attr_read_t) (struct btd_device *device,
 					struct btd_attribute *attr,
 					btd_attr_read_result_t result,
 					void *user_data);
-
+/*
+ * Callbacks from this type are called once the value from the attribute was
+ * written.
+ * @err:	error in errno format.
+ * @user_data:	user_data passed in btd_attr_write_t callback
+ */
 typedef void (*btd_attr_write_result_t) (int err, void *user_data);
 typedef void (*btd_attr_write_t) (struct btd_device *device,
 					struct btd_attribute *attr,
