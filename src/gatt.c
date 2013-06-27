@@ -38,6 +38,7 @@
 
 #include "adapter.h"
 #include "device.h"
+#include "service.h"
 
 #include "dbus-common.h"
 #include "log.h"
@@ -515,7 +516,7 @@ struct btd_attribute *btd_gatt_get_char_value(struct btd_device *device,
 {
 	GList *database = g_hash_table_lookup(database_hash, device);
 	GList *list;
-	
+
 	if (!database)
 		return NULL;
 
@@ -2696,6 +2697,12 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	bdaddr_t dba;
 
 	if (gerr) {
+		struct btd_service *service = user_data;
+
+		if (service)
+			btd_service_disconnecting_complete(service,
+							gerr->code);
+
 		error("ATT Connect: %s", gerr->message);
 		return;
 	}
@@ -2757,6 +2764,53 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 void gatt_server_bind(GIOChannel *io)
 {
 	connect_cb(io, NULL, NULL);
+}
+
+int btd_gatt_connect(struct btd_service *service)
+{
+	struct btd_device *device = btd_service_get_device(service);
+	struct btd_adapter *adapter = device_get_adapter(device);
+	GError *gerr = NULL;
+	GIOChannel *io;
+	GAttrib *attrib;
+	const bdaddr_t *addr;
+	uint8_t addr_type;
+	char addrstr[18];
+
+	attrib = g_hash_table_lookup(gattrib_hash, device);
+	if (attrib) {
+		/* Already connected */
+		g_attrib_ref(attrib);
+		btd_service_connecting_complete(service, 0);
+		return 0;
+	}
+
+	addr = device_get_address(device);
+	addr_type = device_get_address_type(device);
+
+	ba2str(addr, addrstr);
+
+	/* FIXME: over BR/EDR */
+	io = bt_io_connect(connect_cb, service, NULL, &gerr,
+			BT_IO_OPT_SOURCE_BDADDR, adapter_get_address(adapter),
+			BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
+			BT_IO_OPT_DEST_BDADDR, addr,
+			BT_IO_OPT_DEST_TYPE, addr_type,
+			BT_IO_OPT_CID, ATT_CID,
+			BT_IO_OPT_INVALID);
+
+	if (io == NULL) {
+		error("Could not connect to %s (%s)", addrstr, gerr->message);
+
+		btd_service_connecting_complete(service, gerr->code);
+
+		g_error_free(gerr);
+		return -ENOTCONN;
+	}
+
+	g_io_channel_unref(io);
+
+	return 0;
 }
 
 void btd_gatt_service_manager_init(void)

@@ -72,6 +72,8 @@ bool gatt_load_from_storage(struct btd_device *device);
  */
 void gatt_server_bind(GIOChannel *io);
 
+int btd_gatt_connect(struct btd_service *service);
+
 /* btd_gatt_add_service - Add a service declaration to local attribute database.
  * @uuid:	Service UUID.
  * @primary:	Set to 'true' if this is a primary services. Otherwise, it will
