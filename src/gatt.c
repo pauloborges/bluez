@@ -2571,19 +2571,19 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 */
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				prim_service_cb, device);
+				prim_service_cb, device, NULL);
 
 	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				snd_service_cb, device);
+				snd_service_cb, device, NULL);
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				char_declaration_cb, device);
+				char_declaration_cb, device, NULL);
 
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					include_cb, device);
+					include_cb, device, NULL);
 
 	gatt_foreach_by_info(attrib, 0x0001, 0xffff,
 				descriptor_cb, device);

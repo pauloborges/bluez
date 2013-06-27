@@ -78,6 +78,7 @@ struct foreach_data {
 	gatt_func_by_type_t func_by_type;
 	gatt_func_by_info_t func_by_info;
 	void *user_data;
+	GDestroyNotify destroy;
 };
 
 static void discover_primary_free(struct discover_primary *dp)
@@ -1285,6 +1286,9 @@ static void read_by_type_cb(uint8_t status, const uint8_t *pdu,
 	}
 
 done:
+	if (data->destroy)
+		data->destroy(data->user_data);
+
 	g_attrib_unref(data->attrib);
 	g_free(data);
 }
@@ -1306,9 +1310,10 @@ static unsigned int foreach_by_type(struct foreach_data *data, uint16_t start)
 
 unsigned int gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
 				bt_uuid_t *type, gatt_func_by_type_t func,
-				void *user_data)
+				void *user_data, GDestroyNotify destroy)
 {
 	struct foreach_data *data;
+	unsigned int ret;
 
 	data = g_new0(struct foreach_data, 1);
 
@@ -1317,8 +1322,13 @@ unsigned int gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
 	memcpy(&data->type, type, sizeof(*type));
 	data->end = end;
 	data->user_data = user_data;
+	data->destroy = destroy;
 
-	return foreach_by_type(data, start);
+	ret = foreach_by_type(data, start);
+	if (ret == 0)
+		destroy(user_data);
+
+	return ret;
 }
 
 static unsigned int foreach_by_info(struct foreach_data *data, uint16_t start);
