@@ -109,4 +109,4 @@ guint gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
 
 unsigned int gatt_foreach_by_info(GAttrib *attrib, uint16_t start,
 				uint16_t end, gatt_func_by_info_t func,
-				void *user_data);
+				void *user_data, GDestroyNotify destroy);

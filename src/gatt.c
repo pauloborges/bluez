@@ -2586,7 +2586,7 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 					include_cb, device, NULL);
 
 	gatt_foreach_by_info(attrib, 0x0001, 0xffff,
-				descriptor_cb, device);
+				descriptor_cb, device, NULL);
 }
 
 void btd_gatt_service_manager_init(void)

@@ -1378,6 +1378,9 @@ static void find_info_cb(uint8_t status, const uint8_t *pdu,
 	}
 
 done:
+	if (data->destroy)
+		data->destroy(data->user_data);
+
 	g_attrib_unref(data->attrib);
 	g_free(data);
 }
@@ -1398,7 +1401,8 @@ static unsigned int foreach_by_info(struct foreach_data *data, uint16_t start)
 }
 
 unsigned int gatt_foreach_by_info(GAttrib *attrib, uint16_t start, uint16_t end,
-				gatt_func_by_info_t func, void *user_data)
+				gatt_func_by_info_t func, void *user_data,
+				GDestroyNotify destroy)
 {
 	struct foreach_data *data;
 
@@ -1408,6 +1412,7 @@ unsigned int gatt_foreach_by_info(GAttrib *attrib, uint16_t start, uint16_t end,
 	data->func_by_info = func;
 	data->end = end;
 	data->user_data = user_data;
+	data->destroy = destroy;
 
 	return foreach_by_info(data, start);
 }
