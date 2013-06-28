@@ -2664,13 +2664,34 @@ static void prim_service_complete(gpointer user_data)
 
 }
 
+int gatt_discover_attributes(struct btd_device *device)
+{
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	bt_uuid_t uuid;
+
+	if (attrib == NULL)
+		return -ECOMM;
+
+	/* FIXME: */
+	if (g_hash_table_lookup(database_hash, device)) {
+		DBG("Attribute database found: skip discovery");
+		return 0;
+	}
+
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+				prim_service_cb, btd_device_ref(device),
+				prim_service_complete);
+
+	return 0;
+}
+
 void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	char src[18], dst[18];
 	struct btd_adapter *adapter;
 	struct btd_device *device;
 	GAttrib *attrib;
-	bt_uuid_t uuid;
 	bdaddr_t sba;
 	bdaddr_t dba;
 
@@ -2719,16 +2740,6 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 * device weak reference and disconnection when ATT operation
 	 * are still pending. Fix core reverse service discovery.
 	 */
-
-	if (g_hash_table_lookup(database_hash, device)) {
-		DBG("Attribute database found: skip discovery");
-		return;
-	}
-
-	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				prim_service_cb, btd_device_ref(device),
-				prim_service_complete);
 }
 
 void btd_gatt_service_manager_init(void)

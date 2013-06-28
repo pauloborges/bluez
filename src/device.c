@@ -151,7 +151,7 @@ struct btd_device {
 	char		*modalias;
 	struct btd_adapter	*adapter;
 	GSList		*uuids;
-	GSList		*primaries;		/* List of primary services */
+	GSList          *primaries;
 	GSList		*services;		/* List of btd_service */
 	GSList		*pending;		/* Pending services */
 	GSList		*watches;		/* List of disconnect_data */
@@ -2450,6 +2450,8 @@ void device_probe_profiles(struct btd_device *device, GSList *uuids)
 
 	ba2str(&device->bdaddr, d.addr);
 
+	device_svc_resolved(device, 0);
+
 	if (device->blocked) {
 		DBG("Skipping profiles for blocked device %s", d.addr);
 		goto add_uuids;
@@ -2735,7 +2737,7 @@ static GSList *device_services_from_record(struct btd_device *device,
 }
 
 static void device_register_primaries(struct btd_device *device,
-						GSList *prim_list)
+							GSList *prim_list)
 {
 	device->primaries = g_slist_concat(device->primaries, prim_list);
 }
@@ -2752,6 +2754,7 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 	if (err < 0) {
 		error("%s: error updating services: %s (%d)",
 				addr, strerror(-err), -err);
+		device_svc_resolved(device, err);
 		goto send_reply;
 	}
 
@@ -2780,8 +2783,6 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 						DEVICE_INTERFACE, "UUIDs");
 
 send_reply:
-	device_svc_resolved(device, err);
-
 	if (!device->temporary)
 		store_device_info(device);
 
@@ -2926,85 +2927,36 @@ static GIOChannel *connect_le(struct btd_device *dev, GError **gerr)
 	return io;
 }
 
-static gboolean error_cb(GIOChannel *io, GIOCondition cond,
-						gpointer user_data)
-{
-	struct btd_device *device = user_data;
-	struct browse_req *req = device->browse;
-	int sock, err;
-	socklen_t len = sizeof(err);
-	const char *str;
-
-	if (req == NULL)
-		return FALSE;
-
-	sock = g_io_channel_unix_get_fd(io);
-
-	if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-		str = strerror(errno);
-	else
-		str = strerror(err);
-
-	DBG("ATT: %s", str);
-
-	if (req->msg) {
-		DBusMessage *reply;
-
-		reply = btd_error_failed(req->msg, str);
-		g_dbus_send_message(dbus_conn, reply);
-	}
-
-	device->browse = NULL;
-	browse_request_free(req);
-
-	return FALSE;
-}
-
 static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 {
-	struct btd_adapter *adapter = device->adapter;
 	struct browse_req *req;
+	const char *sender;
+	int err;
 
 	if (device->browse)
 		return -EBUSY;
 
+	err = gatt_discover_attributes(device);
+	if (err < 0)
+		return err;
+
 	req = g_new0(struct browse_req, 1);
 	req->device = device;
-
 	device->browse = req;
 
-	/* FIXME: already connected? */
-	device->att_io = bt_io_connect(gatt_connect_cb,
-				NULL, NULL, NULL,
-				BT_IO_OPT_SOURCE_BDADDR,
-				btd_adapter_get_address(adapter),
-				BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
-				BT_IO_OPT_DEST_BDADDR, &device->bdaddr,
-				BT_IO_OPT_DEST_TYPE, device->bdaddr_type,
-				BT_IO_OPT_CID, ATT_CID,
-				BT_IO_OPT_INVALID);
+	if (msg == NULL)
+		return 0;
 
-	if (device->att_io == NULL) {
-		device->browse = NULL;
-		browse_request_free(req);
-		return -EIO;
-	}
+	req->msg = dbus_message_ref(msg);
+	sender = dbus_message_get_sender(msg);
 
-	req->watch_id = g_io_add_watch(device->att_io,
-					G_IO_ERR | G_IO_HUP | G_IO_NVAL,
-					error_cb, device);
-
-	if (msg) {
-		const char *sender = dbus_message_get_sender(msg);
-
-		req->msg = dbus_message_ref(msg);
-		/* Track the request owner to cancel it
-		 * automatically if the owner exits */
-		req->listener_id = g_dbus_add_disconnect_watch(dbus_conn,
-						sender,
-						discover_services_req_exit,
-						req, NULL);
-	}
+	/*
+	 * Track the request owner to cancel it
+	 * automatically if the owner exits.
+	 */
+	req->listener_id = g_dbus_add_disconnect_watch(dbus_conn,
+					sender, discover_services_req_exit,
+					req, NULL);
 
 	return 0;
 }
@@ -3729,33 +3681,17 @@ gboolean device_is_authenticating(struct btd_device *device)
 struct gatt_primary *btd_device_get_primary(struct btd_device *device,
 							const char *uuid)
 {
-	GSList *match;
-
-	match = g_slist_find_custom(device->primaries, uuid, bt_uuid_strcmp);
-	if (match)
-		return match->data;
-
 	return NULL;
 }
 
 GSList *btd_device_get_primaries(struct btd_device *device)
 {
-	return device->primaries;
+	return NULL;
 }
 
 void btd_device_gatt_set_service_changed(struct btd_device *device,
 						uint16_t start, uint16_t end)
 {
-	GSList *l;
-
-	for (l = device->primaries; l; l = g_slist_next(l)) {
-		struct gatt_primary *prim = l->data;
-
-		if (start <= prim->range.end && end >= prim->range.start)
-			prim->changed = TRUE;
-	}
-
-	device_browse_primary(device, NULL);
 }
 
 void btd_device_add_uuid(struct btd_device *device, const char *uuid)
