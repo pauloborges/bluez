@@ -131,48 +131,49 @@ void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
 
 /* btd_gatt_get_services - Get a list with all services whose UUID matches the
  * searched one.
- * @database:	List of attributes where the services will be searched.
+ * @device:	Reference to Bluetooth device.
  * @service:	Service UUID.
  *
  * Returns a list with all services' attributes. If there is no services,
  * NULL is returned.
  */
-GSList *btd_gatt_get_services(GList *database, bt_uuid_t *service);
+GSList *btd_gatt_get_services(struct btd_device *device, bt_uuid_t *service);
 
 /* btd_gatt_get_chars_decl - Get a list with all characteristics of the
  * specified type in the specified service.
- * @database:	List of attributes where the characteristics will be searched.
+ * @device:	Reference to Bluetooth device.
  * @service:	Service declaration.
  * @type:	Characteristic type.
  *
  * Returns a list with all characteristics' attributes. If there is no
  * characteristic, NULL is returned.
  */
-GSList *btd_gatt_get_chars_decl(GList *database, struct btd_attribute *service,
-				bt_uuid_t *type);
+GSList *btd_gatt_get_chars_decl(struct btd_device *device,
+					struct btd_attribute *service,
+					bt_uuid_t *type);
 
 /* btd_gatt_get_char_desc - Get the specified descriptor of the specified
  * characteristic.
- * @database:	List of attributes where the descriptor will be searched.
+ * @device:	Reference to Bluetooth device.
  * @chr:	Characteristic declaration.
  * @type:	Descriptor type.
  *
  * Returns the characteristic descriptor declaration attribute. If there
  * is no such descriptor, NULL is returned.
  */
-struct btd_attribute *btd_gatt_get_char_desc(GList *database,
+struct btd_attribute *btd_gatt_get_char_desc(struct btd_device *device,
 						struct btd_attribute *chr,
 						bt_uuid_t *type);
 
 /* btd_gatt_get_char_value - Get the characteristic value declaration of a
  * characteristic.
- * @database:	List of attributes where the descriptor will be searched.
+ * @device:	Reference to Bluetooth device.
  * @chr:	Characteristic declaration.
  *
  * Returns the characteristic value declaration attribute. If there is no
  * such attribute, NULL is returned.
  */
-struct btd_attribute *btd_gatt_get_char_value(GList *database,
+struct btd_attribute *btd_gatt_get_char_value(struct btd_device *device,
 						struct btd_attribute *chr);
 
 /* btd_gatt_read_attribute - Read the value of an attribute.

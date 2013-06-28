@@ -52,7 +52,7 @@ static void read_device_name_chr_cb(int err, uint8_t *value, size_t len,
 	btd_device_device_set_name(device, (const char *) value);
 }
 
-static void read_device_name_chr(struct btd_device *device, GList *attrib_db,
+static void read_device_name_chr(struct btd_device *device,
 						struct btd_attribute *gap)
 {
 	struct btd_attribute *chr, *chr_value;
@@ -60,7 +60,7 @@ static void read_device_name_chr(struct btd_device *device, GList *attrib_db,
 	GSList *list;
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_DEVICE_NAME);
-	list = btd_gatt_get_chars_decl(attrib_db, gap, &uuid);
+	list = btd_gatt_get_chars_decl(device, gap, &uuid);
 	if (!list) {
 		error("<<Device Name>> characteristic is mandatory");
 		return;
@@ -68,7 +68,7 @@ static void read_device_name_chr(struct btd_device *device, GList *attrib_db,
 
 	chr = list->data;
 
-	chr_value = btd_gatt_get_char_value(attrib_db, chr);
+	chr_value = btd_gatt_get_char_value(device, chr);
 	btd_gatt_read_attribute(device, chr_value, read_device_name_chr_cb,
 								device);
 }
@@ -88,7 +88,7 @@ static void read_appearance_chr_cb(int err, uint8_t *value, size_t len,
 	device_set_appearance(device, appearance);
 }
 
-static void read_appearance_chr(struct btd_device *device, GList *attrib_db,
+static void read_appearance_chr(struct btd_device *device,
 						struct btd_attribute *gap)
 {
 	struct btd_attribute *chr, *chr_value;
@@ -96,7 +96,7 @@ static void read_appearance_chr(struct btd_device *device, GList *attrib_db,
 	GSList *list;
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
-	list = btd_gatt_get_chars_decl(attrib_db, gap, &uuid);
+	list = btd_gatt_get_chars_decl(device, gap, &uuid);
 	if (!list) {
 		error("<<Appearance>> characteristic is mandatory");
 		return;
@@ -104,7 +104,7 @@ static void read_appearance_chr(struct btd_device *device, GList *attrib_db,
 
 	chr = list->data;
 
-	chr_value = btd_gatt_get_char_value(attrib_db, chr);
+	chr_value = btd_gatt_get_char_value(device, chr);
 	btd_gatt_read_attribute(device, chr_value, read_appearance_chr_cb,
 								device);
 }
@@ -112,14 +112,11 @@ static void read_appearance_chr(struct btd_device *device, GList *attrib_db,
 static void find_gap(struct btd_device *device)
 {
 	struct btd_attribute *gap;
-	GList *attrib_db;
 	bt_uuid_t uuid;
 	GSList *list;
 
-	attrib_db = btd_device_get_attribute_database(device);
-
 	bt_uuid16_create(&uuid, GENERIC_ACCESS_PROFILE_ID);
-	list = btd_gatt_get_services(attrib_db, &uuid);
+	list = btd_gatt_get_services(device, &uuid);
 	if (!list) {
 		error("<<GAP Service>> is mandatory");
 		return;
@@ -127,8 +124,8 @@ static void find_gap(struct btd_device *device)
 
 	gap = list->data;
 
-	read_device_name_chr(device, attrib_db, gap);
-	read_appearance_chr(device, attrib_db, gap);
+	read_device_name_chr(device, gap);
+	read_appearance_chr(device, gap);
 }
 
 static int gatt_driver_probe(struct btd_service *service)

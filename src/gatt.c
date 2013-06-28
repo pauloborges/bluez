@@ -402,10 +402,11 @@ void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
 	add_attribute(attr);
 }
 
-GSList *btd_gatt_get_services(GList *database, bt_uuid_t *service)
+GSList *btd_gatt_get_services(struct btd_device *device, bt_uuid_t *service)
 {
 	GList *list;
 	GSList *services = NULL;
+	GList *database = g_hash_table_lookup(database_hash, device);
 
 	for (list = g_list_first(database); list; list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
@@ -433,12 +434,18 @@ static bool is_characteristic(struct btd_attribute *attr)
 		return false;
 }
 
-GSList *btd_gatt_get_chars_decl(GList *database, struct btd_attribute *service,
-							bt_uuid_t *type)
+GSList *btd_gatt_get_chars_decl(struct btd_device *device,
+					struct btd_attribute *service,
+					bt_uuid_t *type)
 {
-	GList *list = g_list_find(database, service);
+	GList *database = g_hash_table_lookup(database_hash, device);
+	GList *list;
 	GSList *chars = NULL;
 
+	if (!database)
+		return NULL;
+
+	list = g_list_find(database, service);
 	if (!list)
 		goto error;
 
@@ -465,12 +472,17 @@ error:
 	return chars;
 }
 
-struct btd_attribute *btd_gatt_get_char_desc(GList *database,
+struct btd_attribute *btd_gatt_get_char_desc(struct btd_device *device,
 						struct btd_attribute *chr,
 						bt_uuid_t *type)
 {
-	GList *list = g_list_find(database, chr);
+	GList *database = g_hash_table_lookup(database_hash, device);
+	GList *list;
 
+	if (!database)
+		goto error;
+
+	list = g_list_find(database, chr);
 	if (!list)
 		goto error;
 
@@ -487,11 +499,16 @@ error:
 	return NULL;
 }
 
-struct btd_attribute *btd_gatt_get_char_value(GList *database,
+struct btd_attribute *btd_gatt_get_char_value(struct btd_device *device,
 						struct btd_attribute *chr)
 {
-	GList *list = g_list_find(database, chr);
+	GList *database = g_hash_table_lookup(database_hash, device);
+	GList *list;
+	
+	if (!database)
+		return NULL;
 
+	list = g_list_find(database, chr);
 	if (!list)
 		return NULL;
 
@@ -1092,10 +1109,9 @@ static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
 	struct attribute_iface *iface = user_data;
-	GList *database = btd_device_get_attribute_database(iface->device);
 	struct btd_attribute *value;
 
-	value = btd_gatt_get_char_value(database, iface->attr);
+	value = btd_gatt_get_char_value(iface->device, iface->attr);
 
 	btd_gatt_read_attribute(iface->device, value,
 				read_value_response, dbus_message_ref(msg));
@@ -1130,7 +1146,6 @@ static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
 {
 	struct attribute_iface *iface = user_data;
 	struct btd_attribute *attr;
-	GList *database;
 	DBusMessageIter args, iter;
 	const uint8_t *value;
 	uint16_t offset;
@@ -1153,8 +1168,7 @@ static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
 
 	dbus_message_iter_get_fixed_array(&iter, &value, &len);
 
-	database = btd_device_get_attribute_database(iface->device);
-	attr = btd_gatt_get_char_value(database, iface->attr);
+	attr = btd_gatt_get_char_value(iface->device, iface->attr);
 
 	btd_gatt_write_attribute(iface->device, attr, (uint8_t *) value, len,
 					offset, write_value_response,
@@ -1472,11 +1486,14 @@ static bool prim_service_register(struct btd_device *device,
 static bool characteristic_register(struct btd_device *device,
 					struct btd_attribute *attr)
 {
-	GList *database = btd_device_get_attribute_database(device);
+	GList *database = g_hash_table_lookup(database_hash, device);
 	struct attribute_iface *iface;
 	struct btd_attribute *parent;
 	char *path;
 	bool ret = true;
+
+	if (!database)
+		return false;
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
@@ -1658,7 +1675,7 @@ static void include_cb(uint8_t status, uint16_t handle,
 static void descriptor_create(struct btd_device *device, uint16_t handle,
 						bt_uuid_t *type, bool store)
 {
-	GList *l, *database = btd_device_get_attribute_database(device);
+	GList *l, *database = g_hash_table_lookup(database_hash, device);
 	struct btd_attribute *attr;
 
 	attr = new_attribute(type, NULL, NULL);
