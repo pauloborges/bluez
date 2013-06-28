@@ -61,6 +61,7 @@ void device_probe_profile(gpointer a, gpointer b);
 void device_remove_profile(gpointer a, gpointer b);
 struct btd_adapter *device_get_adapter(struct btd_device *device);
 const bdaddr_t *device_get_address(struct btd_device *device);
+uint8_t device_get_address_type(struct btd_device *device);
 const char *device_get_path(const struct btd_device *device);
 gboolean device_is_bredr(struct btd_device *device);
 gboolean device_is_le(struct btd_device *device);

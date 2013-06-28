@@ -2960,6 +2960,11 @@ const bdaddr_t *device_get_address(struct btd_device *device)
 	return &device->bdaddr;
 }
 
+uint8_t device_get_address_type(struct btd_device *device)
+{
+	return device->bdaddr_type;
+}
+
 const char *device_get_path(const struct btd_device *device)
 {
 	if (!device)
