@@ -759,11 +759,69 @@ static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
 	DBG("Server: Read characteristic callback %s", path);
 }
 
+static void write_char_setup(DBusMessageIter *iter, void *user_data)
+{
+	DBusMessageIter array;
+	struct attr_write_data *wd = user_data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, &wd->offset);
+
+	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_BYTE_AS_STRING,
+					&array);
+
+	if (!dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+					&wd->value, wd->vlen))
+		DBG("Could not append value to D-Bus message");
+
+	dbus_message_iter_close_container(iter, &array);
+}
+
+static void write_char_reply(DBusMessage *msg, void *user_data)
+{
+	struct attr_write_data *wd = user_data;
+
+	if (!wd->func)
+		return;
+
+	wd->func(0, wd->user_data);
+}
+
+static void write_char_destroy(void *user_data)
+{
+	g_free(user_data);
+}
+
 static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
-	DBG("Server: Write characteristic callback");
+	GDBusProxy *proxy;
+	const char *path;
+	struct attr_write_data *wd;
+
+	wd = g_new0(struct attr_write_data, 1);
+	wd->func = result;
+	wd->value = value;
+	wd->vlen = len;
+	wd->offset = offset;
+	wd->user_data = user_data;
+
+	proxy = attr_get_proxy(attr);
+	path = g_dbus_proxy_get_path(proxy);
+
+	if (!g_dbus_proxy_method_call(proxy, "WriteValue",
+					write_char_setup,
+					write_char_reply,
+					wd,
+					write_char_destroy)) {
+		error("Could not call WriteValue D-Bus method");
+		result(ATT_ECODE_IO, user_data);
+		write_char_destroy(wd);
+		return;
+	}
+
+	DBG("Server: Write characteristic callback %s", path);
 }
 
 static void proxy_added(GDBusProxy *proxy, void *user_data)
