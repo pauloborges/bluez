@@ -2514,6 +2514,57 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	}
 }
 
+static void descriptor_complete(gpointer user_data)
+{
+	struct btd_device *device = user_data;
+
+	btd_device_unref(device);
+}
+
+static void char_declaration_complete(gpointer user_data)
+{
+	struct btd_device *device = user_data;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+
+	gatt_foreach_by_info(attrib, 0x0001, 0xffff, descriptor_cb,
+						device, descriptor_complete);
+}
+
+static void snd_service_complete(gpointer user_data)
+{
+	struct btd_device *device = user_data;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	bt_uuid_t uuid;
+
+	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+					char_declaration_cb, device,
+					char_declaration_complete);
+}
+
+static void include_complete(gpointer user_data)
+{
+	struct btd_device *device = user_data;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	bt_uuid_t uuid;
+
+	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid, snd_service_cb,
+						device, snd_service_complete);
+}
+
+static void prim_service_complete(gpointer user_data)
+{
+	struct btd_device *device = user_data;
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	bt_uuid_t uuid;
+
+	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid, include_cb,
+						device, include_complete);
+
+}
+
 void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	char src[18], dst[18];
@@ -2571,22 +2622,8 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 */
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				prim_service_cb, device, NULL);
-
-	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				snd_service_cb, device, NULL);
-
-	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				char_declaration_cb, device, NULL);
-
-	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					include_cb, device, NULL);
-
-	gatt_foreach_by_info(attrib, 0x0001, 0xffff,
-				descriptor_cb, device, NULL);
+				prim_service_cb, btd_device_ref(device),
+				prim_service_complete);
 }
 
 void btd_gatt_service_manager_init(void)
