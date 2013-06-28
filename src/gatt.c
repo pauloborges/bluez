@@ -1544,6 +1544,8 @@ static void prim_service_cb(uint8_t status, uint16_t handle,
 {
 	struct btd_device *device = user_data;
 
+	DBG("status %d handle 0x%#04x", status, handle);
+
 	if (status)
 		return;
 
@@ -1569,7 +1571,7 @@ static void snd_service_cb(uint8_t status, uint16_t handle,
 {
 	struct btd_device *device = user_data;
 
-	DBG("status %d handle %#4x", status, handle);
+	DBG("status %d handle 0x%#04x", status, handle);
 
 	if (status)
 		return;
@@ -1632,7 +1634,7 @@ static void char_declaration_cb(uint8_t status, uint16_t handle,
 {
 	struct btd_device *device = user_data;
 
-	DBG("status %d handle %#4x", status, handle);
+	DBG("status %d handle 0x%#04x", status, handle);
 
 	if (status)
 		return;
@@ -1666,7 +1668,7 @@ static void include_cb(uint8_t status, uint16_t handle,
 {
 	struct btd_device *device = user_data;
 
-	DBG("status %d handle %#4x", status, handle);
+	DBG("status %d handle 0x%#04x", status, handle);
 
 	if (status)
 		return;
@@ -1701,7 +1703,7 @@ static void descriptor_cb(uint8_t status, uint16_t handle,
 {
 	struct btd_device *device = user_data;
 
-	DBG("status %d handle %#4x", status, handle);
+	DBG("status %d handle 0x%#04x", status, handle);
 
 	if (status)
 		return;
