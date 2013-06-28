@@ -2572,10 +2572,44 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	}
 }
 
-static void descriptor_complete(gpointer user_data)
+static void probe_profiles(gpointer user_data)
 {
 	struct btd_device *device = user_data;
+	GList *list, *database = g_hash_table_lookup(database_hash, device);
+	GSList *profiles = NULL;
+	bt_uuid_t prim_uuid, uuid128;
 
+	DBG("");
+
+	if (database == NULL)
+		goto done;
+
+	bt_uuid16_create(&prim_uuid, GATT_PRIM_SVC_UUID);
+
+	for (list = database; list; list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+		char str[MAX_LEN_UUID_STR];
+
+		if (bt_uuid_cmp(&attr->type, &prim_uuid) != 0)
+			continue;
+
+		if (attr->value_len == 2) {
+			bt_uuid_t uuid16 = att_get_uuid16(attr->value);
+			bt_uuid_to_uuid128(&uuid16, &uuid128);
+		} else {
+			uuid128 = att_get_uuid128(attr->value);
+		}
+
+		bt_uuid_to_string(&uuid128, str, MAX_LEN_UUID_STR);
+		profiles = g_slist_append(profiles, g_strdup(str));
+		DBG("Profile: %s", str);
+	}
+
+	device_probe_profiles(device, profiles);
+
+	g_slist_free_full(profiles, g_free);
+
+done:
 	btd_device_unref(device);
 }
 
@@ -2585,7 +2619,7 @@ static void char_declaration_complete(gpointer user_data)
 	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
 
 	gatt_foreach_by_info(attrib, 0x0001, 0xffff, descriptor_cb,
-						device, descriptor_complete);
+						device, probe_profiles);
 }
 
 static void snd_service_complete(gpointer user_data)
