@@ -1703,6 +1703,9 @@ static void descriptor_create(uint8_t status, uint16_t handle,
 	attr = new_attribute(type, NULL, NULL);
 	attr->handle = handle;
 
+	/* As we use FindInformation request, we may try to re-add an
+	 * attribute that we already have, e.g. Service Declaration
+	 */
 	l = g_list_find_custom(database, attr, attribute_cmp);
 	if (l != NULL) {
 		destroy_attribute(attr);
