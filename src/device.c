@@ -3939,16 +3939,6 @@ struct btd_service *btd_device_get_service(struct btd_device *dev,
 	return NULL;
 }
 
-GList *btd_device_get_attribute_database(struct btd_device *device)
-{
-	return device->attribute_database;
-}
-
-void device_set_attribute_database(struct btd_device *device, GList *database)
-{
-	device->attribute_database = database;
-}
-
 void btd_device_init(void)
 {
 	dbus_conn = btd_get_dbus_connection();
