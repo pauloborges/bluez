@@ -110,6 +110,9 @@ struct attr_read_data {
 
 struct attr_write_data {
 	btd_attr_write_result_t func;
+	uint8_t *value;
+	size_t vlen;
+	uint16_t offset;
 	void* user_data;
 };
 
