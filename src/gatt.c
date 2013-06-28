@@ -503,6 +503,11 @@ void btd_gatt_read_attribute(struct btd_device *device,
 					btd_attr_read_result_t result,
 					void *user_data)
 {
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+
+	if (attrib == NULL)
+		result(ECOMM, NULL, 0, user_data);
+
 	if (attr->read_cb)
 		attr->read_cb(device, attr, result, user_data);
 	else if (attr->value_len > 0)
@@ -1046,7 +1051,14 @@ static void read_value_response(int err, uint8_t *value, size_t len,
 	DBusMessageIter iter, array;
 
 	if (err) {
-		reply = btd_error_failed(msg, strerror(err));
+		switch (err) {
+		case ECOMM:
+			reply = btd_error_not_connected(msg);
+			break;
+		default:
+			reply = btd_error_failed(msg, strerror(err));
+		}
+
 		goto done;
 	}
 
