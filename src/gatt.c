@@ -2661,6 +2661,12 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 * device weak reference and disconnection when ATT operation
 	 * are still pending. Fix core reverse service discovery.
 	 */
+
+	if (g_hash_table_lookup(database_hash, device)) {
+		DBG("Attribute database found: skip discovery");
+		return;
+	}
+
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
 				prim_service_cb, btd_device_ref(device),
