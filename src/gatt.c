@@ -1356,8 +1356,10 @@ static void store_attribute(struct btd_device *device,
 	GKeyFile *key_file;
 	size_t len;
 
+#if 0
 	if (device_is_bonded(device) == FALSE)
 		return;
+#endif
 
 	src = btd_adapter_get_address(adapter);
 	ba2str(src, srcaddr);
