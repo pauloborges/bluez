@@ -138,6 +138,7 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gattrib_hash = NULL;
+static GHashTable *database_hash = NULL;
 
 static GSList *attr_proxy_list = NULL;
 
@@ -1406,10 +1407,9 @@ static struct btd_attribute *new_const_remote_attribute(
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	database = btd_device_get_attribute_database(device);
-
-	device_set_attribute_database(device,
-					insert_attribute(database, attr));
+	database = g_hash_table_lookup(database_hash, device);
+	database = insert_attribute(database, attr);
+	g_hash_table_insert(database_hash, device, database);
 
 	return attr;
 }
@@ -1426,10 +1426,9 @@ static struct btd_attribute *new_remote_attribute(
 	attr = new_attribute(type, read_cb, write_cb);
 	attr->handle = handle;
 
-	database = btd_device_get_attribute_database(device);
-
-	device_set_attribute_database(device,
-					insert_attribute(database, attr));
+	database = g_hash_table_lookup(database_hash, device);
+	database = insert_attribute(database, attr);
+	g_hash_table_insert(database_hash, device, database);
 
 	return attr;
 }
@@ -1620,7 +1619,7 @@ static void char_declaration_cb(uint8_t status, uint16_t handle,
 static void include_create(struct btd_device *device, uint16_t handle,
 				uint8_t *value, size_t vlen, bool store)
 {
-	GList *database = btd_device_get_attribute_database(device);
+	GList *database;
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -1629,8 +1628,9 @@ static void include_create(struct btd_device *device, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	device_set_attribute_database(device,
-					insert_attribute(database, attr));
+	database = g_hash_table_lookup(database_hash, device);
+	database = insert_attribute(database, attr);
+	g_hash_table_insert(database_hash, device, database);
 
 	if (store)
 		store_attribute(device, attr);
@@ -1665,8 +1665,8 @@ static void descriptor_create(struct btd_device *device, uint16_t handle,
 		return;
 	}
 
-	device_set_attribute_database(device,
-					insert_attribute(database, attr));
+	database = insert_attribute(database, attr);
+	g_hash_table_insert(database_hash, device, database);
 
 	if (store)
 		store_attribute(device, attr);
@@ -2706,6 +2706,8 @@ void btd_gatt_service_manager_init(void)
 	gattrib_hash = g_hash_table_new_full(g_int_hash, g_int_equal,
 					(GDestroyNotify) btd_device_unref,
 					(GDestroyNotify) g_attrib_unref);
+
+	database_hash = g_hash_table_new(g_int_hash, g_int_equal);
 }
 
 void btd_gatt_service_manager_cleanup(void)
@@ -2724,4 +2726,5 @@ void btd_gatt_service_manager_cleanup(void)
 	}
 
 	g_hash_table_destroy(gattrib_hash);
+	g_hash_table_destroy(database_hash);
 }
