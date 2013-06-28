@@ -172,7 +172,8 @@ static struct btd_profile gatt_profile = {
 	.remote_uuid	= GATT_UUID,
 	.device_probe	= gatt_driver_probe,
 	.device_remove	= gatt_driver_remove,
-	.connect	= btd_gatt_connect
+	.connect	= btd_gatt_connect,
+	.auto_connect	= true
 };
 
 static int gatt_init(void)
