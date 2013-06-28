@@ -60,6 +60,8 @@
  */
 #define TRANSACTION_TIMEOUT	20
 
+#define REGISTER_TIMER		1
+
 struct characteristic {
 	char *path;
 	bt_uuid_t uuid;
@@ -81,6 +83,7 @@ struct application {
 	GSList *chrs;
 	GDBusClient *client;
 	unsigned int watch;
+	guint register_timer;
 };
 
 static GSList *applications = NULL;
@@ -838,7 +841,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		const char *security;
 		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
 		uint8_t properties, key_size = 0;
-		struct btd_attribute *attr;
 		gboolean ret;
 
 		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
@@ -891,13 +893,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		chr->proxy = g_dbus_proxy_ref(proxy);
 
 		app->chrs = g_slist_append(app->chrs, chr);
-
-		attr = btd_gatt_add_char(&chr->uuid, properties, read_char_cb,
-				write_char_cb, read_sec, write_sec, key_size);
-
-		attr_set_proxy(attr, proxy);
-
-		DBG("new char %s uuid %s", path, uuid);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
 		struct service *srv;
 		GSList *l;
@@ -922,10 +917,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		srv = l->data;
 		bt_string_to_uuid(&srv->uuid, uuid);
-
-		btd_gatt_add_service(&srv->uuid, true);
-
-		DBG("new service %s uuid %s", path, uuid);
 	}
 }
 
@@ -991,6 +982,49 @@ static struct application *new_application(const char *sender)
 	return app;
 }
 
+static void register_chars(gpointer a, gpointer b)
+{
+	struct characteristic *chr = a;
+	struct btd_attribute *attr;
+	const char *path = b;
+
+	if (!g_str_has_prefix(chr->path, path))
+		return;
+
+	attr = btd_gatt_add_char(&chr->uuid, chr->properties, read_char_cb,
+					write_char_cb, chr->read_sec,
+					chr->write_sec, chr->key_size);
+
+	attr_set_proxy(attr, chr->proxy);
+
+	DBG("new char %s", chr->path);
+}
+
+static gboolean finish_register(gpointer user_data)
+{
+	struct application *app = user_data;
+	GSList *list;
+
+	app->register_timer = 0;
+
+	for (list = app->services; list; list = g_slist_next(list)) {
+		struct service *srv = list->data;
+
+		DBG("new service %s", srv->path);
+		btd_gatt_add_service(&srv->uuid, true);
+
+		g_slist_foreach(app->chrs, register_chars, srv->path);
+	}
+
+	g_slist_free_full(app->services, destroy_service);
+	app->services = NULL;
+
+	g_slist_free_full(app->chrs, destroy_char);
+	app->chrs = NULL;
+
+	return FALSE;
+}
+
 static DBusMessage *register_services(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -1037,6 +1071,9 @@ static DBusMessage *register_services(DBusConnection *conn,
 
 		dbus_message_iter_next(&iter);
 	}
+
+	app->register_timer = g_timeout_add_seconds(REGISTER_TIMER,
+							finish_register, app);
 
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 
