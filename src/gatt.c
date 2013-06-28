@@ -563,6 +563,11 @@ void btd_gatt_write_attribute(struct btd_device *device,
 				btd_attr_write_result_t result,
 				void *user_data)
 {
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+
+	if (attrib == NULL)
+		result(ECOMM, user_data);
+
 	if (attr->write_cb)
 		attr->write_cb(device, attr, value, len, offset,
 						result, user_data);
@@ -1097,7 +1102,14 @@ static void write_value_response(int err, void *user_data)
 	DBusMessage *reply, *msg = user_data;
 
 	if (err) {
-		reply = btd_error_failed(msg, strerror(err));
+		switch (err) {
+		case ECOMM:
+			reply = btd_error_not_connected(msg);
+			break;
+		default:
+			reply = btd_error_failed(msg, strerror(err));
+		}
+
 		goto done;
 	}
 
