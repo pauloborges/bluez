@@ -765,6 +765,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		bt_uuid_t uuid_value;
 		uint8_t properties, key_size = 0;
 		struct btd_attribute *attr;
+		gboolean ret;
 
 		path = g_dbus_proxy_get_path(proxy);
 
@@ -773,13 +774,17 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &uuid);
 
-		if (g_dbus_proxy_get_property(proxy, "ReadSecurity", &iter)) {
+		ret = g_dbus_proxy_get_property(proxy, "ReadSecurity", &iter);
+		if (ret && dbus_message_iter_get_arg_type(&iter)
+						== DBUS_TYPE_STRING) {
 			dbus_message_iter_get_basic(&iter, &security);
 			DBG("ReadSecurity: %s", security);
 			read_sec = seclevel_string2int(security);
 		}
 
-		if (g_dbus_proxy_get_property(proxy, "WriteSecurity", &iter)) {
+		ret = g_dbus_proxy_get_property(proxy, "WriteSecurity", &iter);
+		if (ret && dbus_message_iter_get_arg_type(&iter)
+						== DBUS_TYPE_STRING) {
 			dbus_message_iter_get_basic(&iter, &security);
 			DBG("WriteSecurity: %s", security);
 			write_sec = seclevel_string2int(security);
