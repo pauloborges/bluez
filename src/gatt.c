@@ -2767,11 +2767,11 @@ void btd_gatt_service_manager_init(void)
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
 
-	gattrib_hash = g_hash_table_new_full(g_int_hash, g_int_equal,
+	gattrib_hash = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					(GDestroyNotify) btd_device_unref,
 					(GDestroyNotify) g_attrib_unref);
 
-	database_hash = g_hash_table_new(g_int_hash, g_int_equal);
+	database_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
 }
 
 void btd_gatt_service_manager_cleanup(void)
