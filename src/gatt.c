@@ -1393,6 +1393,7 @@ static void store_attribute(struct btd_device *device,
 		g_file_set_contents(filename, data, len, NULL);
 	}
 
+	g_key_file_free(key_file);
 }
 
 static struct btd_attribute *find_parent_service(GList *database,
