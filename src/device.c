@@ -2834,10 +2834,6 @@ static GIOChannel *connect_le(struct btd_device *dev, GError **gerr)
 	GIOChannel *io;
 	char addr[18];
 
-	/* FIXME: There is one connection attempt going on */
-	if (dev->att_io)
-		return dev->att_io;
-
 	ba2str(&dev->bdaddr, addr);
 
 	DBG("Connection attempt to: %s", addr);
@@ -2860,6 +2856,9 @@ static GIOChannel *connect_le(struct btd_device *dev, GError **gerr)
 			BT_IO_OPT_CID, ATT_CID,
 			BT_IO_OPT_SEC_LEVEL, sec_level,
 			BT_IO_OPT_INVALID);
+
+	if (io == NULL)
+		return NULL;
 
 	if (dev->bonding == NULL)
 		return io;
