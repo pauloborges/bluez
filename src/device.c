@@ -151,7 +151,6 @@ struct btd_device {
 	char		*modalias;
 	struct btd_adapter	*adapter;
 	GSList		*uuids;
-	GSList          *primaries;
 	GSList		*services;		/* List of btd_service */
 	GSList		*pending;		/* Pending services */
 	GSList		*watches;		/* List of disconnect_data */
@@ -445,7 +444,6 @@ static void device_free(gpointer user_data)
 	struct btd_device *device = user_data;
 
 	g_slist_free_full(device->uuids, g_free);
-	g_slist_free_full(device->primaries, g_free);
 	g_slist_free_full(device->svc_callbacks, svc_dev_remove);
 
 	if (device->tmp_records)
@@ -2696,57 +2694,10 @@ next:
 	}
 }
 
-static GSList *device_services_from_record(struct btd_device *device,
-							GSList *profiles)
-{
-	GSList *l, *prim_list = NULL;
-	char *att_uuid;
-	uuid_t proto_uuid;
-
-	sdp_uuid16_create(&proto_uuid, ATT_UUID);
-	att_uuid = bt_uuid2string(&proto_uuid);
-
-	for (l = profiles; l; l = l->next) {
-		const char *profile_uuid = l->data;
-		const sdp_record_t *rec;
-		struct gatt_primary *prim;
-		uint16_t start = 0, end = 0, psm = 0;
-		uuid_t prim_uuid;
-
-		rec = btd_device_get_record(device, profile_uuid);
-		if (!rec)
-			continue;
-
-		if (!record_has_uuid(rec, att_uuid))
-			continue;
-
-		if (!gatt_parse_record(rec, &prim_uuid, &psm, &start, &end))
-			continue;
-
-		prim = g_new0(struct gatt_primary, 1);
-		prim->range.start = start;
-		prim->range.end = end;
-		sdp_uuid2strn(&prim_uuid, prim->uuid, sizeof(prim->uuid));
-
-		prim_list = g_slist_append(prim_list, prim);
-	}
-
-	g_free(att_uuid);
-
-	return prim_list;
-}
-
-static void device_register_primaries(struct btd_device *device,
-							GSList *prim_list)
-{
-	device->primaries = g_slist_concat(device->primaries, prim_list);
-}
-
 static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 {
 	struct browse_req *req = user_data;
 	struct btd_device *device = req->device;
-	GSList *primaries;
 	char addr[18];
 
 	ba2str(&device->bdaddr, addr);
@@ -2771,10 +2722,6 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 		DBG("%s: No service update", addr);
 		goto send_reply;
 	}
-
-	primaries = device_services_from_record(device, req->profiles_added);
-	if (primaries)
-		device_register_primaries(device, primaries);
 
 	device_probe_profiles(device, req->profiles_added);
 
