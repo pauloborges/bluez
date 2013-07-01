@@ -1796,6 +1796,8 @@ bool gatt_load_from_storage(struct btd_device *device)
 
 	g_strfreev(groups);
 
+	g_key_file_free(key_file);
+
 	return true;
 }
 
