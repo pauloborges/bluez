@@ -1688,7 +1688,7 @@ static void descriptor_create(struct btd_device *device, uint16_t handle,
 
 	l = g_list_find_custom(database, attr, attribute_cmp);
 	if (l != NULL) {
-		g_free(attr);
+		destroy_attribute(attr);
 		return;
 	}
 
