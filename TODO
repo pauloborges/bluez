@@ -24,6 +24,12 @@ General
   Priority: high
   Complexity: C4
 
+ - Fix GATT services over BR/EDR: GATT services over Basic Rate is broken for
+ a while. Attributes discovery should be triggered before probing profiles.
+
+  Priority: Low
+  Complexity: C4
+
 - Rename glib-helper file to a more convenient name. The idea is try to keep
   only sdp helpers functions. bt_* prefix shall be also changed.
 
