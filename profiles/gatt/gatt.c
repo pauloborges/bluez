@@ -67,6 +67,7 @@ static void read_device_name_chr(struct btd_device *device,
 	}
 
 	chr = list->data;
+	g_slist_free(list);
 
 	chr_value = btd_gatt_get_char_value(device, chr);
 	btd_gatt_read_attribute(device, chr_value, read_device_name_chr_cb,
@@ -103,6 +104,7 @@ static void read_appearance_chr(struct btd_device *device,
 	}
 
 	chr = list->data;
+	g_slist_free(list);
 
 	chr_value = btd_gatt_get_char_value(device, chr);
 	btd_gatt_read_attribute(device, chr_value, read_appearance_chr_cb,
@@ -123,6 +125,7 @@ static void find_gap(struct btd_device *device)
 	}
 
 	gap = list->data;
+	g_slist_free(list);
 
 	read_device_name_chr(device, gap);
 	read_appearance_chr(device, gap);
