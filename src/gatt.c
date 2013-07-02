@@ -1591,10 +1591,14 @@ static bool characteristic_register(struct btd_device *device,
 	return ret;
 }
 
-static void prim_service_create(struct btd_device *device, uint16_t handle,
-					uint8_t *value, size_t vlen, bool store)
+static void prim_service_create(uint8_t status, uint16_t handle,
+				uint8_t *value, size_t vlen, void *user_data)
 {
+	struct btd_device *device = user_data;
 	struct btd_attribute *attr;
+
+	if (status)
+		return;
 
 	attr = new_const_remote_attribute(device, handle, GATT_PRIM_SVC_UUID,
 								value, vlen);
@@ -1605,52 +1609,32 @@ static void prim_service_create(struct btd_device *device, uint16_t handle,
 	}
 }
 
-static void prim_service_cb(uint8_t status, uint16_t handle,
-					uint8_t *value, size_t vlen,
-					void *user_data)
+static void snd_service_create(uint8_t status, uint16_t handle,
+				uint8_t *value, size_t vlen, void *user_data)
 {
 	struct btd_device *device = user_data;
 
-	DBG("status %d handle 0x%#04x", status, handle);
-
 	if (status)
 		return;
-
-	prim_service_create(device, handle, value, vlen, true);
-}
-
-static void snd_service_create(struct btd_device *device, uint16_t handle,
-					uint8_t *value, size_t vlen, bool store)
-{
 
 	new_const_remote_attribute(device, handle,
 					GATT_SND_SVC_UUID, value, vlen);
 }
 
-static void snd_service_cb(uint8_t status, uint16_t handle,
-					uint8_t *value, size_t vlen,
-					void *user_data)
+static void char_declaration_create(uint8_t status,
+				uint16_t handle, uint8_t *value,
+				size_t vlen, void *user_data)
 {
 	struct btd_device *device = user_data;
-
-	DBG("status %d handle 0x%#04x", status, handle);
-
-	if (status)
-		return;
-
-	snd_service_create(device, handle, value, vlen, true);
-}
-
-static void char_declaration_create(struct btd_device *device,
-				uint16_t handle, uint8_t *value,
-				size_t vlen, bool store)
-{
 	struct btd_attribute *attr;
 	bt_uuid_t value_uuid;
 	uint16_t value_handle;
 	uint8_t value_properties;
 	btd_attr_read_t read_cb = NULL;
 	btd_attr_write_t write_cb = NULL;
+
+	if (status)
+		return;
 
 	/* Characteristic Declaration */
 	attr = new_const_remote_attribute(device, handle, GATT_CHARAC_UUID,
@@ -1684,23 +1668,10 @@ static void char_declaration_create(struct btd_device *device,
 							read_cb, write_cb);
 }
 
-static void char_declaration_cb(uint8_t status, uint16_t handle,
-					uint8_t *value, size_t vlen,
-					void *user_data)
+static void include_create(uint8_t status, uint16_t handle,
+				uint8_t *value, size_t vlen, void *user_data)
 {
 	struct btd_device *device = user_data;
-
-	DBG("status %d handle 0x%#04x", status, handle);
-
-	if (status)
-		return;
-
-	char_declaration_create(device, handle, value, vlen, true);
-}
-
-static void include_create(struct btd_device *device, uint16_t handle,
-				uint8_t *value, size_t vlen, bool store)
-{
 	GList *database;
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
@@ -1715,25 +1686,17 @@ static void include_create(struct btd_device *device, uint16_t handle,
 	g_hash_table_insert(database_hash, device, database);
 }
 
-static void include_cb(uint8_t status, uint16_t handle,
-					uint8_t *value, size_t vlen,
-					void *user_data)
+static void descriptor_create(uint8_t status, uint16_t handle,
+					bt_uuid_t *type, void *user_data)
 {
 	struct btd_device *device = user_data;
-
-	DBG("status %d handle 0x%#04x", status, handle);
+	GList *l, *database;
+	struct btd_attribute *attr;
 
 	if (status)
 		return;
 
-	include_create(device, handle, value, vlen, true);
-}
-
-static void descriptor_create(struct btd_device *device, uint16_t handle,
-						bt_uuid_t *type, bool store)
-{
-	GList *l, *database = g_hash_table_lookup(database_hash, device);
-	struct btd_attribute *attr;
+	database = g_hash_table_lookup(database_hash, device);
 
 	attr = new_attribute(type, NULL, NULL);
 	attr->handle = handle;
@@ -1746,19 +1709,6 @@ static void descriptor_create(struct btd_device *device, uint16_t handle,
 
 	database = insert_attribute(database, attr);
 	g_hash_table_insert(database_hash, device, database);
-}
-
-static void descriptor_cb(uint8_t status, uint16_t handle,
-					bt_uuid_t *type, void *user_data)
-{
-	struct btd_device *device = user_data;
-
-	DBG("status %d handle 0x%#04x", status, handle);
-
-	if (status)
-		return;
-
-	descriptor_create(device, handle, type, true);
 }
 
 bool gatt_load_from_storage(struct btd_device *device)
@@ -1815,28 +1765,25 @@ bool gatt_load_from_storage(struct btd_device *device)
 		if (uuid.type == BT_UUID16) {
 			switch (uuid.value.u16) {
 			case GATT_PRIM_SVC_UUID:
-				prim_service_create(device, handle, buf,
-								buflen, false);
+				prim_service_create(0, handle, buf, buflen,
+								device);
 				break;
 			case GATT_SND_SVC_UUID:
-				snd_service_create(device, handle, buf,
-								buflen, false);
+				snd_service_create(0, handle, buf,
+							buflen, device);
 				break;
 			case GATT_CHARAC_UUID:
-				char_declaration_create(device, handle, buf,
-								buflen, false);
+				char_declaration_create(0, handle, buf,
+							buflen, device);
 				break;
 			case GATT_INCLUDE_UUID:
-				include_create(device, handle, buf,
-								buflen, false);
+				include_create(0, handle, buf, buflen, device);
 				break;
 			default:
-				descriptor_create(device, handle,
-							&uuid, false);
+				descriptor_create(0, handle, &uuid, device);
 			}
 		} else {
-			descriptor_create(device, handle,
-						&uuid, false);
+			descriptor_create(0, handle, &uuid, device);
 		}
 
 		g_free(valuestr);
@@ -2677,7 +2624,7 @@ static void char_declaration_complete(gpointer user_data)
 	struct btd_device *device = user_data;
 	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
 
-	gatt_foreach_by_info(attrib, 0x0001, 0xffff, descriptor_cb,
+	gatt_foreach_by_info(attrib, 0x0001, 0xffff, descriptor_create,
 						device, probe_profiles);
 }
 
@@ -2689,7 +2636,7 @@ static void snd_service_complete(gpointer user_data)
 
 	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-					char_declaration_cb, device,
+					char_declaration_create, device,
 					char_declaration_complete);
 }
 
@@ -2700,7 +2647,7 @@ static void include_complete(gpointer user_data)
 	bt_uuid_t uuid;
 
 	bt_uuid16_create(&uuid, GATT_SND_SVC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid, snd_service_cb,
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid, snd_service_create,
 						device, snd_service_complete);
 }
 
@@ -2711,7 +2658,7 @@ static void prim_service_complete(gpointer user_data)
 	bt_uuid_t uuid;
 
 	bt_uuid16_create(&uuid, GATT_INCLUDE_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid, include_cb,
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid, include_create,
 						device, include_complete);
 
 }
@@ -2732,7 +2679,7 @@ int gatt_discover_attributes(struct btd_device *device)
 
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				prim_service_cb, btd_device_ref(device),
+				prim_service_create, btd_device_ref(device),
 				prim_service_complete);
 
 	return 0;
