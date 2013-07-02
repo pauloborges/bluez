@@ -1413,20 +1413,18 @@ static int str2buf(const char *str, uint8_t *buf, size_t blen)
 	return dlen;
 }
 
-static void store_attribute(struct btd_device *device,
-					struct btd_attribute *attr)
+static void database_store(struct btd_device *device, GList *database)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
 	char srcaddr[18], dstaddr[18], handle[6], uuidstr[MAX_LEN_UUID_STR];
 	char filename[PATH_MAX + 1], *data;
 	const bdaddr_t *src, *dst;
 	GKeyFile *key_file;
+	GList *list;
 	size_t len;
 
-#if 0
 	if (device_is_bonded(device) == FALSE)
 		return;
-#endif
 
 	src = btd_adapter_get_address(adapter);
 	ba2str(src, srcaddr);
@@ -1440,24 +1438,28 @@ static void store_attribute(struct btd_device *device,
 
 	g_key_file_load_from_file(key_file, filename, G_KEY_FILE_NONE, NULL);
 
-	snprintf(handle, sizeof(handle), "%hu", attr->handle);
+	for (list = database; list; list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
 
-	bt_uuid_to_string(&attr->type, uuidstr, sizeof(uuidstr));
-	g_key_file_set_string(key_file, handle, "Type", uuidstr);
+		snprintf(handle, sizeof(handle), "%hu", attr->handle);
 
-	if (attr->value_len > 0) {
-		char *str;
+		bt_uuid_to_string(&attr->type, uuidstr, sizeof(uuidstr));
+		g_key_file_set_string(key_file, handle, "Type", uuidstr);
 
-		str = buf2str(attr->value, attr->value_len);
-		g_key_file_set_string(key_file, handle, "Value", str);
+		if (attr->value_len > 0) {
+			char *str;
 
-		g_free(str);
-	}
+			str = buf2str(attr->value, attr->value_len);
+			g_key_file_set_string(key_file, handle, "Value", str);
 
-	data = g_key_file_to_data(key_file, &len, NULL);
-	if (len > 0) {
-		create_file(filename, S_IRUSR | S_IWUSR);
-		g_file_set_contents(filename, data, len, NULL);
+			g_free(str);
+		}
+
+		data = g_key_file_to_data(key_file, &len, NULL);
+		if (len > 0) {
+			create_file(filename, S_IRUSR | S_IWUSR);
+			g_file_set_contents(filename, data, len, NULL);
+		}
 	}
 
 	g_key_file_free(key_file);
@@ -1601,9 +1603,6 @@ static void prim_service_create(struct btd_device *device, uint16_t handle,
 		g_free(attr);
 		return;
 	}
-
-	if (store)
-		store_attribute(device, attr);
 }
 
 static void prim_service_cb(uint8_t status, uint16_t handle,
@@ -1624,13 +1623,8 @@ static void snd_service_create(struct btd_device *device, uint16_t handle,
 					uint8_t *value, size_t vlen, bool store)
 {
 
-	struct btd_attribute *attr;
-
-	attr = new_const_remote_attribute(device, handle,
+	new_const_remote_attribute(device, handle,
 					GATT_SND_SVC_UUID, value, vlen);
-
-	if (store)
-		store_attribute(device, attr);
 }
 
 static void snd_service_cb(uint8_t status, uint16_t handle,
@@ -1667,9 +1661,6 @@ static void char_declaration_create(struct btd_device *device,
 		return;
 	}
 
-	if (store)
-		store_attribute(device, attr);
-
 	/* Characteristic Value Attribute */
 	value_properties = value[0];
 
@@ -1691,9 +1682,6 @@ static void char_declaration_create(struct btd_device *device,
 
 	attr = new_remote_attribute(device, value_handle, &value_uuid,
 							read_cb, write_cb);
-
-	if (store)
-		store_attribute(device, attr);
 }
 
 static void char_declaration_cb(uint8_t status, uint16_t handle,
@@ -1725,9 +1713,6 @@ static void include_create(struct btd_device *device, uint16_t handle,
 	database = g_hash_table_lookup(database_hash, device);
 	database = insert_attribute(database, attr);
 	g_hash_table_insert(database_hash, device, database);
-
-	if (store)
-		store_attribute(device, attr);
 }
 
 static void include_cb(uint8_t status, uint16_t handle,
@@ -1761,9 +1746,6 @@ static void descriptor_create(struct btd_device *device, uint16_t handle,
 
 	database = insert_attribute(database, attr);
 	g_hash_table_insert(database_hash, device, database);
-
-	if (store)
-		store_attribute(device, attr);
 }
 
 static void descriptor_cb(uint8_t status, uint16_t handle,
@@ -2684,6 +2666,9 @@ static void probe_profiles(gpointer user_data)
 	g_slist_free_full(profiles, g_free);
 
 done:
+	if (device_is_bonded(device) == TRUE)
+		database_store(device, database);
+
 	btd_device_unref(device);
 }
 
