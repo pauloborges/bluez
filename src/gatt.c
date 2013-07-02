@@ -2816,6 +2816,20 @@ int btd_gatt_connect(struct btd_service *service)
 	return 0;
 }
 
+int btd_gatt_disconnect(struct btd_service *service)
+{
+	struct btd_device *device = btd_service_get_device(service);
+	GAttrib *attrib;
+
+	attrib = g_hash_table_lookup(gattrib_hash, device);
+
+	btd_service_disconnecting_complete(service, 0);
+
+	g_attrib_unref(attrib);
+
+	return 0;
+}
+
 void btd_gatt_service_manager_init(void)
 {
 	GError *gerr = NULL;
