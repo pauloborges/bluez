@@ -2807,6 +2807,18 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 * device weak reference and disconnection when ATT operation
 	 * are still pending. Fix core reverse service discovery.
 	 */
+
+	if (device_is_bonding(device, NULL) == TRUE)
+		return;
+
+	/*
+	 * Re-connecting: Trigger attribute discovery if there isn't
+	 * storage associated with this device. This approach will
+	 * keep the compatibility with the devices bonded using the
+	 * old attribute storage format.
+	 */
+
+	gatt_discover_attributes(device);
 }
 
 void gatt_server_bind(GIOChannel *io)
