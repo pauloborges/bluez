@@ -1416,7 +1416,7 @@ static int str2buf(const char *str, uint8_t *buf, size_t blen)
 static void database_store(struct btd_device *device, GList *database)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
-	char srcaddr[18], dstaddr[18], handle[6], uuidstr[MAX_LEN_UUID_STR];
+	char srcaddr[18], dstaddr[18], handle[7], uuidstr[MAX_LEN_UUID_STR];
 	char filename[PATH_MAX + 1], *data;
 	const bdaddr_t *src, *dst;
 	GKeyFile *key_file;
@@ -1441,7 +1441,7 @@ static void database_store(struct btd_device *device, GList *database)
 	for (list = database; list; list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
 
-		snprintf(handle, sizeof(handle), "%hu", attr->handle);
+		snprintf(handle, sizeof(handle), "0x%04x", attr->handle);
 
 		bt_uuid_to_string(&attr->type, uuidstr, sizeof(uuidstr));
 		g_key_file_set_string(key_file, handle, "Type", uuidstr);
@@ -1750,7 +1750,7 @@ bool gatt_load_from_storage(struct btd_device *device)
 
 		DBG("group %s", *group);
 
-		handle = strtol(*group, NULL, 10);
+		handle = strtol(*group, NULL, 16);
 
 		uuidstr = g_key_file_get_string(key_file, *group, "Type",
 								NULL);
