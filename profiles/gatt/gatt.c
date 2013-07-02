@@ -173,6 +173,7 @@ static struct btd_profile gatt_profile = {
 	.device_probe	= gatt_driver_probe,
 	.device_remove	= gatt_driver_remove,
 	.connect	= btd_gatt_connect,
+	.disconnect	= btd_gatt_disconnect,
 	.auto_connect	= true
 };
 
