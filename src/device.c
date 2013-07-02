@@ -2824,6 +2824,11 @@ static gboolean pair_error_cb(GIOChannel *io, GIOCondition cond,
 	bonding_request_cancel(device->bonding);
 	bonding_request_free(device->bonding);
 
+	if (device->att_io) {
+		g_io_channel_unref(device->att_io);
+		device->att_io = NULL;
+	}
+
 	return FALSE;
 }
 
