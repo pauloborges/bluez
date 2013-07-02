@@ -2753,7 +2753,7 @@ int gatt_discover_attributes(struct btd_device *device)
 	return 0;
 }
 
-void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
+static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	char src[18], dst[18];
 	struct btd_adapter *adapter;
@@ -2809,6 +2809,11 @@ void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 */
 }
 
+void gatt_server_bind(GIOChannel *io)
+{
+	connect_cb(io, NULL, NULL);
+}
+
 void btd_gatt_service_manager_init(void)
 {
 	GError *gerr = NULL;
@@ -2818,7 +2823,7 @@ void btd_gatt_service_manager_init(void)
 
 	DBG("Starting GATT server");
 
-	bredr_io = bt_io_listen(gatt_connect_cb, NULL, NULL, NULL, &gerr,
+	bredr_io = bt_io_listen(connect_cb, NULL, NULL, NULL, &gerr,
 					BT_IO_OPT_SOURCE_BDADDR, BDADDR_ANY,
 					BT_IO_OPT_PSM, ATT_PSM,
 					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
@@ -2831,7 +2836,7 @@ void btd_gatt_service_manager_init(void)
 	}
 
 	/* LE socket */
-	le_io = bt_io_listen(gatt_connect_cb, NULL, NULL, NULL, &gerr,
+	le_io = bt_io_listen(connect_cb, NULL, NULL, NULL, &gerr,
 					BT_IO_OPT_SOURCE_BDADDR, BDADDR_ANY,
 					BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
 					BT_IO_OPT_CID, ATT_CID,

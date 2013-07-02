@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include <bluetooth/bluetooth.h>
+#include <bluetooth/l2cap.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
@@ -1613,33 +1614,54 @@ static gboolean pair_error_cb(GIOChannel *io, GIOCondition cond,
 	return FALSE;
 }
 
-static int connect_le(struct btd_device *dev, GError **gerr)
+static int connect_le(struct btd_device *device, GError **gerr)
 {
-	struct btd_adapter *adapter = dev->adapter;
+	struct btd_adapter *adapter = device->adapter;
 	GIOChannel *io;
-	char addr[18];
+	struct sockaddr_l2 addr;
+	int sk, ret;
 
-	ba2str(&dev->bdaddr, addr);
+	sk = socket(PF_BLUETOOTH, SOCK_SEQPACKET | O_NONBLOCK | SOCK_CLOEXEC,
+								BTPROTO_L2CAP);
+	if (sk < 0)
+		return -errno;
 
-	DBG("Connection attempt to: %s", addr);
+	/* Bind to local address */
+	memset(&addr, 0, sizeof(addr));
+	addr.l2_family = AF_BLUETOOTH;
+	bacpy(&addr.l2_bdaddr, btd_adapter_get_address(adapter));
 
-	io = bt_io_connect(gatt_connect_cb, dev, NULL, gerr,
-			BT_IO_OPT_SOURCE_BDADDR,
-			btd_adapter_get_address(adapter),
-			BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
-			BT_IO_OPT_DEST_BDADDR, &dev->bdaddr,
-			BT_IO_OPT_DEST_TYPE, dev->bdaddr_type,
-			BT_IO_OPT_CID, ATT_CID,
-			BT_IO_OPT_INVALID);
+	if (bind(sk, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		close(sk);
+		return -errno;
+	}
 
-	if (io == NULL)
-		return -1;
+	/* Connect to remote device */
+	memset(&addr, 0, sizeof(addr));
+	addr.l2_family = AF_BLUETOOTH;
+	bacpy(&addr.l2_bdaddr, &device->bdaddr);
+	addr.l2_bdaddr_type = device->bdaddr_type;
+	addr.l2_cid = htobs(ATT_CID);
 
-	dev->bonding->pair_watch = g_io_add_watch(io, G_IO_OUT, pair_cb, dev);
+	ret = connect(sk, (struct sockaddr *) &addr, sizeof(addr));
+	if (ret < 0 && errno != EINPROGRESS) {
+		close(sk);
+		return -errno;
+	}
 
-	dev->bonding->error_watch = g_io_add_watch(io,
+	io = g_io_channel_unix_new(sk);
+
+	/* Connect attribute server */
+	gatt_server_bind(io);
+
+	/* Send pairing */
+	device->bonding->pair_watch = g_io_add_watch(io, G_IO_OUT,
+							pair_cb, device);
+
+	/* Monitor disconnection during pairing */
+	device->bonding->error_watch = g_io_add_watch(io,
 					G_IO_ERR | G_IO_HUP | G_IO_NVAL,
-					pair_error_cb, dev);
+					pair_error_cb, device);
 
 	g_io_channel_unref(io);
 
@@ -2839,6 +2861,8 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 	struct browse_req *req;
 	const char *sender;
 	int err;
+
+	DBG("");
 
 	if (device->browse)
 		return -EBUSY;

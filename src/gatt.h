@@ -65,14 +65,12 @@ int gatt_discover_attributes(struct btd_device *device);
 bool gatt_load_from_storage(struct btd_device *device);
 
 /*
- * gatt_connect_cb - Add internal watchers to track ATT protocol
- * requests. Incoming and outgoing connection should use this connection
- * callback in order to access the local GATT services.
- * @io:		ATT GIOChannel
- * @gerr:	GError containing possible connect error
- * @user_data:	User defined error
+ * gatt_server_bind - Connect the local attribute server to the given
+ * remote device. For central initiated connections(outgoing connections),
+ * it allows to reply for ATT incoming requests.
+ * @io:		L2CAP GIOChannel for the ATT traffic.
  */
-void gatt_connect_cb(GIOChannel *io, GError *gerr, void *user_data);
+void gatt_server_bind(GIOChannel *io);
 
 /* btd_gatt_add_service - Add a service declaration to local attribute database.
  * @uuid:	Service UUID.
