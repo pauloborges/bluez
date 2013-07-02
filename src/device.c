@@ -1300,27 +1300,8 @@ static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
 	struct btd_device *dev = user_data;
-	GError *gerr = NULL;
 
-	if (device_is_le(dev) == false)
-		return connect_profiles(dev, msg, NULL);
-
-	if (device_is_connected(dev))
-		return dbus_message_new_method_return(msg);
-
-	btd_device_set_temporary(dev, FALSE);
-
-	dev->att_io = connect_le(dev, &gerr);
-	if (gerr) {
-		DBusMessage *reply = btd_error_failed(msg, gerr->message);
-		g_error_free(gerr);
-		return reply;
-	}
-
-	/* FIXME: */
-	dev->connect = dbus_message_ref(msg);
-
-	return NULL;
+	return connect_profiles(dev, msg, NULL);
 }
 
 static DBusMessage *connect_profile(DBusConnection *conn, DBusMessage *msg,
