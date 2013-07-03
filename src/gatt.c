@@ -294,9 +294,12 @@ static int attribute_cmp(gconstpointer a, gconstpointer b)
 	return attr1->handle - attr2->handle;
 }
 
-static GList *insert_attribute(GList *attr_database, struct btd_attribute *attr)
+static void remote_database_add(struct btd_device *device,
+					struct btd_attribute *attr)
 {
-	return g_list_insert_sorted(attr_database, attr, attribute_cmp);
+	GList *database = g_hash_table_lookup(database_hash, device);
+	database = g_list_insert_sorted(database, attr, attribute_cmp);
+	g_hash_table_insert(database_hash, device, database);
 }
 
 struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
@@ -1492,7 +1495,6 @@ static struct btd_attribute *new_const_remote_attribute(
 					uint8_t *value, size_t vlen)
 {
 	struct btd_attribute *attr;
-	GList *database;
 	bt_uuid_t uuid;
 
 	bt_uuid16_create(&uuid, type);
@@ -1500,9 +1502,7 @@ static struct btd_attribute *new_const_remote_attribute(
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	database = g_hash_table_lookup(database_hash, device);
-	database = insert_attribute(database, attr);
-	g_hash_table_insert(database_hash, device, database);
+	remote_database_add(device, attr);
 
 	return attr;
 }
@@ -1514,14 +1514,11 @@ static struct btd_attribute *new_remote_attribute(
 					btd_attr_write_t write_cb)
 {
 	struct btd_attribute *attr;
-	GList *database;
 
 	attr = new_attribute(type, read_cb, write_cb);
 	attr->handle = handle;
 
-	database = g_hash_table_lookup(database_hash, device);
-	database = insert_attribute(database, attr);
-	g_hash_table_insert(database_hash, device, database);
+	remote_database_add(device, attr);
 
 	return attr;
 }
@@ -1674,7 +1671,6 @@ static void include_create(uint8_t status, uint16_t handle,
 				uint8_t *value, size_t vlen, void *user_data)
 {
 	struct btd_device *device = user_data;
-	GList *database;
 	struct btd_attribute *attr;
 	bt_uuid_t uuid;
 
@@ -1683,9 +1679,7 @@ static void include_create(uint8_t status, uint16_t handle,
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	database = g_hash_table_lookup(database_hash, device);
-	database = insert_attribute(database, attr);
-	g_hash_table_insert(database_hash, device, database);
+	remote_database_add(device, attr);
 }
 
 static void descriptor_create(uint8_t status, uint16_t handle,
@@ -1712,8 +1706,7 @@ static void descriptor_create(uint8_t status, uint16_t handle,
 		return;
 	}
 
-	database = insert_attribute(database, attr);
-	g_hash_table_insert(database_hash, device, database);
+	remote_database_add(device, attr);
 }
 
 bool gatt_load_from_storage(struct btd_device *device)
