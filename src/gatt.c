@@ -2732,8 +2732,14 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	if (device_is_bonding(device, NULL) == TRUE)
 		return;
 
-	if (g_hash_table_lookup(database_hash, device))
+	if (g_hash_table_lookup(database_hash, device)) {
+		struct btd_service *service = user_data;
+
+		if (service)
+			btd_service_connecting_complete(service, 0);
+
 		return;
+	}
 
 	/*
 	 * Re-connecting: Trigger attribute discovery if there isn't
