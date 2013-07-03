@@ -2667,34 +2667,12 @@ static void prim_service_complete(gpointer user_data)
 						device, include_complete);
 
 }
-
-int gatt_discover_attributes(struct btd_device *device)
-{
-	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
-	bt_uuid_t uuid;
-
-	if (attrib == NULL)
-		return -ECOMM;
-
-	/* FIXME: */
-	if (g_hash_table_lookup(database_hash, device)) {
-		DBG("Attribute database found: skip discovery");
-		return 0;
-	}
-
-	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
-				prim_service_create, btd_device_ref(device),
-				prim_service_complete);
-
-	return 0;
-}
-
 static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	char src[18], dst[18];
 	struct btd_adapter *adapter;
 	struct btd_device *device;
+	bt_uuid_t uuid;
 	GAttrib *attrib;
 	bdaddr_t sba;
 	bdaddr_t dba;
@@ -2761,12 +2739,10 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 * old attribute storage format.
 	 */
 
-	gatt_discover_attributes(device);
-}
-
-void gatt_server_bind(GIOChannel *io)
-{
-	connect_cb(io, NULL, NULL);
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+				prim_service_create, btd_device_ref(device),
+				prim_service_complete);
 }
 
 static int gatt_connect(struct btd_device *device)
@@ -2801,6 +2777,33 @@ static int gatt_connect(struct btd_device *device)
 	g_io_channel_unref(io);
 
 	return 0;
+}
+
+int gatt_discover_attributes(struct btd_device *device)
+{
+	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	bt_uuid_t uuid;
+
+	if (attrib == NULL)
+		return gatt_connect(device);
+
+	/* FIXME: */
+	if (g_hash_table_lookup(database_hash, device)) {
+		DBG("Attribute database found: skip discovery");
+		return 0;
+	}
+
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+	gatt_foreach_by_type(attrib, 0x0001, 0xffff, &uuid,
+				prim_service_create, btd_device_ref(device),
+				prim_service_complete);
+
+	return 0;
+}
+
+void gatt_server_bind(GIOChannel *io)
+{
+	connect_cb(io, NULL, NULL);
 }
 
 int btd_gatt_connect(struct btd_service *service)
