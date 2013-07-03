@@ -144,6 +144,11 @@ struct attr_proxy {
 	GDBusProxy *proxy;
 };
 
+struct find_info {
+	struct btd_device *device;
+	int refcount;
+};
+
 static GList *local_attribute_db = NULL;
 static unsigned int next_nofifier_id = 1;
 static uint16_t next_handle = 1;
@@ -1682,31 +1687,26 @@ static void include_create(uint8_t status, uint16_t handle,
 	remote_database_add(device, attr);
 }
 
-static void descriptor_create(uint8_t status, uint16_t handle,
-					bt_uuid_t *type, void *user_data)
+static void descriptor_create(uint16_t handle, bt_uuid_t *type,
+						struct btd_device *device)
 {
-	struct btd_device *device = user_data;
-	GList *l, *database;
 	struct btd_attribute *attr;
-
-	if (status)
-		return;
-
-	database = g_hash_table_lookup(database_hash, device);
 
 	attr = new_attribute(type, NULL, NULL);
 	attr->handle = handle;
 
-	/* As we use FindInformation request, we may try to re-add an
-	 * attribute that we already have, e.g. Service Declaration
-	 */
-	l = g_list_find_custom(database, attr, attribute_cmp);
-	if (l != NULL) {
-		destroy_attribute(attr);
-		return;
-	}
-
 	remote_database_add(device, attr);
+}
+
+static void descriptor_cb(uint8_t status, uint16_t handle,
+					bt_uuid_t *type, void *user_data)
+{
+	struct find_info *find = user_data;
+
+	if (status)
+		return;
+
+	descriptor_create(handle, type, find->device);
 }
 
 bool gatt_load_from_storage(struct btd_device *device)
@@ -1778,10 +1778,10 @@ bool gatt_load_from_storage(struct btd_device *device)
 				include_create(0, handle, buf, buflen, device);
 				break;
 			default:
-				descriptor_create(0, handle, &uuid, device);
+				descriptor_create(handle, &uuid, device);
 			}
 		} else {
-			descriptor_create(0, handle, &uuid, device);
+			descriptor_create(handle, &uuid, device);
 		}
 
 		g_free(valuestr);
@@ -2575,12 +2575,19 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 
 static void probe_profiles(gpointer user_data)
 {
-	struct btd_device *device = user_data;
-	GList *list, *database = g_hash_table_lookup(database_hash, device);
+	struct find_info *find = user_data;
+	GList *list, *database = g_hash_table_lookup(database_hash,
+							find->device);
 	GSList *profiles = NULL;
 	bt_uuid_t prim_uuid, uuid128;
 
-	DBG("");
+	find->refcount--;
+	/*
+	 * Find Info Transactions pending? Device probe must
+	 * be called when descriptor discovery finishes.
+	 */
+	if (find->refcount > 0)
+		return;
 
 	if (database == NULL)
 		goto done;
@@ -2606,24 +2613,73 @@ static void probe_profiles(gpointer user_data)
 		DBG("Profile: %s", str);
 	}
 
-	device_probe_profiles(device, profiles);
+	device_probe_profiles(find->device, profiles);
 
 	g_slist_free_full(profiles, g_free);
 
 done:
-	if (device_is_bonded(device) == TRUE)
-		database_store(device, database);
+	if (device_is_bonded(find->device) == TRUE)
+		database_store(find->device, database);
 
-	btd_device_unref(device);
+	btd_device_unref(find->device);
+	g_free(find);
 }
 
 static void char_declaration_complete(gpointer user_data)
 {
 	struct btd_device *device = user_data;
 	GAttrib *attrib = g_hash_table_lookup(gattrib_hash, device);
+	struct find_info *find;
+	GList *list;
+	bt_uuid_t type;
 
-	gatt_foreach_by_info(attrib, 0x0001, 0xffff, descriptor_create,
-						device, probe_profiles);
+	bt_uuid16_create(&type, GATT_CHARAC_UUID);
+
+	/*
+	 * At this point the database contains a mirror of the
+	 * remote attributes, except the characteristic descriptors.
+	 */
+
+	find = g_new0(struct find_info, 1);
+	find->device = device; /* Weak reference */
+
+	for (list = g_hash_table_lookup(database_hash, device); list;
+						list = g_list_next(list)) {
+
+		struct btd_attribute *attr, *value, *next;
+		uint16_t start, end;
+
+		attr = list->data;
+		if (bt_uuid_cmp(&type, &attr->type) != 0)
+			continue;
+
+		/* Access characteristic value */
+		list = g_list_next(list);
+		if (list == NULL)
+			return;
+
+		value = list->data;
+		start = value->handle + 1;
+
+		/* Access next attribute: Unknown type */
+		list = g_list_next(list);
+		if (list != NULL) {
+			next = list->data;
+			end = next->handle - 1;
+		} else
+			end = 0xffff;
+
+		if (end <= start)
+			continue;
+
+		find->refcount++;
+
+		gatt_foreach_by_info(attrib, start, end,
+				descriptor_cb, find, probe_profiles);
+	}
+
+	if (find->refcount == 0)
+		probe_profiles(find);
 }
 
 static void snd_service_complete(gpointer user_data)
