@@ -2536,8 +2536,6 @@ void device_probe_profiles(struct btd_device *device, GSList *uuids)
 
 	ba2str(&device->bdaddr, d.addr);
 
-	device_svc_resolved(device, 0);
-
 	if (device->blocked) {
 		DBG("Skipping profiles for blocked device %s", d.addr);
 		goto add_uuids;
@@ -2561,6 +2559,8 @@ add_uuids:
 
 	g_dbus_emit_property_changed(dbus_conn, device->path,
 						DEVICE_INTERFACE, "UUIDs");
+
+	device_svc_resolved(device, 0);
 }
 
 static void store_sdp_record(GKeyFile *key_file, sdp_record_t *rec)
