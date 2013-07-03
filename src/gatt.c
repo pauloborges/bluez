@@ -2720,7 +2720,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
-				attrib, (GDestroyNotify) channel_remove);
+				device, (GDestroyNotify) channel_remove);
 
 	/*
 	 * FIXME: Check storage before triggering attributes discovery.
