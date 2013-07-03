@@ -279,7 +279,7 @@ static struct btd_attribute *new_attribute(bt_uuid_t *type,
 	return attr;
 }
 
-static void add_attribute(struct btd_attribute *attr)
+static void local_database_add(struct btd_attribute *attr)
 {
 	/* TODO: Throw error if next_handle overflows */
 	attr->handle = next_handle++;
@@ -317,7 +317,7 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 
 	attr = new_const_attribute(&type, value, len);
 
-	add_attribute(attr);
+	local_database_add(attr);
 
 	return attr;
 }
@@ -380,7 +380,7 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	att_put_uuid(*uuid, &value[3]);
 
 	char_decl = new_const_attribute(&type, value, len);
-	add_attribute(char_decl);
+	local_database_add(char_decl);
 
 	/*
 	 * Create and add the characteristic value attribute
@@ -390,7 +390,7 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	char_value->write_sec = write_sec;
 	char_value->key_size = key_size;
 
-	add_attribute(char_value);
+	local_database_add(char_value);
 
 	/* Update characteristic value handle in characteristic declaration
 	 * attribute.
@@ -411,7 +411,7 @@ void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
 	attr->write_sec = write_sec;
 	attr->key_size = key_size;
 
-	add_attribute(attr);
+	local_database_add(attr);
 }
 
 GSList *btd_gatt_get_services(struct btd_device *device, bt_uuid_t *service)
