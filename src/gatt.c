@@ -2754,7 +2754,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				prim_service_complete);
 }
 
-static int gatt_connect(struct btd_device *device)
+static int gatt_connect(struct btd_device *device, void *user_data)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
 	GError *gerr = NULL;
@@ -2769,7 +2769,7 @@ static int gatt_connect(struct btd_device *device)
 	ba2str(addr, addrstr);
 
 	/* FIXME: over BR/EDR */
-	io = bt_io_connect(connect_cb, NULL, NULL, &gerr,
+	io = bt_io_connect(connect_cb, user_data, NULL, &gerr,
 			BT_IO_OPT_SOURCE_BDADDR, adapter_get_address(adapter),
 			BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
 			BT_IO_OPT_DEST_BDADDR, addr,
@@ -2794,7 +2794,7 @@ int gatt_discover_attributes(struct btd_device *device)
 	bt_uuid_t uuid;
 
 	if (attrib == NULL)
-		return gatt_connect(device);
+		return gatt_connect(device, NULL);
 
 	/* FIXME: */
 	if (g_hash_table_lookup(database_hash, device)) {
@@ -2830,7 +2830,7 @@ int btd_gatt_connect(struct btd_service *service)
 	}
 
 	/* FIXME: over BR/EDR */
-	err = gatt_connect(device);
+	err = gatt_connect(device, service);
 	if (err) {
 		btd_service_connecting_complete(service, err);
 		return err;
