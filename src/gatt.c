@@ -2732,6 +2732,9 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	if (device_is_bonding(device, NULL) == TRUE)
 		return;
 
+	if (g_hash_table_lookup(database_hash, device))
+		return;
+
 	/*
 	 * Re-connecting: Trigger attribute discovery if there isn't
 	 * storage associated with this device. This approach will
