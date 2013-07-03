@@ -1267,11 +1267,15 @@ static DBusMessage *connect_profiles(struct btd_device *dev, DBusMessage *msg,
 		goto resolve_services;
 	}
 
-	err = connect_next(dev);
-	if (err < 0)
-		return btd_error_failed(msg, strerror(-err));
-
 	dev->connect = dbus_message_ref(msg);
+
+	err = connect_next(dev);
+	if (err < 0) {
+		dbus_message_unref(dev->connect);
+		dev->connect = NULL;
+
+		return btd_error_failed(msg, strerror(-err));
+	}
 
 	return NULL;
 
