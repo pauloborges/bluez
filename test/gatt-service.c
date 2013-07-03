@@ -257,8 +257,39 @@ static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
 }
 
 static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
-							void *user_data)
+								void *user_data)
 {
+	struct characteristic *chr = user_data;
+	DBusMessageIter args, iter;
+	uint8_t *value;
+	uint16_t offset;
+	int len;
+
+	dbus_message_iter_init(msg, &args);
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_UINT16) {
+		fprintf(stderr, "Invalid offset for WriteValue\n");
+		goto invalid;
+	}
+
+	dbus_message_iter_get_basic(&args, &offset);
+
+	dbus_message_iter_next(&args);
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY) {
+		fprintf(stderr, "Invalid value for WriteValue\n");
+		goto invalid;
+	}
+
+	dbus_message_iter_recurse(&args, &iter);
+	dbus_message_iter_get_fixed_array(&iter, &value, &len);
+
+	g_free(chr->value);
+	chr->value = g_memdup(value, len);
+	chr->vlen = len;
+
+invalid:
+	/* FIXME: issue D-Bus error on invalid input */
 	return dbus_message_new_method_return(msg);
 }
 
