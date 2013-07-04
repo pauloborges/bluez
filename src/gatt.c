@@ -152,6 +152,8 @@ struct find_info {
 struct gatt_device {
 	GAttrib *attrib;
 	GList *database;
+	GSList *char_paths;
+	GSList *svc_paths;
 	unsigned int channel_id;
 };
 
@@ -256,6 +258,24 @@ static void destroy_attribute(struct btd_attribute *attr)
 static void gatt_device_free(gpointer user_data)
 {
 	struct gatt_device *gdev = user_data;
+	GSList *l;
+
+	for (l = gdev->char_paths; l; l = l->next) {
+		char *path = l->data;
+		g_dbus_unregister_interface(btd_get_dbus_connection(), path,
+						CHARACTERISTIC_INTERFACE);
+	}
+
+	g_slist_free_full(gdev->char_paths, g_free);
+
+
+	for (l = gdev->svc_paths; l; l = l->next) {
+		char *path = l->data;
+		g_dbus_unregister_interface(btd_get_dbus_connection(), path,
+						SERVICE_INTERFACE);
+	}
+
+	g_slist_free_full(gdev->svc_paths, g_free);
 
 	if (gdev->channel_id > 0)
 		g_source_remove(gdev->channel_id);
@@ -1546,6 +1566,7 @@ static struct btd_attribute *new_remote_attribute(
 static bool prim_service_register(struct btd_device *device,
 					struct btd_attribute *attr)
 {
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	struct attribute_iface *iface;
 	char *path;
 	bool ret = true;
@@ -1557,18 +1578,17 @@ static bool prim_service_register(struct btd_device *device,
 	path = g_strdup_printf("%s/service%d", device_get_path(device),
 							attr->handle);
 
-	/* FIXME: free how? */
 	if (g_dbus_register_interface(btd_get_dbus_connection(),
 					path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties, iface,
-					NULL) == FALSE) {
+					g_free) == FALSE) {
 		error("Unable to register service interface for %s", path);
 
 		g_free(iface);
 		ret = false;
 	}
 
-	g_free(path);
+	gdev->svc_paths = g_slist_prepend(gdev->svc_paths, path);
 
 	return ret;
 }
@@ -1597,14 +1617,14 @@ static bool characteristic_register(struct btd_device *device,
 	if (g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
-					iface, NULL) == FALSE) {
+					iface, g_free) == FALSE) {
 
 		error("Couldn't register characteristic interface");
 		g_free(iface);
 		ret = false;
 	}
 
-	g_free(path);
+	gdev->char_paths = g_slist_prepend(gdev->char_paths, path);
 
 	return ret;
 }
