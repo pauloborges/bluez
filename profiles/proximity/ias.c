@@ -79,14 +79,9 @@ static void write_ial_cb(struct btd_device *device,
 	 * need to called. Confirmation is not applied.
 	 */
 
-	if (len != 1) {
-		DBG("ATT: Invalid PDU");
-		return;
-	}
-
-	if (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
-					value[0] != HIGH_ALERT) {
-		DBG("Illegal <<Alert Level>> value");
+	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
+						value[0] != HIGH_ALERT)) {
+		error("Invalid \"Alert Level\" characteristic value");
 		return;
 	}
 
