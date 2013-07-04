@@ -52,7 +52,6 @@
 #include "proximity.h"
 #include "reporter.h"
 #include "linkloss.h"
-#include "immalert.h"
 #include "ias.h"
 
 static void register_tx_power(struct btd_adapter *adapter)
@@ -162,7 +161,6 @@ int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
 {
 	link_loss_register(adapter);
 	register_tx_power(adapter);
-	imm_alert_register(adapter);
 	ias_init();
 
 	DBG("Proximity Reporter for adapter %p", adapter);
@@ -174,6 +172,5 @@ void reporter_adapter_remove(struct btd_profile *p,
 						struct btd_adapter *adapter)
 {
 	link_loss_unregister(adapter);
-	imm_alert_unregister(adapter);
 	ias_exit();
 }
