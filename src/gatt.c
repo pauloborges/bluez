@@ -691,6 +691,38 @@ static void client_write_attribute_cb(struct btd_device *device,
 	}
 }
 
+static void client_write_notify(void *user_data)
+{
+	client_write_attribute_response(0, user_data);
+}
+
+static void client_write_without_resp_cb(struct btd_device *device,
+						struct btd_attribute *attr,
+						uint8_t *value, size_t len,
+						uint16_t offset,
+						btd_attr_write_result_t result,
+						void *user_data)
+{
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	struct attr_write_data *data;
+
+	if (gdev->attrib == NULL) {
+		result(ECOMM, user_data);
+		return;
+	}
+
+	data = g_new0(struct attr_write_data, 1);
+	data->func = result;
+	data->user_data = user_data;
+
+	/* NOTE: offset is ignored for Write Without Response */
+	if (gatt_write_cmd(gdev->attrib, attr->handle, value, len,
+					client_write_notify, data) == 0) {
+		result(EIO, user_data);
+		g_free(data);
+	}
+}
+
 unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
 						btd_attr_value_t value_cb,
 						void *user_data)
@@ -1706,9 +1738,12 @@ static void char_declaration_create(uint8_t status,
 	if (value_properties & ATT_CHAR_PROPER_READ)
 		read_cb = client_read_attribute_cb;
 
-	if (value_properties & (ATT_CHAR_PROPER_WRITE |
-					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP))
+	/* If characteristic supports both Write and Write Without Response,
+	 * use the most reliable operation. */
+	if (value_properties & ATT_CHAR_PROPER_WRITE)
 		write_cb = client_write_attribute_cb;
+	else if (value_properties & ATT_CHAR_PROPER_WRITE_WITHOUT_RESP)
+		write_cb = client_write_without_resp_cb;
 
 	attr = new_remote_attribute(device, value_handle, &value_uuid,
 							read_cb, write_cb);
