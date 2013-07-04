@@ -52,15 +52,25 @@ static struct btd_attribute *ial = NULL;
  * defines only which device wrote in the characteristic.
  * TODO: multiple adapters are not properly addressed.
  */
-static uint8_t level = NO_ALERT;
+static uint8_t ias_level = NO_ALERT;
+
+static void emit_alert_level(struct btd_device *device, uint8_t level)
+{
+	const char *path;
+
+	ias_level = level;
+
+	path = device_get_path(device);
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
+			PROXIMITY_REPORTER_INTERFACE, "ImmediateAlertLevel");
+}
 
 static void write_ial_cb(struct btd_device *device,
 			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
-	const char *path;
-
 	/*
 	 * For Write Without Response "result" callback doesn't
 	 * need to called. Confirmation is not applied.
@@ -79,12 +89,7 @@ static void write_ial_cb(struct btd_device *device,
 
 	DBG("Immediate Alert Level: 0x%02x", value[0]);
 
-	level = value[0];
-
-	path = device_get_path(device);
-
-	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
-			PROXIMITY_REPORTER_INTERFACE, "ImmediateAlertLevel");
+	emit_alert_level(device, value[0]);
 }
 
 void ias_init(void)
@@ -113,5 +118,5 @@ void ias_exit(void)
 
 const char *ias_get_level(void)
 {
-	return proximity_level2string(level);
+	return proximity_level2string(ias_level);
 }
