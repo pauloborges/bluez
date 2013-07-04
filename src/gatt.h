@@ -62,6 +62,8 @@ void btd_gatt_service_manager_cleanup(void);
 
 int gatt_discover_attributes(struct btd_device *device);
 
+void gatt_device_remove(struct btd_device *device);
+
 bool gatt_load_from_storage(struct btd_device *device);
 
 /*

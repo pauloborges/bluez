@@ -1748,7 +1748,7 @@ bool gatt_load_from_storage(struct btd_device *device)
 	}
 
 	gdev = g_new0(struct gatt_device, 1);
-	g_hash_table_insert(gatt_devices, device, gdev);
+	g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 
 	groups = g_key_file_get_groups(key_file, NULL);
 
@@ -2780,7 +2780,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	gdev = g_hash_table_lookup(gatt_devices, device);
 	if (gdev == NULL) {
 		gdev = g_new0(struct gatt_device, 1);
-		g_hash_table_insert(gatt_devices, device, gdev);
+		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
 
 	gdev->attrib = g_attrib_new(io);
@@ -2823,7 +2823,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &uuid,
-				prim_service_create, btd_device_ref(device),
+				prim_service_create, device,
 				prim_service_complete);
 }
 
@@ -2877,10 +2877,15 @@ int gatt_discover_attributes(struct btd_device *device)
 
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &uuid,
-				prim_service_create, btd_device_ref(device),
+				prim_service_create, device,
 				prim_service_complete);
 
 	return 0;
+}
+
+void gatt_device_remove(struct btd_device *device)
+{
+	g_hash_table_remove(gatt_devices, device);
 }
 
 void gatt_server_bind(GIOChannel *io)

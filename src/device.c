@@ -2395,6 +2395,8 @@ void device_remove(struct btd_device *device, gboolean remove_stored)
 	if (remove_stored)
 		device_remove_stored(device);
 
+	gatt_device_remove(device);
+
 	btd_device_unref(device);
 }
 
