@@ -82,6 +82,7 @@ static void write_ial_cb(struct btd_device *device,
 	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
 						value[0] != HIGH_ALERT)) {
 		error("Invalid \"Alert Level\" characteristic value");
+		emit_alert_level(device, NO_ALERT);
 		return;
 	}
 
