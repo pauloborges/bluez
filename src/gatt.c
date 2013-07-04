@@ -152,6 +152,7 @@ struct find_info {
 struct gatt_device {
 	GAttrib *attrib;
 	GList *database;
+	unsigned int channel_id;
 };
 
 static GList *local_attribute_db = NULL;
@@ -255,6 +256,9 @@ static void destroy_attribute(struct btd_attribute *attr)
 static void gatt_device_free(gpointer user_data)
 {
 	struct gatt_device *gdev = user_data;
+
+	if (gdev->channel_id > 0)
+		g_source_remove(gdev->channel_id);
 
 	g_attrib_unref(gdev->attrib);
 	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
@@ -1886,7 +1890,15 @@ static void add_gatt(void)
 
 static void channel_remove(gpointer user_data)
 {
-	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, user_data);
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices,
+								user_data);
+
+	/* If called from the destroy func of the hash table, this function
+	 * is called when the element is already not present in the hash table
+	 */
+	if (gdev == NULL)
+		return;
+
 	gdev->attrib = NULL;
 }
 
@@ -2791,7 +2803,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				GATTRIB_ALL_HANDLES, channel_handler_cb,
 				device, NULL);
 
-	g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
+	gdev->channel_id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
