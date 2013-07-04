@@ -58,6 +58,9 @@ static void emit_alert_level(struct btd_device *device, uint8_t level)
 {
 	const char *path;
 
+	if (ias_level == level)
+		return;
+
 	ias_level = level;
 
 	path = device_get_path(device);
