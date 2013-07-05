@@ -2894,6 +2894,16 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
+	if (user_data) {
+		/* User data is only present when called from
+		 * btd_gatt_connect()
+		 */
+		struct btd_service *service = user_data;
+
+		gdev->services = g_slist_append(gdev->services,
+					btd_service_ref(service));
+	}
+
 	/*
 	 * FIXME: Check storage before triggering attributes discovery.
 	 * Missing probe mechanism and reply for connect or pair. Fix
@@ -2905,6 +2915,9 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		return;
 
 	if (gdev->database) {
+		/* Attributes already discovered, we may continue informing
+		 * the services that the device is connected
+		 */
 		struct btd_service *service = user_data;
 
 		if (service)
@@ -3008,9 +3021,6 @@ int btd_gatt_connect(struct btd_service *service)
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
 
-	gdev->services = g_slist_append(gdev->services,
-					btd_service_ref(service));
-
 	if (gdev->attrib) {
 		/* Already connected */
 		gdev->attrib = g_attrib_ref(gdev->attrib);
@@ -3033,10 +3043,10 @@ int btd_gatt_disconnect(struct btd_service *service)
 	struct btd_device *device = btd_service_get_device(service);
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 
+	btd_service_disconnecting_complete(service, 0);
+
 	if (g_slist_find(gdev->services, service) == NULL)
 		return -ENOTCONN;
-
-	btd_service_disconnecting_complete(service, 0);
 
 	gdev->services = g_slist_remove(gdev->services, service);
 	btd_service_unref(service);
