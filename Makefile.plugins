@@ -106,6 +106,8 @@ builtin_sources += profiles/proximity/main.c profiles/proximity/manager.h \
 			profiles/proximity/reporter.c \
 			profiles/proximity/linkloss.h \
 			profiles/proximity/linkloss.c \
+			profiles/proximity/lls.h \
+			profiles/proximity/lls.c \
 			profiles/proximity/ias.h \
 			profiles/proximity/ias.c
 

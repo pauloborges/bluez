@@ -53,6 +53,7 @@
 #include "reporter.h"
 #include "linkloss.h"
 #include "ias.h"
+#include "lls.h"
 
 static void register_tx_power(struct btd_adapter *adapter)
 {
@@ -162,6 +163,7 @@ int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
 	link_loss_register(adapter);
 	register_tx_power(adapter);
 	ias_init();
+	lls_init();
 
 	DBG("Proximity Reporter for adapter %p", adapter);
 
