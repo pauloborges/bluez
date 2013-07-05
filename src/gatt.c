@@ -152,6 +152,7 @@ struct find_info {
 struct gatt_device {
 	GAttrib *attrib;
 	GList *database;
+	GIOChannel *io;	/* While GAttrib is not created */
 	GSList *char_paths;
 	GSList *svc_paths;
 	GSList *services;
@@ -2878,8 +2879,12 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	gdev = g_hash_table_lookup(gatt_devices, device);
 	if (gdev == NULL) {
+		/* For incomming connections we may not have an gatt_device */
 		gdev = g_new0(struct gatt_device, 1);
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
+	} else {
+		g_io_channel_unref(gdev->io);
+		gdev->io = NULL;
 	}
 
 	gdev->attrib = g_attrib_new(io);
@@ -2942,8 +2947,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 static int gatt_connect(struct btd_device *device, void *user_data)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	GError *gerr = NULL;
-	GIOChannel *io;
 	const bdaddr_t *addr;
 	char addrstr[18];
 	uint8_t addr_type;
@@ -2954,7 +2959,7 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	ba2str(addr, addrstr);
 
 	/* FIXME: over BR/EDR */
-	io = bt_io_connect(connect_cb, user_data, NULL, &gerr,
+	gdev->io = bt_io_connect(connect_cb, user_data, NULL, &gerr,
 			BT_IO_OPT_SOURCE_BDADDR, adapter_get_address(adapter),
 			BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
 			BT_IO_OPT_DEST_BDADDR, addr,
@@ -2962,13 +2967,11 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 			BT_IO_OPT_CID, ATT_CID,
 			BT_IO_OPT_INVALID);
 
-	if (io == NULL) {
+	if (gdev->io == NULL) {
 		error("Could not connect to %s (%s)", addrstr, gerr->message);
 		g_error_free(gerr);
 		return -ENOTCONN;
 	}
-
-	g_io_channel_unref(io);
 
 	return 0;
 }
@@ -2978,7 +2981,12 @@ int gatt_discover_attributes(struct btd_device *device)
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	bt_uuid_t uuid;
 
-	if (gdev == NULL || gdev->attrib == NULL)
+	if (gdev == NULL) {
+		gdev = g_new0(struct gatt_device, 1);
+		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
+	}
+
+	if (gdev->attrib == NULL)
 		return gatt_connect(device, NULL);
 
 	/* FIXME: */
@@ -3042,6 +3050,11 @@ int btd_gatt_disconnect(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+
+	if (gdev->io) {
+		g_io_channel_unref(gdev->io);
+		gdev->io = NULL;
+	}
 
 	btd_service_disconnecting_complete(service, 0);
 
