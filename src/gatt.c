@@ -3022,7 +3022,7 @@ int btd_gatt_connect(struct btd_service *service)
 	err = gatt_connect(device, service);
 	if (err) {
 		btd_service_connecting_complete(service, err);
-		return err;
+		return 0;
 	}
 
 	return 0;
