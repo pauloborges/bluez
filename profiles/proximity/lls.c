@@ -59,6 +59,12 @@ static void write_al_cb(struct btd_device *device,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
+	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
+						value[0] != HIGH_ALERT)) {
+		error("Invalid \"Alert Level\" characteristic value");
+		return;
+	}
+
 	DBG("Link Loss Alert Level Write cb");
 }
 
