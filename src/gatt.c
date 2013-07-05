@@ -154,6 +154,7 @@ struct gatt_device {
 	GList *database;
 	GSList *char_paths;
 	GSList *svc_paths;
+	GSList *services;
 	unsigned int channel_id;
 	unsigned int attrib_id;
 };
@@ -287,6 +288,8 @@ static void gatt_device_free(gpointer user_data)
 	}
 
 	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
+	g_slist_free(gdev->services);
+
 	g_free(gdev);
 }
 
@@ -2558,7 +2561,25 @@ static void write_request(struct btd_device *device, GAttrib *attrib,
 static gboolean channel_watch_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices,
+								user_data);
+
+	GSList *list;
+
 	DBG("%p Disconnected", user_data);
+
+	for (list = gdev->services; list; ) {
+		struct btd_service *service = list->data;
+
+		/*
+		 * Get the next service before profile disconnect
+		 * callback removes the node from the list: See
+		 * btd_gatt_disconnect()
+		 */
+		list = g_slist_next(list);
+
+		btd_service_disconnect(service);
+	}
 
 	return FALSE;
 }
@@ -2942,6 +2963,9 @@ int btd_gatt_connect(struct btd_service *service)
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	int err;
 
+	gdev->services = g_slist_append(gdev->services,
+					btd_service_ref(service));
+
 	if (gdev->attrib) {
 		/* Already connected */
 		gdev->attrib = g_attrib_ref(gdev->attrib);
@@ -2964,7 +2988,13 @@ int btd_gatt_disconnect(struct btd_service *service)
 	struct btd_device *device = btd_service_get_device(service);
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 
+	if (g_slist_find(gdev->services, service) == NULL)
+		return -ENOTCONN;
+
 	btd_service_disconnecting_complete(service, 0);
+
+	gdev->services = g_slist_remove(gdev->services, service);
+	btd_service_unref(service);
 
 	g_attrib_unref(gdev->attrib);
 
