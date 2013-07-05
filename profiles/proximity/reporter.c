@@ -2,8 +2,7 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2011  Nokia Corporation
- *  Copyright (C) 2011  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2013  Instituto Nokia de Tecnologia - INdT
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -39,73 +38,71 @@
 
 #include "lib/uuid.h"
 #include "dbus-common.h"
-#include "error.h"
 #include "device.h"
 #include "profile.h"
 #include "service.h"
-#include "hcid.h"
-#include "attrib/gattrib.h"
 #include "attrib/att.h"
-#include "attrib/gatt_lib.h"
-#include "attrib/att-database.h"
-#include "attrib-server.h"
+#include "gatt.h"
+
 #include "proximity.h"
 #include "reporter.h"
-#include "linkloss.h"
-#include "ias.h"
-#include "lls.h"
 
-static void register_tx_power(struct btd_adapter *adapter)
+static struct btd_attribute *linkloss_service = NULL;
+static struct btd_attribute *linkloss_alert_level = NULL;
+
+static struct btd_attribute *immediate_service = NULL;
+static struct btd_attribute *immediate_alert_level = NULL;
+
+/*
+ * IAS defines a single instance of the <<Alert Level>>
+ * characteristic. The object path used to emit the signal
+ * defines only which device wrote in the characteristic.
+ * TODO: multiple adapters are not properly addressed.
+ */
+static uint8_t immediate_level = NO_ALERT;
+
+static void emit_alert_level(struct btd_device *device, uint8_t level)
 {
-	uint16_t start_handle, h;
-	const int svc_size = 4;
-	uint8_t atval[256];
-	bt_uuid_t uuid;
+	const char *path;
 
-	bt_uuid16_create(&uuid, TX_POWER_SVC_UUID);
-	start_handle = attrib_db_find_avail(adapter, &uuid, svc_size);
-	if (start_handle == 0) {
-		error("Not enough free handles to register service");
+	if (immediate_level == level)
+		return;
+
+	immediate_level = level;
+
+	path = device_get_path(device);
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
+			PROXIMITY_REPORTER_INTERFACE, "ImmediateAlertLevel");
+}
+
+static void write_ial_cb(struct btd_device *device,
+			struct btd_attribute *attr,
+			uint8_t *value, size_t len, uint16_t offset,
+			btd_attr_write_result_t result, void *user_data)
+{
+	/*
+	 * For Write Without Response "result" callback doesn't
+	 * need to called. Confirmation is not applied.
+	 */
+
+	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
+						value[0] != HIGH_ALERT)) {
+		error("Invalid \"Alert Level\" characteristic value");
+		emit_alert_level(device, NO_ALERT);
 		return;
 	}
 
-	DBG("start_handle=0x%04x", start_handle);
+	DBG("Immediate Alert Level: 0x%02x", value[0]);
 
-	h = start_handle;
-
-	/* Primary service definition */
-	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	att_put_u16(TX_POWER_SVC_UUID, &atval[0]);
-	attrib_db_add(adapter, h++, &uuid, ATT_NONE, ATT_NOT_PERMITTED, atval, 2);
-
-	/* Power level characteristic */
-	bt_uuid16_create(&uuid, GATT_CHARAC_UUID);
-	atval[0] = ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_NOTIFY;
-	att_put_u16(h + 1, &atval[1]);
-	att_put_u16(POWER_LEVEL_CHR_UUID, &atval[3]);
-	attrib_db_add(adapter, h++, &uuid, ATT_NONE, ATT_NOT_PERMITTED, atval, 5);
-
-	/* Power level value */
-	bt_uuid16_create(&uuid, POWER_LEVEL_CHR_UUID);
-	att_put_u8(0x00, &atval[0]);
-	attrib_db_add(adapter, h++, &uuid, ATT_NONE, ATT_NOT_PERMITTED, atval, 1);
-
-	/* Client characteristic configuration */
-	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
-	atval[0] = 0x00;
-	atval[1] = 0x00;
-	attrib_db_add(adapter, h++, &uuid, ATT_NONE, ATT_NONE, atval, 2);
-
-	g_assert(h - start_handle == svc_size);
+	emit_alert_level(device, value[0]);
 }
 
 static gboolean property_get_link_loss_level(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	struct btd_device *device = data;
-	const char *level;
-
-	level = link_loss_get_alert_level(device);
+	/* FIXME: per device alert level */
+	const char *level = proximity_level2string(NO_ALERT);
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &level);
 
@@ -118,7 +115,7 @@ static gboolean property_get_immediate_alert_level(
 {
 	const char *level;
 
-	level = ias_get_level();
+	level = proximity_level2string(immediate_level);
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &level);
 
@@ -131,14 +128,14 @@ static const GDBusPropertyTable reporter_device_properties[] = {
 	{ }
 };
 
-int reporter_device_probe(struct btd_service *service)
+int reporter_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
 
 	g_dbus_register_interface(btd_get_dbus_connection(), path,
 				PROXIMITY_REPORTER_INTERFACE,
-				NULL, NULL, reporter_device_properties,
+				NULL, NULL, NULL,
 				btd_device_ref(device),
 				(GDBusDestroyFunction) btd_device_unref);
 
@@ -147,7 +144,7 @@ int reporter_device_probe(struct btd_service *service)
 	return 0;
 }
 
-void reporter_device_remove(struct btd_service *service)
+void reporter_remove(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
@@ -158,21 +155,72 @@ void reporter_device_remove(struct btd_service *service)
 					PROXIMITY_REPORTER_INTERFACE);
 }
 
-int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
+static void ias_init(void)
 {
-	link_loss_register(adapter);
-	register_tx_power(adapter);
+	bt_uuid_t uuid;
+
+	/* Immediate Alert Primary Service declaration */
+	bt_uuid16_create(&uuid, IMMEDIATE_ALERT_SVC_UUID);
+	immediate_service = btd_gatt_add_service(&uuid, true);
+
+	/* Declaration and Value: Alert Level */
+	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
+	immediate_alert_level = btd_gatt_add_char(&uuid,
+					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
+					NULL, write_ial_cb, BT_SECURITY_LOW,
+					BT_SECURITY_LOW, 0);
+
+	btd_gatt_dump_local_attribute_database();
+}
+
+static void read_al_cb(struct btd_device *device, struct btd_attribute *attr,
+			btd_attr_read_result_t result, void *user_data)
+{
+	DBG("Link Loss Alert Level Read cb");
+}
+
+static void write_al_cb(struct btd_device *device,
+			struct btd_attribute *attr,
+			uint8_t *value, size_t len, uint16_t offset,
+			btd_attr_write_result_t result, void *user_data)
+{
+	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
+						value[0] != HIGH_ALERT)) {
+		error("Invalid \"Alert Level\" characteristic value");
+		return;
+	}
+
+	DBG("Link Loss Alert Level Write cb");
+}
+
+static void lls_init(void)
+{
+	bt_uuid_t uuid;
+
+	/* Link Loss Primary Service declaration */
+	bt_uuid16_create(&uuid, LINK_LOSS_SVC_UUID);
+	linkloss_service = btd_gatt_add_service(&uuid, true);
+
+	/* Declaration and Value: Alert Level */
+	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
+	linkloss_alert_level = btd_gatt_add_char(&uuid,
+				ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_WRITE,
+				read_al_cb, write_al_cb,
+				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+
+	btd_gatt_dump_local_attribute_database();
+}
+
+int reporter_init(void)
+{
 	ias_init();
 	lls_init();
-
-	DBG("Proximity Reporter for adapter %p", adapter);
 
 	return 0;
 }
 
-void reporter_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+void reporter_exit(void)
 {
-	link_loss_unregister(adapter);
-	ias_exit();
+	btd_gatt_remove_service(linkloss_service);
+	btd_gatt_remove_service(immediate_service);
 }

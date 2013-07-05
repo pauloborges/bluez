@@ -130,11 +130,8 @@ static struct btd_profile pxp_monitor_txpower_profile = {
 static struct btd_profile pxp_reporter_profile = {
 	.name		= "Proximity Reporter GATT Driver",
 	.remote_uuid	= GATT_UUID,
-	.device_probe	= reporter_device_probe,
-	.device_remove	= reporter_device_remove,
-
-	.adapter_probe	= reporter_adapter_probe,
-	.adapter_remove	= reporter_adapter_remove,
+	.device_probe	= reporter_probe,
+	.device_remove	= reporter_remove,
 };
 
 static void load_config_file(GKeyFile *config)
@@ -175,6 +172,8 @@ int proximity_manager_init(GKeyFile *config)
 	if (btd_profile_register(&pxp_reporter_profile) < 0)
 		goto fail;
 
+	reporter_init();
+
 	return 0;
 
 fail:
@@ -189,4 +188,6 @@ void proximity_manager_exit(void)
 	btd_profile_unregister(&pxp_monitor_txpower_profile);
 	btd_profile_unregister(&pxp_monitor_immediate_profile);
 	btd_profile_unregister(&pxp_monitor_linkloss_profile);
+
+	reporter_exit();
 }

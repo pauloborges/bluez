@@ -2,7 +2,8 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2013  Instituto Nokia de Tecnologia - INdT
+ *  Copyright (C) 2011  Nokia Corporation
+ *  Copyright (C) 2011  Marcel Holtmann <marcel@holtmann.org>
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -21,8 +22,9 @@
  *
  */
 
-int reporter_init(void);
-void reporter_exit(void);
+void reporter_device_remove(struct btd_service *service);
+int reporter_device_probe(struct btd_service *service);
 
-int reporter_probe(struct btd_service *service);
-void reporter_remove(struct btd_service *service);
+int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter);
+void reporter_adapter_remove(struct btd_profile *p,
+						struct btd_adapter *adapter);
