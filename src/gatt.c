@@ -2963,6 +2963,15 @@ int btd_gatt_connect(struct btd_service *service)
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	int err;
 
+	/*
+	 * gdev can be NULL if the device is not bonded: BlueZ has storage
+	 * of the discovered attributes for bonded devices only.
+	 */
+	if (gdev == NULL) {
+		gdev = g_new0(struct gatt_device, 1);
+		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
+	}
+
 	gdev->services = g_slist_append(gdev->services,
 					btd_service_ref(service));
 
