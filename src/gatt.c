@@ -2673,6 +2673,13 @@ done:
 		database_store(find->device, gdev->database);
 
 	g_free(find);
+
+	/*
+	 * After probing, profiles should increment the GAttrib ref
+	 * counting assigning it's profile callback to btd_gatt_connect.
+	 * One GAttrib reference left belongs to the Generic Attribute
+	 * API implemented in this source file.
+	 */
 }
 
 static void char_declaration_complete(gpointer user_data)
