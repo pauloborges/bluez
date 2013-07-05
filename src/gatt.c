@@ -155,6 +155,7 @@ struct gatt_device {
 	GSList *char_paths;
 	GSList *svc_paths;
 	unsigned int channel_id;
+	unsigned int attrib_id;
 };
 
 static GList *local_attribute_db = NULL;
@@ -280,7 +281,11 @@ static void gatt_device_free(gpointer user_data)
 	if (gdev->channel_id > 0)
 		g_source_remove(gdev->channel_id);
 
-	g_attrib_unref(gdev->attrib);
+	if (gdev->attrib) {
+		g_attrib_unregister(gdev->attrib, gdev->attrib_id);
+		g_attrib_unref(gdev->attrib);
+	}
+
 	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
 	g_free(gdev);
 }
@@ -2825,7 +2830,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	DBG("%p Connected: %s < %s", gdev->attrib, src, dst);
 
-	g_attrib_register(gdev->attrib, GATTRIB_ALL_EVENTS,
+	gdev->attrib_id = g_attrib_register(gdev->attrib, GATTRIB_ALL_EVENTS,
 				GATTRIB_ALL_HANDLES, channel_handler_cb,
 				device, NULL);
 
