@@ -27,6 +27,9 @@ General
  - Fix GATT services over BR/EDR: GATT services over Basic Rate is broken for
  a while. Attributes discovery should be triggered before probing profiles.
 
+ - Fix not replying for Pair when Remove device gets called during the pairing
+  procedure. Tested using simple-agent and test-device scripts.
+
   Priority: Low
   Complexity: C4
 
