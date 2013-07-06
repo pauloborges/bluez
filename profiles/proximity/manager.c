@@ -36,6 +36,7 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
+#include "gatt.h"
 #include "attrib/att.h"
 #include "attrib/gattrib.h"
 #include "attrib/gatt_lib.h"
@@ -132,6 +133,9 @@ static struct btd_profile pxp_reporter_profile = {
 	.remote_uuid	= GATT_UUID,
 	.device_probe	= reporter_probe,
 	.device_remove	= reporter_remove,
+	.connect	= btd_gatt_connect,
+	.disconnect	= btd_gatt_disconnect,
+	.auto_connect	= true,
 };
 
 static void load_config_file(GKeyFile *config)
