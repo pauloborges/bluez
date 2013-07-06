@@ -128,10 +128,28 @@ static const GDBusPropertyTable reporter_device_properties[] = {
 	{ }
 };
 
+static void state_changed(struct btd_service *service,
+						btd_service_state_t old_state,
+						btd_service_state_t new_state,
+						void *user_data)
+{
+	uint8_t *linkloss_level;
+
+	if (service != user_data)
+		return;
+
+	linkloss_level = btd_service_get_user_data(service);
+
+	if (new_state == BTD_SERVICE_STATE_DISCONNECTED)
+		info("Link loss alert %s",
+				proximity_level2string(*linkloss_level));
+}
+
 int reporter_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
+	uint8_t *linkloss_level;
 
 	g_dbus_register_interface(btd_get_dbus_connection(), path,
 				PROXIMITY_REPORTER_INTERFACE,
@@ -140,6 +158,13 @@ int reporter_probe(struct btd_service *service)
 				(GDBusDestroyFunction) btd_device_unref);
 
 	DBG("Register Proximity Reporter for %s", path);
+
+	linkloss_level = g_new0(uint8_t, 1);
+	*linkloss_level = NO_ALERT;
+
+	btd_service_set_user_data(service, linkloss_level);
+
+	btd_service_add_state_cb(state_changed, service);
 
 	return 0;
 }
@@ -153,6 +178,8 @@ void reporter_remove(struct btd_service *service)
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
 					PROXIMITY_REPORTER_INTERFACE);
+
+	g_free(btd_service_get_user_data(service));
 }
 
 static void ias_init(void)
