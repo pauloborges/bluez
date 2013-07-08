@@ -61,7 +61,7 @@ static struct btd_attribute *immediate_alert_level = NULL;
  */
 static uint8_t immediate_level = NO_ALERT;
 
-static void emit_alert_level(struct btd_device *device, uint8_t level)
+static void emit_ias_alert_level(struct btd_device *device, uint8_t level)
 {
 	const char *path;
 
@@ -76,7 +76,7 @@ static void emit_alert_level(struct btd_device *device, uint8_t level)
 			PROXIMITY_REPORTER_INTERFACE, "ImmediateAlertLevel");
 }
 
-static void write_ial_cb(struct btd_device *device,
+static void write_ias_al_cb(struct btd_device *device,
 			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
@@ -89,20 +89,24 @@ static void write_ial_cb(struct btd_device *device,
 	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
 						value[0] != HIGH_ALERT)) {
 		error("Invalid \"Alert Level\" characteristic value");
-		emit_alert_level(device, NO_ALERT);
+		emit_ias_alert_level(device, NO_ALERT);
 		return;
 	}
 
 	DBG("Immediate Alert Level: 0x%02x", value[0]);
 
-	emit_alert_level(device, value[0]);
+	emit_ias_alert_level(device, value[0]);
 }
 
 static gboolean property_get_link_loss_level(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	/* FIXME: per device alert level */
-	const char *level = proximity_level2string(NO_ALERT);
+	struct btd_service *service = data;
+	uint8_t *linkloss_level;
+	const char *level;
+
+	linkloss_level = btd_service_get_user_data(service);
+	level = proximity_level2string(*linkloss_level);
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &level);
 
@@ -134,15 +138,27 @@ static void state_changed(struct btd_service *service,
 						void *user_data)
 {
 	uint8_t *linkloss_level;
+	struct btd_device *device;
+	const char *path;
 
 	if (service != user_data)
 		return;
 
+	if (old_state == BTD_SERVICE_STATE_UNAVAILABLE)
+		return;
+
+	if (new_state != BTD_SERVICE_STATE_DISCONNECTED)
+		return;
+
+	device = btd_service_get_device(service);
+	path = device_get_path(device);
+
 	linkloss_level = btd_service_get_user_data(service);
 
-	if (new_state == BTD_SERVICE_STATE_DISCONNECTED)
-		info("Link loss alert %s",
-				proximity_level2string(*linkloss_level));
+	info("Link Loss Alert %s", proximity_level2string(*linkloss_level));
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
+			PROXIMITY_REPORTER_INTERFACE, "LinkLossAlertLevel");
 }
 
 int reporter_probe(struct btd_service *service)
@@ -154,8 +170,8 @@ int reporter_probe(struct btd_service *service)
 	g_dbus_register_interface(btd_get_dbus_connection(), path,
 				PROXIMITY_REPORTER_INTERFACE,
 				NULL, NULL, NULL,
-				btd_device_ref(device),
-				(GDBusDestroyFunction) btd_device_unref);
+				btd_service_ref(service),
+				(GDBusDestroyFunction) btd_service_unref);
 
 	DBG("Register Proximity Reporter for %s", path);
 
@@ -194,19 +210,21 @@ static void ias_init(void)
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
 	immediate_alert_level = btd_gatt_add_char(&uuid,
 					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
-					NULL, write_ial_cb, BT_SECURITY_LOW,
+					NULL, write_ias_al_cb, BT_SECURITY_LOW,
 					BT_SECURITY_LOW, 0);
 
 	btd_gatt_dump_local_attribute_database();
 }
 
-static void read_al_cb(struct btd_device *device, struct btd_attribute *attr,
-			btd_attr_read_result_t result, void *user_data)
+static void read_lls_al_cb(struct btd_device *device,
+				struct btd_attribute *attr,
+				btd_attr_read_result_t result,
+				void *user_data)
 {
 	DBG("Link Loss Alert Level Read cb");
 }
 
-static void write_al_cb(struct btd_device *device,
+static void write_lls_al_cb(struct btd_device *device,
 			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
@@ -232,7 +250,7 @@ static void lls_init(void)
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
 	linkloss_alert_level = btd_gatt_add_char(&uuid,
 				ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_WRITE,
-				read_al_cb, write_al_cb,
+				read_lls_al_cb, write_lls_al_cb,
 				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
 
 	btd_gatt_dump_local_attribute_database();
