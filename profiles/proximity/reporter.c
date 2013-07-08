@@ -169,7 +169,7 @@ int reporter_probe(struct btd_service *service)
 
 	g_dbus_register_interface(btd_get_dbus_connection(), path,
 				PROXIMITY_REPORTER_INTERFACE,
-				NULL, NULL, NULL,
+				NULL, NULL, reporter_device_properties,
 				btd_service_ref(service),
 				(GDBusDestroyFunction) btd_service_unref);
 
