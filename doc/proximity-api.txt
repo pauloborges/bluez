@@ -50,6 +50,10 @@ Properties	string ImmediateAlertLevel [readonly]
 			Property shared between Path Loss and Find Me.
 			Values: "none", "mild", "high".
 
+			The alert level will also change to "none" if the link
+			is disconnected or if the remote Monitor writes an
+			invalid Alert Level Characteristic value.
+
 		string LinkLossAlertLevel [readonly]
 
 			This property indicates that Alert Level characteristic
