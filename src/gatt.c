@@ -3032,6 +3032,9 @@ int btd_gatt_connect(struct btd_service *service)
 	if (gdev->attrib) {
 		/* Already connected */
 		gdev->attrib = g_attrib_ref(gdev->attrib);
+		gdev->services = g_slist_append(gdev->services,
+					btd_service_ref(service));
+
 		btd_service_connecting_complete(service, 0);
 		return 0;
 	}
