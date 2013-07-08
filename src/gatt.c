@@ -43,7 +43,7 @@
 #include "dbus-common.h"
 #include "log.h"
 #include "error.h"
-#include "uuid.h"
+#include "lib/uuid.h"
 #include "btio.h"
 #include "textfile.h"
 #include "attrib/att.h"
