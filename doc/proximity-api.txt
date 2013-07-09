@@ -56,7 +56,9 @@ Properties	string ImmediateAlertLevel [readonly]
 
 		string LinkLossAlertLevel [readonly]
 
-			This property indicates that Alert Level characteristic
-			in the local Link Loss Service was changed by the
-			remote device. Persistent value across connections and
-			configurable per device. Values: "none", "mild", "high".
+			This property indicates that Link was lost, signal is
+			NOT emitted when Alert Level characteristic in the
+			local Link Loss Service is changed by the remote device.
+			The Alert Level value written by the remote is only used
+			when link is lost. Persistent value across connections
+			and configurable per device. Values: "none", "mild", "high".
