@@ -81,6 +81,7 @@ struct service {
 struct application {
 	char *owner;
 	GSList *services;
+	GSList *prim_services;
 	GSList *chrs;
 	GDBusClient *client;
 	unsigned int watch;
@@ -769,6 +770,15 @@ static void destroy_service(void *data)
 	g_free(srv);
 }
 
+static void remove_local_service(void *data)
+{
+	struct btd_attribute *attr = data;
+
+	DBG("Removing GATT service with declaration handle: 0x%04x",
+								attr->handle);
+	btd_gatt_remove_service(attr);
+}
+
 static void read_char_setup(DBusMessageIter *iter, void *user_data)
 {
 	uint16_t value[] = { 0x0000 };
@@ -1033,6 +1043,8 @@ static void destroy_application(void *data)
 		g_source_remove(app->register_timer);
 
 	g_free(app->owner);
+
+	g_slist_free_full(app->prim_services, remove_local_service);
 	g_slist_free_full(app->services, destroy_service);
 	g_slist_free_full(app->chrs, destroy_char);
 
@@ -1096,9 +1108,11 @@ static gboolean finish_register(gpointer user_data)
 
 	for (list = app->services; list; list = g_slist_next(list)) {
 		struct service *srv = list->data;
+		struct btd_attribute *attr;
 
-		DBG("new service %s", srv->path);
-		btd_gatt_add_service(&srv->uuid, true);
+		attr = btd_gatt_add_service(&srv->uuid, true);
+		app->prim_services = g_slist_append(app->prim_services, attr);
+		DBG("new service %s, attribute 0x%04x", srv->path, attr->handle);
 
 		g_slist_foreach(app->chrs, register_chars, srv->path);
 	}
