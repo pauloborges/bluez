@@ -1029,6 +1029,9 @@ static void destroy_application(void *data)
 
 	DBG("app %p", app);
 
+	if (app->register_timer > 0)
+		g_source_remove(app->register_timer);
+
 	g_free(app->owner);
 	g_slist_free_full(app->services, destroy_service);
 	g_slist_free_full(app->chrs, destroy_char);
