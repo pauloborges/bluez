@@ -269,6 +269,8 @@ int reporter_probe(struct btd_service *service)
 	else
 		*linkloss_level = level;
 
+	DBG("LinkLossAlertLevel: %s", proximity_level2string(*linkloss_level));
+
 	g_hash_table_insert(linkloss_levels, device, linkloss_level);
 
 	btd_service_add_state_cb(state_changed, service);
@@ -318,6 +320,12 @@ static void read_lls_al_cb(struct btd_device *device,
 	DBG("Link Loss Alert Level Read cb");
 
 	linkloss_level = g_hash_table_lookup(linkloss_levels, device);
+	if (linkloss_level == NULL) {
+		result(ENOENT, NULL, 0, user_data);
+		return;
+	}
+
+	DBG("LinkLossAlertLevel: %s", proximity_level2string(*linkloss_level));
 
 	result(0, linkloss_level, sizeof(uint8_t), user_data);
 }
@@ -342,12 +350,17 @@ static void write_lls_al_cb(struct btd_device *device,
 		return;
 	}
 
-	DBG("Link Loss Alert Level Write cb");
+	linkloss_level = g_hash_table_lookup(linkloss_levels, device);
+	if (linkloss_level == NULL) {
+		result(ENOENT, user_data);
+		return;
+	}
 
 	result(0, user_data);
 
-	linkloss_level = g_hash_table_lookup(linkloss_levels, device);
 	*linkloss_level = value[0];
+
+	DBG("LinkLossAlertLevel: %s", proximity_level2string(*linkloss_level));
 
 	store_lls_al(device, value[0]);
 }
