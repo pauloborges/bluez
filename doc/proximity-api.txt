@@ -45,9 +45,10 @@ Properties	string ImmediateAlertLevel [readonly]
 
 			This property indicates that Immediate Alert Level
 			characteristic in the local Immediate Alert Service
-			was changed by the remote device. Property shared
-			between Path Loss and Find Me. Values: "none", "mild",
-			"high".
+			was changed by the remote device. Non-persistent value,
+			readable only after the remote writes the Alert Level.
+			Property shared between Path Loss and Find Me.
+			Values: "none", "mild", "high".
 
 		string LinkLossAlertLevel [readonly]
 
