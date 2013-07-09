@@ -52,6 +52,8 @@
 #include "proximity.h"
 #include "reporter.h"
 
+static GHashTable *linkloss_levels = NULL;
+
 static struct btd_attribute *linkloss_service = NULL;
 static struct btd_attribute *linkloss_alert_level = NULL;
 
@@ -188,7 +190,8 @@ static gboolean property_get_link_loss_level(const GDBusPropertyTable *property,
 	uint8_t *linkloss_level;
 	const char *level;
 
-	linkloss_level = btd_service_get_user_data(service);
+	linkloss_level = g_hash_table_lookup(linkloss_levels,
+					btd_service_get_device(service));
 	level = proximity_level2string(*linkloss_level);
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &level);
@@ -236,7 +239,8 @@ static void state_changed(struct btd_service *service,
 	device = btd_service_get_device(service);
 	path = device_get_path(device);
 
-	linkloss_level = btd_service_get_user_data(service);
+	linkloss_level = g_hash_table_lookup(linkloss_levels,
+					btd_service_get_device(service));
 
 	info("Link Loss Alert %s", proximity_level2string(*linkloss_level));
 
@@ -265,7 +269,7 @@ int reporter_probe(struct btd_service *service)
 	else
 		*linkloss_level = level;
 
-	btd_service_set_user_data(service, linkloss_level);
+	g_hash_table_insert(linkloss_levels, device, linkloss_level);
 
 	btd_service_add_state_cb(state_changed, service);
 
@@ -279,10 +283,11 @@ void reporter_remove(struct btd_service *service)
 
 	DBG("Unregister Proximity Reporter for %s", path);
 
+	if (linkloss_levels)
+		g_hash_table_remove(linkloss_levels, device);
+
 	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
 					PROXIMITY_REPORTER_INTERFACE);
-
-	g_free(btd_service_get_user_data(service));
 }
 
 static void ias_init(void)
@@ -316,13 +321,27 @@ static void write_lls_al_cb(struct btd_device *device,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
+	uint8_t *linkloss_level;
+
+	/*
+	 * Link Loss <<Alert Level>> supports ATT Write Request only.
+	 * "result" callback should be called to notify the core that a
+	 * response should be sent to the remote confirming the operation.
+	 */
 	if (len != 1 || (value[0] != NO_ALERT && value[0] != MILD_ALERT &&
 						value[0] != HIGH_ALERT)) {
+		result(EINVAL, user_data);
+
 		error("Invalid \"Alert Level\" characteristic value");
 		return;
 	}
 
 	DBG("Link Loss Alert Level Write cb");
+
+	result(0, user_data);
+
+	linkloss_level = g_hash_table_lookup(linkloss_levels, device);
+	*linkloss_level = value[0];
 
 	store_lls_al(device, value[0]);
 }
@@ -347,6 +366,9 @@ static void lls_init(void)
 
 int reporter_init(void)
 {
+	linkloss_levels = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+								NULL, g_free);
+
 	ias_init();
 	lls_init();
 
@@ -357,4 +379,7 @@ void reporter_exit(void)
 {
 	btd_gatt_remove_service(linkloss_service);
 	btd_gatt_remove_service(immediate_service);
+
+	g_hash_table_destroy(linkloss_levels);
+	linkloss_levels = NULL;
 }
