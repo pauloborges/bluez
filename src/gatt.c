@@ -206,6 +206,23 @@ static GDBusProxy *attr_get_proxy(struct btd_attribute *attr)
 	return NULL;
 }
 
+static void attr_remove_proxy(struct btd_attribute *attr)
+{
+	GSList *list;
+
+	for (list = attr_proxy_list; list; list = g_slist_next(list)) {
+		struct attr_proxy *attr_proxy = list->data;
+
+		if (attr_proxy->attr == attr) {
+			attr_proxy_list = g_slist_remove(attr_proxy_list,
+								attr_proxy);
+			g_dbus_proxy_unref(attr_proxy->proxy);
+			g_free(attr_proxy);
+			return;
+		}
+	}
+}
+
 static void print_attribute(gpointer a, gpointer b)
 {
 	struct btd_attribute *attr = a;
@@ -254,6 +271,8 @@ static void send_error(GAttrib *attrib, uint8_t opcode, uint16_t handle,
 
 static void destroy_attribute(struct btd_attribute *attr)
 {
+	attr_remove_proxy(attr);
+
 	if (attr->notifiers != NULL)
 		g_hash_table_destroy(attr->notifiers);
 	g_free(attr);
