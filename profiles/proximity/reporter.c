@@ -110,6 +110,40 @@ static void store_lls_al(struct btd_device *device, uint8_t value)
 	g_key_file_free(key_file);
 }
 
+static int read_lls_al(struct btd_device *device, uint8_t *level)
+{
+	char filename[PATH_MAX + 1];
+	GKeyFile *key_file;
+	GError *gerr = NULL;
+	int keyval, retval = 0;
+
+	key_file = g_key_file_new();
+
+	create_proximity_file_name(device, filename, sizeof(filename));
+	if (g_key_file_load_from_file(key_file, filename,
+					G_KEY_FILE_NONE, NULL) == FALSE) {
+		retval = -ENOENT;
+		goto done;
+	}
+
+	keyval = g_key_file_get_integer(key_file, "Reporter",
+					"LinkLossAlertLevel", &gerr);
+
+	if (gerr) {
+		DBG("LinkLossAlertLevel: %s", gerr->message);
+		g_error_free(gerr);
+		retval = -ENOENT;
+		goto done;
+	}
+
+	*level = keyval;
+
+done:
+	g_key_file_free(key_file);
+
+	return retval;
+}
+
 static void emit_ias_alert_level(struct btd_device *device, uint8_t level)
 {
 	const char *path;
@@ -214,7 +248,7 @@ int reporter_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
-	uint8_t *linkloss_level;
+	uint8_t *linkloss_level, level;
 
 	g_dbus_register_interface(btd_get_dbus_connection(), path,
 				PROXIMITY_REPORTER_INTERFACE,
@@ -225,7 +259,11 @@ int reporter_probe(struct btd_service *service)
 	DBG("Register Proximity Reporter for %s", path);
 
 	linkloss_level = g_new0(uint8_t, 1);
-	*linkloss_level = NO_ALERT;
+
+	if (read_lls_al(device, &level) < 0)
+		*linkloss_level = NO_ALERT;
+	else
+		*linkloss_level = level;
 
 	btd_service_set_user_data(service, linkloss_level);
 
