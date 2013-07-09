@@ -313,7 +313,13 @@ static void read_lls_al_cb(struct btd_device *device,
 				btd_attr_read_result_t result,
 				void *user_data)
 {
+	uint8_t *linkloss_level;
+
 	DBG("Link Loss Alert Level Read cb");
+
+	linkloss_level = g_hash_table_lookup(linkloss_levels, device);
+
+	result(0, linkloss_level, sizeof(uint8_t), user_data);
 }
 
 static void write_lls_al_cb(struct btd_device *device,
