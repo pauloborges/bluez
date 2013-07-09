@@ -25,6 +25,10 @@
 #include <config.h>
 #endif
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include <stdbool.h>
 #include <errno.h>
 
@@ -43,6 +47,7 @@
 #include "service.h"
 #include "attrib/att.h"
 #include "gatt.h"
+#include "textfile.h"
 
 #include "proximity.h"
 #include "reporter.h"
@@ -60,6 +65,50 @@ static struct btd_attribute *immediate_alert_level = NULL;
  * TODO: multiple adapters are not properly addressed.
  */
 static uint8_t immediate_level = NO_ALERT;
+
+static void create_proximity_file_name(struct btd_device *device,
+						char *buffer, size_t size)
+{
+	struct btd_adapter *adapter = device_get_adapter(device);
+	char srcaddr[18], dstaddr[18];
+	const bdaddr_t *sba, *dba;
+
+	sba = adapter_get_address(adapter);
+	ba2str(sba, srcaddr);
+
+	dba = device_get_address(device);
+	ba2str(dba, dstaddr);
+
+	snprintf(buffer, size, STORAGEDIR "/%s/%s/proximity",
+							srcaddr, dstaddr);
+}
+
+static void store_lls_al(struct btd_device *device, uint8_t value)
+{
+	char filename[PATH_MAX + 1];
+	GKeyFile *key_file;
+	char *data;
+	size_t data_size;
+
+	create_proximity_file_name(device, filename, sizeof(filename));
+	key_file = g_key_file_new();
+
+	/*
+	 * Format:
+	 * [Reporter]
+	 * LinkLossAlertLevel=none
+	 */
+	g_key_file_set_integer(key_file, "Reporter", "LinkLossAlertLevel",
+								value);
+	data = g_key_file_to_data(key_file, &data_size, NULL);
+	if (data_size > 0) {
+		create_file(filename, S_IRUSR | S_IWUSR);
+		g_file_set_contents(filename, data, data_size, NULL);
+		g_free(data);
+	}
+
+	g_key_file_free(key_file);
+}
 
 static void emit_ias_alert_level(struct btd_device *device, uint8_t level)
 {
@@ -236,6 +285,8 @@ static void write_lls_al_cb(struct btd_device *device,
 	}
 
 	DBG("Link Loss Alert Level Write cb");
+
+	store_lls_al(device, value[0]);
 }
 
 static void lls_init(void)
