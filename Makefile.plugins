@@ -103,13 +103,7 @@ builtin_sources += profiles/proximity/main.c profiles/proximity/manager.h \
 			profiles/proximity/monitor.h \
 			profiles/proximity/monitor.c \
 			profiles/proximity/reporter.h \
-			profiles/proximity/reporter.c \
-			profiles/proximity/linkloss.h \
-			profiles/proximity/linkloss.c \
-			profiles/proximity/lls.h \
-			profiles/proximity/lls.c \
-			profiles/proximity/ias.h \
-			profiles/proximity/ias.c
+			profiles/proximity/reporter.c
 
 builtin_modules += thermometer
 builtin_sources += profiles/thermometer/thermometer.c
