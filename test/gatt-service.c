@@ -53,6 +53,7 @@
 
 static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
+static GSList *services = NULL;
 
 struct service {
 	char *uuid;
@@ -389,10 +390,9 @@ static bool populate_characteristic(DBusConnection *conn, const char *uuid,
 	return true;
 }
 
-static void connect_handler(DBusConnection *conn, void *user_data)
+static void create_services(DBusConnection *conn)
 {
 	const char *service_path;
-	GSList *services = NULL;
 
 	/* Immediate Alert Service (IAS) */
 
@@ -417,11 +417,15 @@ static void connect_handler(DBusConnection *conn, void *user_data)
 		return;
 
 	services = g_slist_append(services, g_strdup(service_path));
+}
+
+static void connect_handler(DBusConnection *conn, void *user_data)
+{
+	if (services == NULL)
+		return;
 
 	if (!register_services(conn, services))
 		fprintf(stderr, "Could not send RegisterServices\n");
-
-	g_slist_free_full(services, g_free);
 }
 
 static gboolean signal_handler(GIOChannel *channel, GIOCondition cond,
@@ -507,6 +511,8 @@ int main(int argc, char *argv[])
 
 	g_dbus_attach_object_manager(dbus_conn);
 
+	create_services(dbus_conn);
+
 	signal = setup_signalfd();
 
 	g_main_loop_run(main_loop);
@@ -515,6 +521,7 @@ int main(int argc, char *argv[])
 
 	g_dbus_client_unref(client);
 
+	g_slist_free_full(services, g_free);
 	dbus_connection_unref(dbus_conn);
 	g_main_loop_unref(main_loop);
 
