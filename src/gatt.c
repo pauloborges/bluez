@@ -248,6 +248,13 @@ void btd_gatt_dump_local_attribute_database(void)
 	DBG("========= end ==========");
 }
 
+static void dump_database(GList *database)
+{
+	DBG("======== begin =========");
+	g_list_foreach(database, print_attribute, NULL);
+	DBG("========= end ==========");
+}
+
 static int seclevel_string2int(const char *level)
 {
 	if (strcmp("high", level) == 0)
@@ -2765,6 +2772,8 @@ static void probe_profiles(gpointer user_data)
 	device_probe_profiles(find->device, profiles);
 
 	g_slist_free_full(profiles, g_free);
+
+	dump_database(gdev->database);
 
 done:
 	if (device_is_bonded(find->device) == TRUE)
