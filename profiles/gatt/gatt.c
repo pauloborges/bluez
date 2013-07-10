@@ -131,6 +131,73 @@ static void find_gap(struct btd_device *device)
 	read_appearance_chr(device, gap);
 }
 
+static void ccc_written(int err, void *user_data)
+{
+	DBG("Service Changed CCC enabled");
+}
+
+static bool service_changed(uint8_t *value, size_t len, void *user_data)
+{
+	uint16_t start, end;
+
+	DBG("Service Changed: %zu", len);
+
+	if (len != 4)
+		return true;
+
+	start = att_get_u16(&value[0]);
+	end = att_get_u16(&value[2]);
+
+	DBG("Service Changed: 0x%04x 0x%04x", start, end);
+
+	return true;
+}
+
+static void find_gatt(struct btd_device *device)
+{
+	struct btd_attribute *gatt, *attr;
+	bt_uuid_t uuid;
+	GSList *list;
+	uint8_t ccc[2];
+
+	bt_uuid16_create(&uuid, GENERIC_ATTRIB_PROFILE_ID);
+	list = btd_gatt_get_services(device, &uuid);
+	if (!list) {
+		error("<<GATT Service>> is mandatory");
+		return;
+	}
+
+	/* Get Service Changed declaration */
+	gatt = list->data;
+	g_slist_free(list);
+	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
+	list = btd_gatt_get_chars_decl(device, gatt, &uuid);
+	if (!list) {
+		DBG("<<GATT Service>>: Service Changed not found");
+		return;
+	}
+
+	attr = list->data;
+	g_slist_free(list);
+
+	/* Get Service Changed CCC */
+	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+	attr = btd_gatt_get_char_desc(device, attr, &uuid);
+	if (attr == NULL) {
+		DBG("<<GATT Service>>: Service Changed CCC not found");
+		return;
+	}
+
+	DBG("Enabling Service Changed CCC on handle %p", attr);
+
+	/* Enable indication */
+	att_put_u16(0x0002, &ccc);
+	btd_gatt_write_attribute(device, attr, ccc, sizeof(ccc), 0,
+							ccc_written, NULL);
+
+	btd_gatt_add_notifier(attr, service_changed, device);
+}
+
 static void state_changed(struct btd_service *service,
 						btd_service_state_t old_state,
 						btd_service_state_t new_state,
@@ -141,8 +208,11 @@ static void state_changed(struct btd_service *service,
 	if (device != user_data)
 		return;
 
-	if (new_state == BTD_SERVICE_STATE_CONNECTED)
-		find_gap(device);
+	if (new_state != BTD_SERVICE_STATE_CONNECTED)
+		return;
+
+	find_gap(device);
+	find_gatt(device);
 }
 
 static int gatt_driver_probe(struct btd_service *service)
