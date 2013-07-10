@@ -244,8 +244,17 @@ static void state_changed(struct btd_service *service,
 
 	info("Link Loss Alert %s", proximity_level2string(*linkloss_level));
 
+	/*
+	 * For Link Loss Service emit LinkLossAlertLevel signal indicating
+	 * to the upper-layer that the link has been dropped. For Immediate
+	 * Alert Service, emit ImmediateAlertLevel "NO_ALERT" indicating
+	 * that the upper-layer can stop alerting if the current Immediate
+	 * Alert Level value is different that "NO_ALERT".
+	 */
 	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
 			PROXIMITY_REPORTER_INTERFACE, "LinkLossAlertLevel");
+
+	emit_ias_alert_level(device, NO_ALERT);
 }
 
 int reporter_probe(struct btd_service *service)
