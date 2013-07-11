@@ -40,6 +40,7 @@ static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
 static char *opt_src = NULL;
 static char *opt_dst = NULL;
+static char *opt_alert_level = NULL;
 GDBusProxy *adapter = NULL;
 
 static void start_discovery_reply(DBusMessage *message, void *user_data)
@@ -184,7 +185,8 @@ static GOptionEntry options[] = {
 				"Specify local adapter interface", "hciX" },
 	{ "device", 'b', 0, G_OPTION_ARG_STRING, &opt_dst,
 				"Specify remote Bluetooth address", "MAC" },
-	/* TODO: add option for alert level, e.g. -l none|mild|high */
+	{ "alert-level", 'a', 0, G_OPTION_ARG_STRING, &opt_alert_level,
+			"Specify Immediate Alert Level", "none|mild|high" },
 	{ NULL },
 };
 
@@ -206,6 +208,20 @@ int main(int argc, char *argv[])
 
 	if (opt_dst == NULL) {
 		g_printerr("Error: remote Bluetooth address not specified\n");
+		err = EXIT_FAILURE;
+		goto done;
+	}
+
+	if (opt_alert_level == NULL) {
+		g_printerr("Error: alert level not specified\n");
+		err = EXIT_FAILURE;
+		goto done;
+	}
+
+	if (!g_str_equal(opt_alert_level, "none") &&
+					!g_str_equal(opt_alert_level, "mild") &&
+					!g_str_equal(opt_alert_level, "high")) {
+		g_printerr("Error: invalid alert level\n");
 		err = EXIT_FAILURE;
 		goto done;
 	}
