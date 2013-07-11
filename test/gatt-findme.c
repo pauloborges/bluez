@@ -42,6 +42,7 @@ static char *opt_src = NULL;
 static char *opt_dst = NULL;
 static char *opt_alert_level = NULL;
 GDBusProxy *adapter = NULL;
+GSList *services = NULL;
 
 static void start_discovery_reply(DBusMessage *message, void *user_data)
 {
@@ -174,7 +175,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		}
 
 	} else if (g_str_equal(interface, SERVICE_INTERFACE)) {
-		/* TODO: collect list of services */
+		services = g_slist_append(services, g_strdup(path));
 	} else if (g_str_equal(interface, CHARACTERISTIC_INTERFACE)) {
 		/* TODO: collect list of characteristics */
 	}
