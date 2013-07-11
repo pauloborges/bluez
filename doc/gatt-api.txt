@@ -17,6 +17,10 @@ Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX
 
 Properties	string UUID [read-only]
 
+			UUID-128 string format of the GATT based service. It
+			represents the UUID of a local external service or
+			remote GATT service.
+
 		array{object} Includes [read-only]
 
 Characteristic hierarchy
