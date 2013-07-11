@@ -2441,9 +2441,10 @@ static void read_by_group(struct btd_device *device, GAttrib *attrib,
 	read_by_group_resp(attrib, start, end, &pattern);
 }
 
-static void value_changed(GAttrib *attrib, const uint8_t *ipdu, size_t ilen)
+static void value_changed(struct gatt_device *gdev, const uint8_t *ipdu,
+								size_t ilen)
 {
-	uint8_t opdu[g_attrib_get_mtu(attrib)];
+	uint8_t opdu[g_attrib_get_mtu(gdev->attrib)];
 	struct btd_attribute *attr;
 	struct notifier *notif;
 	GHashTableIter iter;
@@ -2458,8 +2459,8 @@ static void value_changed(GAttrib *attrib, const uint8_t *ipdu, size_t ilen)
 
 	handle = att_get_u16(&ipdu[1]);
 
-	/* TODO: Missing checking for <<CCC>>*/
-	list = g_list_find_custom(local_attribute_db,
+	/* TODO: Missing checking for <<CCC>> */
+	list = g_list_find_custom(gdev->database,
 				GUINT_TO_POINTER(handle), find_by_handle);
 	if (!list)
 		goto done;
@@ -2501,7 +2502,7 @@ done:
 
 	if (ipdu[0] == ATT_OP_HANDLE_IND) {
 		opdu[0] = ATT_OP_HANDLE_CNF;
-		g_attrib_send(attrib, 0, opdu, 1, NULL, NULL, NULL);
+		g_attrib_send(gdev->attrib, 0, opdu, 1, NULL, NULL, NULL);
 	}
 }
 
@@ -2698,7 +2699,7 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	/* Notification & Indication */
 	case ATT_OP_HANDLE_NOTIFY:
 	case ATT_OP_HANDLE_IND:
-		value_changed(gdev->attrib, ipdu, ilen);
+		value_changed(gdev, ipdu, ilen);
 		break;
 	}
 }
