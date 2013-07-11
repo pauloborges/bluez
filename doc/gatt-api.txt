@@ -5,6 +5,12 @@ BlueZ D-Bus GATT API description
 Service hierarchy
 =================
 
+GATT Client and Server service representation. Object path for server are
+freely definable.
+
+Server Services already implemented by the core should NOT be re-declared
+as external GATT service.
+
 Service		org.bluez
 Interface	org.bluez.gatt.Service1
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX
@@ -15,6 +21,13 @@ Properties	string UUID [read-only]
 
 Characteristic hierarchy
 ========================
+
+GATT clients and servers share the same high-level D-Bus API. Some properties
+are applied to server implementations only, especially the properties related
+to security.
+
+For servers, the object paths need to follow the service path hierarchy and
+freely defineable.
 
 Service		org.bluez
 Interface	org.bluez.gatt.Characteristic1
@@ -85,6 +98,14 @@ Properties	string UUID [read-only]
 
 ServiceManager hierarchy
 ========================
+
+ServiceManager allows external applications to register GATT based services.
+Services should follow the API for Service and Characteristic described above.
+
+For GATT servers, services and characteristics are fetched automatically by
+BlueZ using D-Bus Object Manager. BlueZ core is responsible for managing
+ATT requests translating to D-Bus messages and signals to interact with the
+external GATT server.
 
 Service		org.bluez
 Interface	org.bluez.gatt.ServiceManager1
