@@ -65,7 +65,7 @@ Properties	string UUID [read-only]
 			represents the UUID of a local external characteristic
 			or remote GATT characteristic.
 
-		array{byte} Value [read-write, optional]
+		array{byte} Value [read-write, optional]: Not implemented
 
 			Value of the characteristic, if present, the value
 			will be cached by bluetoothd and updated when the
@@ -103,7 +103,7 @@ Properties	string UUID [read-only]
 			can be used. See Core spec page 1809, "Table 3.5:
 			Characteristic Properties bit field"
 
-		array{dict} Descriptors [read-write, optional]
+		array{dict} Descriptors [read-write, optional]: Not implemented
 
 		{
 			"uuid": string [mandatory]
@@ -135,4 +135,4 @@ Methods		RegisterServices(array{object} services)
 			characteristics under it and all the secondary
 			services included by it (using the D-Bus ObjectManager)
 
-		UnregisterAllServices()
+		UnregisterAllServices(): Not implemented
