@@ -1304,14 +1304,6 @@ int btd_adapter_gatt_server_start(struct btd_adapter *adapter)
 	GError *gerr = NULL;
 	const bdaddr_t *addr;
 
-	/*
-	 * ServiceManager1 interface is enabled as Experimental. The upcoming
-	 * Attribute server conflicts with the current available server:
-	 * Don't start this GATT server if the experimental is set.
-	 */
-	if (g_dbus_get_flags() & G_DBUS_FLAG_ENABLE_EXPERIMENTAL)
-		return 0;
-
 	DBG("Start GATT server in hci%d", btd_adapter_get_index(adapter));
 
 	server = g_new0(struct gatt_server, 1);
