@@ -61,6 +61,10 @@ Methods		array{byte} ReadValue(uint16 offset)
 
 Properties	string UUID [read-only]
 
+			UUID-128 string format of the GATT characteristic. It
+			represents the UUID of a local external characteristic
+			or remote GATT characteristic.
+
 		array{byte} Value [read-write, optional]
 
 			Value of the characteristic, if present, the value
