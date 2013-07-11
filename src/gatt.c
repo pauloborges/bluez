@@ -2972,6 +2972,7 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	const bdaddr_t *addr;
 	char addrstr[18];
 	uint8_t addr_type;
+	int seclevel;
 
 	addr = device_get_address(device);
 	addr_type = device_get_address_type(device);
@@ -2979,11 +2980,18 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	ba2str(addr, addrstr);
 
 	/* FIXME: over BR/EDR */
+
+	if (device_is_bonded(device))
+		seclevel = BT_IO_SEC_MEDIUM;
+	else
+		seclevel = BT_IO_SEC_LOW;
+
 	gdev->io = bt_io_connect(connect_cb, user_data, NULL, &gerr,
 			BT_IO_OPT_SOURCE_BDADDR, adapter_get_address(adapter),
 			BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
 			BT_IO_OPT_DEST_BDADDR, addr,
 			BT_IO_OPT_DEST_TYPE, addr_type,
+			BT_IO_OPT_SEC_LEVEL, seclevel,
 			BT_IO_OPT_CID, ATT_CID,
 			BT_IO_OPT_INVALID);
 
