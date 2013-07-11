@@ -108,7 +108,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		}
 	} else if (g_str_equal(interface, "org.bluez.Device1")) {
 		/* TODO: Check if:
-		 *  - device address matches one given by -b
 		 *  - device is connected (if not, call Device1.Connect().
 		 */
 		/* TODO: stop discovery when device is connected */
@@ -118,6 +117,21 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		 * - Write requested alert level to characteristic value
 		 * - if not found, return error to user
 		 */
+		const char *addr;
+
+		if (!g_dbus_proxy_get_property(proxy, "Address", &iter))
+			return;
+
+		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
+			g_printerr("Invalid type for Address");
+			return;
+		}
+
+		dbus_message_iter_get_basic(&iter, &addr);
+
+		if (!g_str_equal(opt_dst, addr);
+			return;
+
 		if (!g_dbus_proxy_method_call(adapter, "StopDiscovery",
 						NULL, stop_discovery_reply,
 						NULL, NULL)) {
