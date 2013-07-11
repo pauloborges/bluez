@@ -2833,7 +2833,7 @@ static void char_declaration_complete(gpointer user_data)
 		} else
 			end = 0xffff;
 
-		if (end <= start)
+		if (end < start)
 			continue;
 
 		find->refcount++;
