@@ -85,6 +85,10 @@ Properties	string UUID [read-only]
 
 		byte Properties [read-only, optional]
 
+			Bit field which determines how the Characteristic Value
+			can be used. See Core spec page 1809, "Table 3.5:
+			Characteristic Properties bit field"
+
 		array{dict} Descriptors [read-write, optional]
 
 		{
