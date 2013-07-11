@@ -72,6 +72,21 @@ static void stop_discovery_reply(DBusMessage *message, void *user_data)
 	g_printerr("Discovery stop successfully\n");
 }
 
+static void connect_reply(DBusMessage *message, void *user_data)
+{
+	DBusError error;
+
+	dbus_error_init(&error);
+
+	if (dbus_set_error_from_message(&error, message) == TRUE) {
+		g_printerr("Failed to Connect: %s\n", error.name);
+		dbus_error_free(&error);
+		return;
+	}
+
+	g_printerr("Connect successfully\n");
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
 	const char *interface, *path;
@@ -107,9 +122,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			return;
 		}
 	} else if (g_str_equal(interface, "org.bluez.Device1")) {
-		/* TODO: Check if:
-		 *  - device is connected (if not, call Device1.Connect().
-		 */
 		/* TODO: stop discovery when device is connected */
 		/* TODO: create 1 second timer to check for:
 		 * - Immediate Alert Service
@@ -118,6 +130,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		 * - if not found, return error to user
 		 */
 		const char *addr;
+		dbus_bool_t connected;
 
 		if (!g_dbus_proxy_get_property(proxy, "Address", &iter))
 			return;
@@ -129,8 +142,28 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &addr);
 
-		if (!g_str_equal(opt_dst, addr);
+		if (!g_str_equal(opt_dst, addr))
 			return;
+
+		if (!g_dbus_proxy_get_property(proxy, "Connected", &iter))
+			return;
+
+		if (dbus_message_iter_get_arg_type(&iter) !=
+							DBUS_TYPE_BOOLEAN) {
+			g_printerr("Invalid type for Connected");
+			return;
+		}
+
+		dbus_message_iter_get_basic(&iter, &connected);
+
+		if (!connected) {
+			if (!g_dbus_proxy_method_call(proxy, "Connect",
+							NULL, connect_reply,
+							NULL, NULL)) {
+				g_printerr("Could not call Connect()\n");
+				return;
+			}
+		}
 
 		if (!g_dbus_proxy_method_call(adapter, "StopDiscovery",
 						NULL, stop_discovery_reply,
