@@ -626,7 +626,7 @@ void btd_gatt_read_attribute(struct btd_device *device,
 		result(EPERM, NULL, 0, user_data);
 }
 
-static void client_read_attribute_response(uint8_t status,
+static void remote_read_attribute_response(uint8_t status,
 						const uint8_t *value,
 						size_t vlen, void *user_data)
 {
@@ -641,7 +641,7 @@ static void client_read_attribute_response(uint8_t status,
 	g_free(data);
 }
 
-static void client_read_attribute_cb(struct btd_device *device,
+static void remote_read_attribute_cb(struct btd_device *device,
 						struct btd_attribute *attr,
 						btd_attr_read_result_t result,
 						void *user_data)
@@ -660,7 +660,7 @@ static void client_read_attribute_cb(struct btd_device *device,
 	data->user_data = user_data;
 
 	if (gatt_read_char(gdev->attrib, attr->handle,
-				client_read_attribute_response, data) == 0) {
+				remote_read_attribute_response, data) == 0) {
 		result(EIO, NULL, 0, user_data);
 		g_free(data);
 	}
@@ -684,7 +684,7 @@ void btd_gatt_write_attribute(struct btd_device *device,
 		result(EPERM, user_data);
 }
 
-static void client_write_attribute_response(uint8_t status, void *user_data)
+static void remote_write_attribute_response(uint8_t status, void *user_data)
 {
 	struct attr_write_data *data = user_data;
 	btd_attr_write_result_t func = data->func;
@@ -693,7 +693,7 @@ static void client_write_attribute_response(uint8_t status, void *user_data)
 	g_free(data);
 }
 
-static void client_write_attribute_cb(struct btd_device *device,
+static void remote_write_attribute_cb(struct btd_device *device,
 					struct btd_attribute *attr,
 					uint8_t *value, size_t len,
 					uint16_t offset,
@@ -713,18 +713,18 @@ static void client_write_attribute_cb(struct btd_device *device,
 	data->user_data = user_data;
 
 	if (gatt_write_char(gdev->attrib, attr->handle, offset, value, len,
-				client_write_attribute_response, data) == 0) {
+				remote_write_attribute_response, data) == 0) {
 		result(EIO, user_data);
 		g_free(data);
 	}
 }
 
-static void client_write_notify(void *user_data)
+static void remote_write_notify(void *user_data)
 {
-	client_write_attribute_response(0, user_data);
+	remote_write_attribute_response(0, user_data);
 }
 
-static void client_write_without_resp_cb(struct btd_device *device,
+static void remote_write_without_resp_cb(struct btd_device *device,
 						struct btd_attribute *attr,
 						uint8_t *value, size_t len,
 						uint16_t offset,
@@ -745,7 +745,7 @@ static void client_write_without_resp_cb(struct btd_device *device,
 
 	/* NOTE: offset is ignored for Write Without Response */
 	if (gatt_write_cmd(gdev->attrib, attr->handle, value, len,
-					client_write_notify, data) == 0) {
+					remote_write_notify, data) == 0) {
 		result(EIO, user_data);
 		g_free(data);
 	}
@@ -1755,14 +1755,14 @@ static void char_declaration_create(uint8_t status,
 		value_uuid = att_get_uuid128(&value[3]);
 
 	if (value_properties & ATT_CHAR_PROPER_READ)
-		read_cb = client_read_attribute_cb;
+		read_cb = remote_read_attribute_cb;
 
 	/* If characteristic supports both Write and Write Without Response,
 	 * use the most reliable operation. */
 	if (value_properties & ATT_CHAR_PROPER_WRITE)
-		write_cb = client_write_attribute_cb;
+		write_cb = remote_write_attribute_cb;
 	else if (value_properties & ATT_CHAR_PROPER_WRITE_WITHOUT_RESP)
-		write_cb = client_write_without_resp_cb;
+		write_cb = remote_write_without_resp_cb;
 
 	attr = new_remote_attribute(device, value_handle, &value_uuid,
 							read_cb, write_cb);
