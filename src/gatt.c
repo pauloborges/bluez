@@ -1260,9 +1260,11 @@ static gboolean service_property_exists_includes(
 }
 
 static const GDBusPropertyTable service_properties[] = {
-	{ "UUID", "s", service_property_get_uuid },
+	{ "UUID", "s", service_property_get_uuid, NULL, NULL,
+				G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
 	{ "Includes", "as", service_property_get_includes, NULL,
-					service_property_exists_includes },
+				service_property_exists_includes,
+				G_DBUS_PROPERTY_FLAG_EXPERIMENTAL},
 	{ }
 };
 
