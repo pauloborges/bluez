@@ -181,7 +181,25 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		}
 
 	} else if (g_str_equal(interface, SERVICE_INTERFACE)) {
+		const char *uuid;
+
+		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
+			return;
+
+		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
+			g_printerr("Invalid type for Service UUID\n");
+			return;
+		}
+
+		dbus_message_iter_get_basic(&iter, &uuid);
+
+		g_printerr("uuid: %s\n", uuid);
+
+		if (!g_str_equal(uuid, IMMEDIATE_ALERT_UUID))
+			return;
+
 		services = g_slist_append(services, g_strdup(path));
+
 	} else if (g_str_equal(interface, CHARACTERISTIC_INTERFACE)) {
 		struct characteristic *chr = g_new0(struct characteristic, 1);
 		chr->path = g_strdup(path);
