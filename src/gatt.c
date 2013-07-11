@@ -3117,7 +3117,7 @@ int btd_gatt_disconnect(struct btd_service *service)
 	return 0;
 }
 
-void btd_gatt_service_manager_init(void)
+void gatt_service_manager_init(void)
 {
 	GError *gerr = NULL;
 
@@ -3163,7 +3163,7 @@ void btd_gatt_service_manager_init(void)
 					gatt_device_free);
 }
 
-void btd_gatt_service_manager_cleanup(void)
+void gatt_service_manager_cleanup(void)
 {
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1");

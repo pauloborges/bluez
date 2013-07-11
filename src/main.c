@@ -546,7 +546,7 @@ int main(int argc, char *argv[])
 
 	g_dbus_set_flags(gdbus_flags);
 
-	btd_gatt_service_manager_init();
+	gatt_service_manager_init();
 
 	if (option_compat == TRUE)
 		sdp_flags |= SDP_SERVER_COMPAT;
@@ -598,7 +598,7 @@ int main(int argc, char *argv[])
 	btd_profile_cleanup();
 	btd_agent_cleanup();
 	btd_device_cleanup();
-	btd_gatt_service_manager_cleanup();
+	gatt_service_manager_cleanup();
 
 	adapter_cleanup();
 

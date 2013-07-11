@@ -23,6 +23,20 @@
 
 struct btd_attribute;
 
+/* Functions used by the core */
+
+void gatt_service_manager_init(void);
+
+void gatt_service_manager_cleanup(void);
+
+int gatt_discover_attributes(struct btd_device *device);
+
+void gatt_device_remove(struct btd_device *device);
+
+bool gatt_load_from_storage(struct btd_device *device);
+
+/* Functions and declarations used by GATT based Profiles */
+
 /*
  * Callbacks from this type are called once the value from the attribute is
  * ready to be read.
@@ -54,17 +68,6 @@ typedef void (*btd_attr_write_t) (struct btd_device *device,
 typedef bool (*btd_attr_value_t) (uint8_t *value, size_t len, void *user_data);
 
 void btd_gatt_dump_local_attribute_database(void);
-
-void btd_gatt_service_manager_init(void);
-
-void btd_gatt_service_manager_cleanup(void);
-
-
-int gatt_discover_attributes(struct btd_device *device);
-
-void gatt_device_remove(struct btd_device *device);
-
-bool gatt_load_from_storage(struct btd_device *device);
 
 /*
  * gatt_server_bind - Connect the local attribute server to the given
