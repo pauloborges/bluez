@@ -41,9 +41,25 @@ static DBusConnection *dbus_conn;
 static char *opt_src = NULL;
 static char *opt_dst = NULL;
 
+static void start_discovery_reply(DBusMessage *message, void *user_data)
+{
+	DBusError error;
+
+	dbus_error_init(&error);
+
+	if (dbus_set_error_from_message(&error, message) == TRUE) {
+		g_printerr("Failed to Start Discovery: %s\n", error.name);
+		dbus_error_free(&error);
+		return;
+	}
+
+	g_printerr("Discovery started successfully\n");
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
 	const char *interface, *path;
+	DBusMessageIter iter;
 
 	interface = g_dbus_proxy_get_interface(proxy);
 	path = g_dbus_proxy_get_path(proxy);
@@ -51,7 +67,27 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 	g_printerr("interface %s path %s\n", interface, path);
 
 	if (g_str_equal(interface, "org.bluez.Adapter1")) {
-		/* TODO: start discovery if "Discovering" property is false */
+		dbus_bool_t discovering;
+
+		if (!g_dbus_proxy_get_property(proxy, "Discovering", &iter))
+			return;
+
+		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_BOOLEAN) {
+			g_printerr("Invalid type for Discovering");
+			return;
+		}
+
+		dbus_message_iter_get_basic(&iter, &discovering);
+
+		if (discovering)
+			return;
+
+		if (!g_dbus_proxy_method_call(proxy, "StartDiscovery",
+						NULL, start_discovery_reply,
+						NULL, NULL)) {
+			g_printerr("Could not call StartDiscovery()\n");
+			return;
+		}
 	} else if (g_str_equal(interface, "org.bluez.Device1")) {
 		/* TODO: Check if:
 		 *  - device address matches one given by -b
