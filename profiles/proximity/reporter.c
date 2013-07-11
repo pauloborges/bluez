@@ -66,7 +66,7 @@ static struct btd_attribute *immediate_alert_level = NULL;
  * defines only which device wrote in the characteristic.
  * TODO: multiple adapters are not properly addressed.
  */
-static uint8_t immediate_level = HIGH_ALERT;
+static uint8_t immediate_level = NO_ALERT;
 
 static void create_proximity_file_name(struct btd_device *device,
 						char *buffer, size_t size)
