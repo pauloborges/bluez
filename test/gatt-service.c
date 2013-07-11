@@ -35,7 +35,7 @@
 #include <dbus/dbus.h>
 #include <gdbus/gdbus.h>
 
-#include "uuid.h"
+#include "lib/uuid.h"
 #include "attrib/att.h"
 
 #define SERVICE_MANAGER_INTERFACE "org.bluez.gatt.ServiceManager1"
