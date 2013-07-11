@@ -5,10 +5,10 @@ BlueZ D-Bus GATT API description
 Service hierarchy
 =================
 
-GATT Client and Server service representation. Object path for server are
-freely definable.
+GATT remote and local service representation. Object path for local
+services are freely definable.
 
-Server Services already implemented by the core should NOT be re-declared
+Local Services already implemented by the core should NOT be re-declared
 as external GATT service.
 
 Service		org.bluez
@@ -30,12 +30,12 @@ Properties	string UUID [read-only]
 Characteristic hierarchy
 ========================
 
-GATT clients and servers share the same high-level D-Bus API. Some properties
-are applied to server implementations only, especially the properties related
-to security.
+GATT local and remote services share the same high-level D-Bus API.
+Some properties are applied to local implementations only, especially
+the properties related to security.
 
-For servers, the object paths need to follow the service path hierarchy and
-freely defineable.
+For local GATT defined services, the object paths need to follow the
+service path hierarchy and freely defineable.
 
 Service		org.bluez
 Interface	org.bluez.gatt.Characteristic1
@@ -74,8 +74,8 @@ Properties	string UUID [read-only]
 		string ReadSecurity [read-only, optional]
 
 			Defines the minimum security level requirement to
-			read this characteristic. Applied to GATT server
-			implementations only. Default value is "low".
+			read this characteristic. Applied to GATT local
+			services implementations only. Default value is "low".
 			Possible values:
 				"low": No Encryption, No Authentication
 				"medium": Encryption, No Authentication
@@ -120,10 +120,10 @@ ServiceManager hierarchy
 ServiceManager allows external applications to register GATT based services.
 Services should follow the API for Service and Characteristic described above.
 
-For GATT servers, services and characteristics are fetched automatically by
-BlueZ using D-Bus Object Manager. BlueZ core is responsible for managing
-ATT requests translating to D-Bus messages and signals to interact with the
-external GATT server.
+For GATT local services, services and characteristics definitions are fetched
+automatically by BlueZ using D-Bus Object Manager. BlueZ core is responsible
+for managing ATT requests translating to D-Bus messages and signals to interact
+with the external GATT local service implementation.
 
 Service		org.bluez
 Interface	org.bluez.gatt.ServiceManager1
