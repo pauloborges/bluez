@@ -1427,29 +1427,6 @@ static gboolean chr_exist_value(const GDBusPropertyTable *property,
 	return FALSE;
 }
 
-static gboolean chr_get_perms(const GDBusPropertyTable *property,
-					DBusMessageIter *iter, void *data)
-{
-	return TRUE;
-}
-
-static gboolean chr_exist_perms(const GDBusPropertyTable *property,
-								void *data)
-{
-	return FALSE;
-}
-
-static gboolean chr_get_auth(const GDBusPropertyTable *property,
-					DBusMessageIter *iter, void *data)
-{
-	return TRUE;
-}
-
-static gboolean chr_exist_auth(const GDBusPropertyTable *property, void *data)
-{
-	return FALSE;
-}
-
 static gboolean chr_get_props(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
@@ -1493,10 +1470,6 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ "UUID", "s", chr_get_uuid, NULL, NULL,
 					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
 	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value,
-					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
-	{ "Permissions", "y", chr_get_perms, NULL, chr_exist_perms,
-					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
-	{ "Authenticate", "b", chr_get_auth, NULL, chr_exist_auth,
 					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
 	{ "Properties", "y", chr_get_props, NULL, chr_exist_props,
 					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
