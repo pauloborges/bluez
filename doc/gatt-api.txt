@@ -36,16 +36,16 @@ Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/ch
 
 Methods		array{byte} ReadValue(uint16 offset)
 
-			This method reads the characteristic value attribute from the
-			given characteristic.
+			This method reads the characteristic value attribute
+			from the given characteristic.
 
 			Possible errors: org.bluez.Error.NotConnected
 					 org.bluez.Error.Failed
 
 		void WriteValue(uint16 offset, array{byte} buf)
 
-			This method writes the characteristic value attribute from the
-			given characteristic.
+			This method writes the characteristic value attribute
+			from the given characteristic.
 
 			Possible errors: org.bluez.Error.NotConnected
 					 org.bluez.Error.Failed
@@ -55,8 +55,9 @@ Properties	string UUID [read-only]
 
 		array{byte} Value [read-write, optional]
 
-			Value of the characteristic, if present, the value will be cached
-			by bluetoothd and updated when the PropertyChanged is emitted.
+			Value of the characteristic, if present, the value
+			will be cached by bluetoothd and updated when the
+			PropertyChanged is emitted.
 
 		string ReadSecurity [read-only, optional]
 
@@ -80,8 +81,9 @@ Properties	string UUID [read-only]
 
 		byte KeySize [read-only, optional]
 
-			Defines the minimum encryption key size when ReadSecurity
-			and/or WriteSecurity are set to "medium" or "high".
+			Defines the minimum encryption key size when
+			ReadSecurity and/or WriteSecurity are set to "medium"
+			or "high".
 
 		byte Properties [read-only, optional]
 
@@ -117,8 +119,8 @@ Object path	/
 
 Methods		RegisterServices(array{object} services)
 
-			Registers a list of primary services, all the characteristics
-			under it and all the secondary services included by it (using
-			the D-Bus ObjectManager)
+			Registers a list of primary services, all the
+			characteristics under it and all the secondary
+			services included by it (using the D-Bus ObjectManager)
 
 		UnregisterAllServices()
