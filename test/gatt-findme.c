@@ -40,6 +40,7 @@ static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
 static char *opt_src = NULL;
 static char *opt_dst = NULL;
+GDBusProxy *adapter = NULL;
 
 static void start_discovery_reply(DBusMessage *message, void *user_data)
 {
@@ -56,6 +57,21 @@ static void start_discovery_reply(DBusMessage *message, void *user_data)
 	g_printerr("Discovery started successfully\n");
 }
 
+static void stop_discovery_reply(DBusMessage *message, void *user_data)
+{
+	DBusError error;
+
+	dbus_error_init(&error);
+
+	if (dbus_set_error_from_message(&error, message) == TRUE) {
+		g_printerr("Failed to Stop Discovery: %s\n", error.name);
+		dbus_error_free(&error);
+		return;
+	}
+
+	g_printerr("Discovery stop successfully\n");
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
 	const char *interface, *path;
@@ -68,6 +84,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	if (g_str_equal(interface, "org.bluez.Adapter1")) {
 		dbus_bool_t discovering;
+
+		adapter = g_dbus_proxy_ref(proxy);
 
 		if (!g_dbus_proxy_get_property(proxy, "Discovering", &iter))
 			return;
@@ -100,6 +118,13 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		 * - Write requested alert level to characteristic value
 		 * - if not found, return error to user
 		 */
+		if (!g_dbus_proxy_method_call(adapter, "StopDiscovery",
+						NULL, stop_discovery_reply,
+						NULL, NULL)) {
+			g_printerr("Could not call StopDiscovery()\n");
+			return;
+		}
+
 	} else if (g_str_equal(interface, SERVICE_INTERFACE)) {
 		/* TODO: collect list of services */
 	} else if (g_str_equal(interface, CHARACTERISTIC_INTERFACE)) {
@@ -161,6 +186,7 @@ done:
 	g_option_context_free(context);
 	g_free(opt_src);
 	g_free(opt_dst);
+	g_dbus_proxy_unref(adapter);
 
 	return err;
 }
