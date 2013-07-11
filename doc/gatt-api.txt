@@ -21,7 +21,11 @@ Properties	string UUID [read-only]
 			represents the UUID of a local external service or
 			remote GATT service.
 
-		array{object} Includes [read-only]
+		array{object} Includes [read-only]: Not implemented
+
+			Array of objects paths representing the included
+			services of this service.
+
 
 Characteristic hierarchy
 ========================
