@@ -1569,22 +1569,22 @@ static void database_store(struct btd_device *device, GList *database)
 }
 
 static struct btd_attribute *find_parent_service(GList *database,
-						struct btd_attribute *attr)
+						uint16_t handle)
 {
+	struct btd_attribute *svc = NULL;
 	GList *l;
 
-	l = g_list_find(database, attr);
-	if (l == NULL)
-		return NULL;
-
-	for (; l; l = g_list_previous(l)) {
+	for (l = g_list_first(database); l; l = g_list_next(l)) {
 		struct btd_attribute *a = l->data;
 
-		if (is_service(a))
-			return a;
+		if (a->handle >= handle)
+			break;
+
+		if (is_service(a) == true)
+			svc = a;
 	}
 
-	return NULL;
+	return svc;
 }
 
 static struct btd_attribute *new_const_remote_attribute(
@@ -1600,8 +1600,6 @@ static struct btd_attribute *new_const_remote_attribute(
 	attr = new_const_attribute(&uuid, value, vlen);
 	attr->handle = handle;
 
-	remote_database_add(device, attr);
-
 	return attr;
 }
 
@@ -1615,8 +1613,6 @@ static struct btd_attribute *new_remote_attribute(
 
 	attr = new_attribute(type, read_cb, write_cb);
 	attr->handle = handle;
-
-	remote_database_add(device, attr);
 
 	return attr;
 }
@@ -1664,11 +1660,13 @@ static bool characteristic_register(struct btd_device *device,
 	if (!gdev->database)
 		return false;
 
+	parent = find_parent_service(gdev->database, attr->handle);
+	if (parent == NULL)
+		return false;
+
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
 	iface->device = device;
-
-	parent = find_parent_service(gdev->database, attr);
 
 	path = g_strdup_printf("%s/service%d/characteristics%d",
 			device_get_path(device), parent->handle, attr->handle);
@@ -1704,18 +1702,23 @@ static void prim_service_create(uint8_t status, uint16_t handle,
 		g_free(attr);
 		return;
 	}
+
+	remote_database_add(device, attr);
 }
 
 static void snd_service_create(uint8_t status, uint16_t handle,
 				uint8_t *value, size_t vlen, void *user_data)
 {
 	struct btd_device *device = user_data;
+	struct btd_attribute *attr;
 
 	if (status)
 		return;
 
-	new_const_remote_attribute(device, handle,
+	attr = new_const_remote_attribute(device, handle,
 					GATT_SND_SVC_UUID, value, vlen);
+
+	remote_database_add(device, attr);
 }
 
 static void char_declaration_create(uint8_t status,
@@ -1742,6 +1745,8 @@ static void char_declaration_create(uint8_t status,
 		return;
 	}
 
+	remote_database_add(device, attr);
+
 	/* Characteristic Value Attribute */
 	value_properties = value[0];
 
@@ -1766,6 +1771,8 @@ static void char_declaration_create(uint8_t status,
 
 	attr = new_remote_attribute(device, value_handle, &value_uuid,
 							read_cb, write_cb);
+
+	remote_database_add(device, attr);
 }
 
 static void include_create(uint8_t status, uint16_t handle,
