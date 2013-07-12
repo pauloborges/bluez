@@ -35,6 +35,7 @@
 
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+#define ALERT_LEVEL_CHR_UUID	"00002a06-0000-1000-8000-00805f9b34fb"
 
 static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
@@ -43,6 +44,7 @@ static char *opt_dst = NULL;
 static char *opt_alert_level = NULL;
 GDBusProxy *adapter = NULL;
 GSList *services = NULL;
+guint timer;
 GSList *characteristics = NULL;
 
 struct characteristic {
@@ -93,6 +95,45 @@ static void connect_reply(DBusMessage *message, void *user_data)
 	}
 
 	g_printerr("Connect successfully\n");
+}
+
+static void change_alert_level(gpointer data, gpointer user_data)
+{
+	struct characteristic *chr = data;
+	const char *srv_path = user_data;
+	const char *uuid;
+	DBusMessageIter iter;
+
+	if (!g_str_has_prefix(chr->path, srv_path))
+		return;
+
+	if (!g_dbus_proxy_get_property(chr->proxy, "UUID", &iter))
+		return;
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
+		g_printerr("Invalid type for Service UUID\n");
+		return;
+	}
+
+	dbus_message_iter_get_basic(&iter, &uuid);
+
+	if (!g_str_equal(uuid, ALERT_LEVEL_CHR_UUID))
+		return;
+
+	// TODO Write new alert level value.
+}
+
+static gboolean timeout(gpointer user_data)
+{
+	GSList *list;
+
+	for (list = services; list; list = g_slist_next(list)) {
+		char *srv_path = list->data;
+
+		g_slist_foreach(characteristics, change_alert_level, srv_path);
+	}
+
+	return FALSE;
 }
 
 static void proxy_added(GDBusProxy *proxy, void *user_data)
@@ -266,6 +307,8 @@ int main(int argc, char *argv[])
 	}
 
 	g_dbus_client_set_proxy_handlers(client, proxy_added, NULL, NULL, NULL);
+
+	timer = g_timeout_add_seconds(1, timeout, NULL);
 
 	g_main_loop_run(main_loop);
 
