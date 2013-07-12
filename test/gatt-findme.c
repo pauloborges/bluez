@@ -171,6 +171,15 @@ static void change_alert_level(gpointer data, gpointer user_data)
 
 static gboolean timeout(gpointer user_data)
 {
+	if (adapter == NULL) {
+		if (opt_src == NULL)
+			g_printerr("No adapter found\n");
+		else
+			g_printerr("Adapter %s not found\n", opt_src);
+
+		g_main_loop_quit(main_loop);
+	}
+
 	if (ias_path == NULL) {
 		g_printerr("Immediate Alert Service not found on %s\n",
 								opt_dst);
@@ -194,6 +203,15 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	if (g_str_equal(interface, "org.bluez.Adapter1")) {
 		dbus_bool_t discovering;
+
+		/* Use either the first adapter found or the one given by -i
+		 * option */
+		if (adapter != NULL)
+			return;
+
+		/* The adapter name (hciX) does not match the one given by -i */
+		if (opt_src != NULL && !g_str_has_suffix(path, opt_src))
+			return;
 
 		adapter = g_dbus_proxy_ref(proxy);
 
