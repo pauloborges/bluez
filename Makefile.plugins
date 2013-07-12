@@ -51,10 +51,11 @@ builtin_modules += input
 builtin_sources += profiles/input/manager.c \
 			profiles/input/server.h profiles/input/server.c \
 			profiles/input/device.h profiles/input/device.c
-
+if FALSE
 builtin_modules += hog
 builtin_sources += profiles/input/hog.c profiles/input/uhid_copy.h \
 			profiles/input/suspend.h profiles/input/suspend-dummy.c
+endif
 
 if EXPERIMENTAL
 builtin_modules += health
@@ -71,25 +72,34 @@ endif
 if EXPERIMENTAL
 builtin_modules += gatt
 builtin_sources += profiles/gatt/gatt.c
-else
+endif
+
+if FALSE
 builtin_modules += gatt
 builtin_sources += profiles/gatt/gas.c
 endif
 
-
+if FALSE
 builtin_modules += scanparam
 builtin_sources += profiles/scanparam/scan.c
+endif
 
+if FALSE
 builtin_modules += deviceinfo
 builtin_sources += profiles/deviceinfo/deviceinfo.c
+endif
 
-if EXPERIMENTAL
+if FALSE
 builtin_modules += alert
 builtin_sources += profiles/alert/server.c
+endif
 
+if FALSE
 builtin_modules += time
 builtin_sources += profiles/time/server.c
+endif
 
+if EXPERIMENTAL
 builtin_modules += proximity
 builtin_sources += profiles/proximity/main.c profiles/proximity/manager.h \
 			profiles/proximity/manager.c \
@@ -99,13 +109,19 @@ builtin_sources += profiles/proximity/main.c profiles/proximity/manager.h \
 			profiles/proximity/monitor.c \
 			profiles/proximity/reporter.h \
 			profiles/proximity/reporter.c
+endif
 
+if FALSE
 builtin_modules += thermometer
 builtin_sources += profiles/thermometer/thermometer.c
+endif
 
+if FALSE
 builtin_modules += heartrate
 builtin_sources += profiles/heartrate/heartrate.c
+endif
 
+if FALSE
 builtin_modules += cyclingspeed
 builtin_sources += profiles/cyclingspeed/cyclingspeed.c
 endif
