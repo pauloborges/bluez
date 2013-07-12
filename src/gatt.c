@@ -2870,7 +2870,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		struct btd_service *service = user_data;
 
 		if (service)
-			btd_service_disconnecting_complete(service,
+			btd_service_connecting_complete(service,
 							gerr->code);
 
 		error("ATT Connect: %s", gerr->message);
