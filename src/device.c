@@ -1379,6 +1379,9 @@ static void device_svc_resolved(struct btd_device *dev, int err)
 	dev->svc_resolved = true;
 	dev->browse = NULL;
 
+	if (!dev->temporary)
+		store_device_info(dev);
+
 	/* Disconnection notification can happen before this function
 	 * gets called, so don't set svc_refreshed for a disconnected
 	 * device.
@@ -2822,9 +2825,6 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 						DEVICE_INTERFACE, "UUIDs");
 
 send_reply:
-	if (!device->temporary)
-		store_device_info(device);
-
 	browse_request_free(req);
 }
 
