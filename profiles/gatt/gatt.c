@@ -205,7 +205,7 @@ static void state_changed(struct btd_service *service,
 {
 	struct btd_device *device = btd_service_get_device(service);
 
-	if (device != user_data)
+	if (service != user_data)
 		return;
 
 	if (new_state != BTD_SERVICE_STATE_CONNECTED)
@@ -221,7 +221,7 @@ static int gatt_driver_probe(struct btd_service *service)
 
 	DBG("Probing device");
 
-	btd_service_add_state_cb(state_changed, device);
+	btd_service_add_state_cb(state_changed, service);
 
 	devices = g_slist_append(devices, device);
 
