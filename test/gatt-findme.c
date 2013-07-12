@@ -52,6 +52,12 @@ struct characteristic {
 	GDBusProxy *proxy;
 };
 
+struct write_data {
+	uint8_t *value;
+	size_t vlen;
+	uint16_t offset;
+};
+
 static void start_discovery_reply(DBusMessage *message, void *user_data)
 {
 	DBusError error;
@@ -97,12 +103,53 @@ static void connect_reply(DBusMessage *message, void *user_data)
 	g_printerr("Connect successfully\n");
 }
 
+static void write_char_setup(DBusMessageIter *iter, void *user_data)
+{
+	DBusMessageIter array;
+	struct write_data *wd = user_data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, &wd->offset);
+
+	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_BYTE_AS_STRING,
+					&array);
+
+	if (!dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+					&wd->value, wd->vlen))
+		g_printerr("Could not append value to D-Bus message\n");
+
+	dbus_message_iter_close_container(iter, &array);
+}
+
+static void write_char_reply(DBusMessage *msg, void *user_data)
+{
+	struct write_data *wd = user_data;
+
+	g_printerr("Alert Level set to 0x0%u\n", wd->value[0]);
+}
+
+static void write_char_destroy(void *user_data)
+{
+	g_free(user_data);
+}
+
+static uint8_t alert_level_to_uint(char *al)
+{
+	if (g_str_equal(al, "mild"))
+		return 0x01;
+	else if (g_str_equal(al, "high"))
+		return 0x02;
+
+	return 0x00;
+}
+
 static void change_alert_level(gpointer data, gpointer user_data)
 {
 	struct characteristic *chr = data;
 	const char *srv_path = user_data;
 	const char *uuid;
 	DBusMessageIter iter;
+	struct write_data *wd;
 
 	if (!g_str_has_prefix(chr->path, srv_path))
 		return;
@@ -120,7 +167,20 @@ static void change_alert_level(gpointer data, gpointer user_data)
 	if (!g_str_equal(uuid, ALERT_LEVEL_CHR_UUID))
 		return;
 
-	// TODO Write new alert level value.
+	wd = g_new0(struct write_data, 1);
+	wd->value = g_new0(uint8_t, 1);
+	wd->value[0] = alert_level_to_uint(opt_alert_level);
+	wd->vlen = sizeof(uint8_t);
+	wd->offset = 0;
+
+	if (!g_dbus_proxy_method_call(chr->proxy, "WriteValue",
+					write_char_setup,
+					write_char_reply, wd,
+					write_char_destroy)) {
+		g_printerr("Could not call WriteValue D-Bus method");
+		write_char_destroy(wd);
+		return;
+	}
 }
 
 static gboolean timeout(gpointer user_data)
