@@ -120,7 +120,6 @@ struct browse_req {
 	int search_uuid;
 	int reconnect_attempt;
 	guint listener_id;
-	unsigned int watch_id;
 };
 
 struct svc_callback {
@@ -406,8 +405,6 @@ static void browse_request_free(struct browse_req *req)
 {
 	if (req->listener_id)
 		g_dbus_remove_watch(dbus_conn, req->listener_id);
-	if (req->watch_id)
-		g_source_remove(req->watch_id);
 	if (req->msg)
 		dbus_message_unref(req->msg);
 	g_slist_free_full(req->profiles_added, g_free);
