@@ -2811,6 +2811,7 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 
 	if (!req->profiles_added) {
 		DBG("%s: No service update", addr);
+		device_svc_resolved(device, 0);
 		goto send_reply;
 	}
 
