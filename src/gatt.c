@@ -1542,20 +1542,21 @@ static void database_store(struct btd_device *device, GList *database)
 
 	for (list = database; list; list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
+		char *str;
+
+		/* Avoid storing characteristic value */
+		if (attr->value_len == 0)
+			continue;
 
 		snprintf(handle, sizeof(handle), "0x%04x", attr->handle);
 
 		bt_uuid_to_string(&attr->type, uuidstr, sizeof(uuidstr));
 		g_key_file_set_string(key_file, handle, "Type", uuidstr);
 
-		if (attr->value_len > 0) {
-			char *str;
+		str = buf2str(attr->value, attr->value_len);
+		g_key_file_set_string(key_file, handle, "Value", str);
 
-			str = buf2str(attr->value, attr->value_len);
-			g_key_file_set_string(key_file, handle, "Value", str);
-
-			g_free(str);
-		}
+		g_free(str);
 
 		data = g_key_file_to_data(key_file, &len, NULL);
 		if (len > 0) {
