@@ -157,15 +157,6 @@ static void change_alert_level(gpointer data, gpointer user_data)
 
 static gboolean write_imm_alert(gpointer user_data)
 {
-	if (adapter == NULL) {
-		if (opt_src == NULL)
-			g_printerr("No adapter found\n");
-		else
-			g_printerr("Adapter %s not found\n", opt_src);
-
-		g_main_loop_quit(main_loop);
-	}
-
 	if (ias_path == NULL) {
 		g_printerr("Immediate Alert Service not found on %s\n",
 								opt_dst);
@@ -235,6 +226,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		/* The adapter name (hciX) does not match the one given by -i */
 		if (opt_src != NULL && !g_str_has_suffix(path, opt_src))
 			return;
+
+		g_printerr("Found adapter: %s\n", path);
 
 		adapter = g_dbus_proxy_ref(proxy);
 
@@ -366,6 +359,8 @@ int main(int argc, char *argv[])
 	}
 
 	g_dbus_client_set_proxy_handlers(client, proxy_added, NULL, NULL, NULL);
+
+	g_printerr("Waiting for adapter...\n");
 
 	g_main_loop_run(main_loop);
 
