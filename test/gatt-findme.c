@@ -42,20 +42,14 @@ static DBusConnection *dbus_conn;
 static char *opt_src = NULL;
 static char *opt_dst = NULL;
 static char *opt_alert_level = NULL;
-GDBusProxy *adapter = NULL;
-GSList *services = NULL;
-guint timer;
-GSList *characteristics = NULL;
+static GDBusProxy *adapter = NULL;
+static GSList *services = NULL;
+static guint timer;
+static GSList *characteristics = NULL;
 
 struct characteristic {
 	char *path;
 	GDBusProxy *proxy;
-};
-
-struct write_data {
-	uint8_t *value;
-	size_t vlen;
-	uint16_t offset;
 };
 
 static void start_discovery_reply(DBusMessage *message, void *user_data)
@@ -64,7 +58,7 @@ static void start_discovery_reply(DBusMessage *message, void *user_data)
 
 	dbus_error_init(&error);
 
-	if (dbus_set_error_from_message(&error, message) == TRUE) {
+	if (dbus_set_error_from_message(&error, message)) {
 		g_printerr("Failed to Start Discovery: %s\n", error.name);
 		dbus_error_free(&error);
 		return;
@@ -79,13 +73,13 @@ static void stop_discovery_reply(DBusMessage *message, void *user_data)
 
 	dbus_error_init(&error);
 
-	if (dbus_set_error_from_message(&error, message) == TRUE) {
+	if (dbus_set_error_from_message(&error, message)) {
 		g_printerr("Failed to Stop Discovery: %s\n", error.name);
 		dbus_error_free(&error);
 		return;
 	}
 
-	g_printerr("Discovery stop successfully\n");
+	g_printerr("Discovery stopped successfully\n");
 }
 
 static void connect_reply(DBusMessage *message, void *user_data)
@@ -94,64 +88,64 @@ static void connect_reply(DBusMessage *message, void *user_data)
 
 	dbus_error_init(&error);
 
-	if (dbus_set_error_from_message(&error, message) == TRUE) {
+	if (dbus_set_error_from_message(&error, message)) {
 		g_printerr("Failed to Connect: %s\n", error.name);
 		dbus_error_free(&error);
 		return;
 	}
 
-	g_printerr("Connect successfully\n");
+	g_printerr("Connected successfully\n");
 }
 
-static void write_char_setup(DBusMessageIter *iter, void *user_data)
+static uint8_t alert_level_to_uint(char *level)
 {
-	DBusMessageIter array;
-	struct write_data *wd = user_data;
-
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, &wd->offset);
-
-	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
-					DBUS_TYPE_BYTE_AS_STRING,
-					&array);
-
-	if (!dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
-					&wd->value, wd->vlen))
-		g_printerr("Could not append value to D-Bus message\n");
-
-	dbus_message_iter_close_container(iter, &array);
-}
-
-static void write_char_reply(DBusMessage *msg, void *user_data)
-{
-	struct write_data *wd = user_data;
-
-	g_printerr("Alert Level set to 0x0%u\n", wd->value[0]);
-}
-
-static void write_char_destroy(void *user_data)
-{
-	g_free(user_data);
-}
-
-static uint8_t alert_level_to_uint(char *al)
-{
-	if (g_str_equal(al, "mild"))
+	if (g_str_equal(level, "mild"))
 		return 0x01;
-	else if (g_str_equal(al, "high"))
+	else if (g_str_equal(level, "high"))
 		return 0x02;
 
 	return 0x00;
 }
 
+static void write_char_setup(DBusMessageIter *iter, void *user_data)
+{
+	DBusMessageIter array;
+	uint8_t *value;
+	uint16_t offset;
+
+	value = g_new0(uint8_t, 1);
+	*value = alert_level_to_uint(opt_alert_level);
+	offset = 0;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, &offset);
+
+	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
+						DBUS_TYPE_BYTE_AS_STRING,
+						&array);
+
+	if (!dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+							&value, sizeof(*value)))
+		g_printerr("Could not append value to D-Bus message\n");
+
+	dbus_message_iter_close_container(iter, &array);
+
+	g_free(value);
+}
+
+static void write_char_reply(DBusMessage *msg, void *user_data)
+{
+	g_printerr("Immediate Alert Level set to %s\n", opt_alert_level);
+	g_main_loop_quit(main_loop);
+}
+
 static void change_alert_level(gpointer data, gpointer user_data)
 {
 	struct characteristic *chr = data;
-	const char *srv_path = user_data;
+	const char *svc_path = user_data;
 	const char *uuid;
 	DBusMessageIter iter;
-	struct write_data *wd;
 
-	if (!g_str_has_prefix(chr->path, srv_path))
+	if (!g_str_has_prefix(chr->path, svc_path))
 		return;
 
 	if (!g_dbus_proxy_get_property(chr->proxy, "UUID", &iter))
@@ -167,19 +161,10 @@ static void change_alert_level(gpointer data, gpointer user_data)
 	if (!g_str_equal(uuid, ALERT_LEVEL_CHR_UUID))
 		return;
 
-	wd = g_new0(struct write_data, 1);
-	wd->value = g_new0(uint8_t, 1);
-	wd->value[0] = alert_level_to_uint(opt_alert_level);
-	wd->vlen = sizeof(uint8_t);
-	wd->offset = 0;
-
 	if (!g_dbus_proxy_method_call(chr->proxy, "WriteValue",
-					write_char_setup,
-					write_char_reply, wd,
-					write_char_destroy)) {
-		g_printerr("Could not call WriteValue D-Bus method");
-		write_char_destroy(wd);
-		return;
+					write_char_setup, write_char_reply,
+					NULL, NULL)) {
+		g_printerr("Could not call WriteValue D-Bus method\n");
 	}
 }
 
@@ -188,9 +173,9 @@ static gboolean timeout(gpointer user_data)
 	GSList *list;
 
 	for (list = services; list; list = g_slist_next(list)) {
-		char *srv_path = list->data;
+		char *svc_path = list->data;
 
-		g_slist_foreach(characteristics, change_alert_level, srv_path);
+		g_slist_foreach(characteristics, change_alert_level, svc_path);
 	}
 
 	return FALSE;
@@ -231,13 +216,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			return;
 		}
 	} else if (g_str_equal(interface, "org.bluez.Device1")) {
-		/* TODO: stop discovery when device is connected */
-		/* TODO: create 1 second timer to check for:
-		 * - Immediate Alert Service
-		 * - Alert Level Characteristic of IAS
-		 * - Write requested alert level to characteristic value
-		 * - if not found, return error to user
-		 */
 		const char *addr;
 		dbus_bool_t connected;
 
@@ -381,6 +359,7 @@ done:
 	g_option_context_free(context);
 	g_free(opt_src);
 	g_free(opt_dst);
+	g_free(opt_alert_level);
 	g_dbus_proxy_unref(adapter);
 
 	return err;
