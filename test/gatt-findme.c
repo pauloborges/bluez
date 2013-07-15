@@ -194,6 +194,19 @@ static bool get_bool_property(GDBusProxy *proxy, const char *name)
 	return value;
 }
 
+static void set_powered_cb(const DBusError *error, void *user_data)
+{
+	if (dbus_error_is_set(error)) {
+		g_printerr("Failed to set Powered: %s\n", error->name);
+		return;
+	}
+
+	if (!g_dbus_proxy_method_call(adapter, "StartDiscovery",
+						NULL, start_discovery_reply,
+						NULL, NULL))
+		g_printerr("Could not start discovery\n");
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
 	const char *interface, *path;
@@ -203,6 +216,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 	path = g_dbus_proxy_get_path(proxy);
 
 	if (g_str_equal(interface, "org.bluez.Adapter1")) {
+		dbus_bool_t powered = TRUE;
+
 		/* Use either the first adapter found or the one given by -i
 		 * option */
 		if (adapter != NULL)
@@ -216,10 +231,10 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		adapter = g_dbus_proxy_ref(proxy);
 
-		if (!g_dbus_proxy_method_call(proxy, "StartDiscovery",
-						NULL, start_discovery_reply,
-						NULL, NULL)) {
-			g_printerr("Could not call StartDiscovery()\n");
+		if (!g_dbus_proxy_set_property_basic(proxy, "Powered",
+						DBUS_TYPE_BOOLEAN, &powered,
+						set_powered_cb, NULL, NULL)) {
+			g_printerr("Could not set Powered for adapter\n");
 			return;
 		}
 	} else if (g_str_equal(interface, "org.bluez.Device1")) {
