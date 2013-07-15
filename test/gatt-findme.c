@@ -68,21 +68,6 @@ static void start_discovery_reply(DBusMessage *message, void *user_data)
 	g_printerr("Discovery started successfully\n");
 }
 
-static void stop_discovery_reply(DBusMessage *message, void *user_data)
-{
-	DBusError error;
-
-	dbus_error_init(&error);
-
-	if (dbus_set_error_from_message(&error, message)) {
-		g_printerr("Failed to Stop Discovery: %s\n", error.name);
-		dbus_error_free(&error);
-		return;
-	}
-
-	g_printerr("Discovery stopped successfully\n");
-}
-
 static uint8_t alert_level_to_uint(char *level)
 {
 	if (g_str_equal(level, "mild"))
@@ -262,17 +247,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			}
 		} else {
 			timer = g_timeout_add_seconds(1, write_imm_alert, NULL);
-		}
-
-		if (adapter != NULL && !get_bool_property(adapter,
-								"Discovering"))
-			return;
-
-		if (!g_dbus_proxy_method_call(adapter, "StopDiscovery",
-						NULL, stop_discovery_reply,
-						NULL, NULL)) {
-			g_printerr("Could not call StopDiscovery()\n");
-			return;
 		}
 	} else if (g_str_equal(interface, SERVICE_INTERFACE)) {
 		const char *uuid;
