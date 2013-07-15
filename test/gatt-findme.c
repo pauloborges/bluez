@@ -45,7 +45,7 @@ static char *opt_dst = NULL;
 static char *opt_alert_level = NULL;
 static GDBusProxy *adapter = NULL;
 static char *ias_path = NULL;
-static guint timer;
+static guint timer = 0;
 static GSList *characteristics = NULL;
 
 struct characteristic {
@@ -81,21 +81,6 @@ static void stop_discovery_reply(DBusMessage *message, void *user_data)
 	}
 
 	g_printerr("Discovery stopped successfully\n");
-}
-
-static void connect_reply(DBusMessage *message, void *user_data)
-{
-	DBusError error;
-
-	dbus_error_init(&error);
-
-	if (dbus_set_error_from_message(&error, message)) {
-		g_printerr("Failed to Connect: %s\n", error.name);
-		dbus_error_free(&error);
-		return;
-	}
-
-	g_printerr("Connected successfully\n");
 }
 
 static uint8_t alert_level_to_uint(char *level)
@@ -170,7 +155,7 @@ static void change_alert_level(gpointer data, gpointer user_data)
 	}
 }
 
-static gboolean timeout(gpointer user_data)
+static gboolean write_imm_alert(gpointer user_data)
 {
 	if (adapter == NULL) {
 		if (opt_src == NULL)
@@ -192,6 +177,23 @@ static gboolean timeout(gpointer user_data)
 	g_slist_foreach(characteristics, change_alert_level, NULL);
 
 	return FALSE;
+}
+
+static void connect_reply(DBusMessage *message, void *user_data)
+{
+	DBusError error;
+
+	dbus_error_init(&error);
+
+	if (dbus_set_error_from_message(&error, message)) {
+		g_printerr("Failed to Connect: %s\n", error.name);
+		dbus_error_free(&error);
+		return;
+	}
+
+	timer = g_timeout_add_seconds(1, write_imm_alert, NULL);
+
+	g_printerr("Connected successfully\n");
 }
 
 static bool get_bool_property(GDBusProxy *proxy, const char *name)
@@ -265,6 +267,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 				g_printerr("Could not call Connect()\n");
 				return;
 			}
+		} else {
+			timer = g_timeout_add_seconds(1, write_imm_alert, NULL);
 		}
 
 		if (adapter != NULL && !get_bool_property(adapter,
@@ -362,8 +366,6 @@ int main(int argc, char *argv[])
 	}
 
 	g_dbus_client_set_proxy_handlers(client, proxy_added, NULL, NULL, NULL);
-
-	timer = g_timeout_add_seconds(1, timeout, NULL);
 
 	g_main_loop_run(main_loop);
 
