@@ -26,6 +26,7 @@
 #endif
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
@@ -193,6 +194,28 @@ static gboolean timeout(gpointer user_data)
 	return FALSE;
 }
 
+static bool get_bool_property(GDBusProxy *proxy, const char *name)
+{
+	DBusMessageIter iter;
+	dbus_bool_t value;
+
+	if (!g_dbus_proxy_get_property(proxy, name, &iter)) {
+		g_printerr("Could not read property %s\n", name);
+		g_main_loop_quit(main_loop);
+		return false;
+	}
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_BOOLEAN) {
+		g_printerr("Invalid type for %s\n", name);
+		g_main_loop_quit(main_loop);
+		return false;
+	}
+
+	dbus_message_iter_get_basic(&iter, &value);
+
+	return value;
+}
+
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
 	const char *interface, *path;
@@ -202,8 +225,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 	path = g_dbus_proxy_get_path(proxy);
 
 	if (g_str_equal(interface, "org.bluez.Adapter1")) {
-		dbus_bool_t discovering;
-
 		/* Use either the first adapter found or the one given by -i
 		 * option */
 		if (adapter != NULL)
@@ -215,17 +236,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		adapter = g_dbus_proxy_ref(proxy);
 
-		if (!g_dbus_proxy_get_property(proxy, "Discovering", &iter))
-			return;
-
-		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_BOOLEAN) {
-			g_printerr("Invalid type for Discovering");
-			return;
-		}
-
-		dbus_message_iter_get_basic(&iter, &discovering);
-
-		if (discovering)
+		if (get_bool_property(proxy, "Discovering"))
 			return;
 
 		if (!g_dbus_proxy_method_call(proxy, "StartDiscovery",
@@ -236,7 +247,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		}
 	} else if (g_str_equal(interface, "org.bluez.Device1")) {
 		const char *addr;
-		dbus_bool_t connected;
 
 		if (!g_dbus_proxy_get_property(proxy, "Address", &iter))
 			return;
@@ -251,18 +261,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		if (!g_str_equal(opt_dst, addr))
 			return;
 
-		if (!g_dbus_proxy_get_property(proxy, "Connected", &iter))
-			return;
-
-		if (dbus_message_iter_get_arg_type(&iter) !=
-							DBUS_TYPE_BOOLEAN) {
-			g_printerr("Invalid type for Connected");
-			return;
-		}
-
-		dbus_message_iter_get_basic(&iter, &connected);
-
-		if (!connected) {
+		if (!get_bool_property(proxy, "Connected")) {
 			if (!g_dbus_proxy_method_call(proxy, "Connect",
 							NULL, connect_reply,
 							NULL, NULL)) {
@@ -277,7 +276,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			g_printerr("Could not call StopDiscovery()\n");
 			return;
 		}
-
 	} else if (g_str_equal(interface, SERVICE_INTERFACE)) {
 		const char *uuid;
 
