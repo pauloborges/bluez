@@ -236,9 +236,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		adapter = g_dbus_proxy_ref(proxy);
 
-		if (get_bool_property(proxy, "Discovering"))
-			return;
-
 		if (!g_dbus_proxy_method_call(proxy, "StartDiscovery",
 						NULL, start_discovery_reply,
 						NULL, NULL)) {
@@ -269,6 +266,10 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 				return;
 			}
 		}
+
+		if (adapter != NULL && !get_bool_property(adapter,
+								"Discovering"))
+			return;
 
 		if (!g_dbus_proxy_method_call(adapter, "StopDiscovery",
 						NULL, stop_discovery_reply,
