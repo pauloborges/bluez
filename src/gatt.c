@@ -1989,7 +1989,10 @@ static void channel_remove(gpointer user_data)
 	if (gdev == NULL)
 		return;
 
-	gdev->attrib = NULL;
+	if (gdev->attrib) {
+		g_attrib_cancel_all(gdev->attrib);
+		gdev->attrib = NULL;
+	}
 }
 
 static uint8_t check_attribute_security(struct btd_attribute *attr,
