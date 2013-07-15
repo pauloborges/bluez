@@ -43,7 +43,7 @@ static char *opt_src = NULL;
 static char *opt_dst = NULL;
 static char *opt_alert_level = NULL;
 static GDBusProxy *adapter = NULL;
-static GSList *services = NULL;
+static char *ias_path = NULL;
 static guint timer;
 static GSList *characteristics = NULL;
 
@@ -141,11 +141,10 @@ static void write_char_reply(DBusMessage *msg, void *user_data)
 static void change_alert_level(gpointer data, gpointer user_data)
 {
 	struct characteristic *chr = data;
-	const char *svc_path = user_data;
 	const char *uuid;
 	DBusMessageIter iter;
 
-	if (!g_str_has_prefix(chr->path, svc_path))
+	if (!g_str_has_prefix(chr->path, ias_path))
 		return;
 
 	if (!g_dbus_proxy_get_property(chr->proxy, "UUID", &iter))
@@ -161,6 +160,8 @@ static void change_alert_level(gpointer data, gpointer user_data)
 	if (!g_str_equal(uuid, ALERT_LEVEL_CHR_UUID))
 		return;
 
+	g_printerr("Found IAS Alert Level characteristic: %s\n", chr->path);
+
 	if (!g_dbus_proxy_method_call(chr->proxy, "WriteValue",
 					write_char_setup, write_char_reply,
 					NULL, NULL)) {
@@ -170,13 +171,15 @@ static void change_alert_level(gpointer data, gpointer user_data)
 
 static gboolean timeout(gpointer user_data)
 {
-	GSList *list;
+	if (ias_path == NULL) {
+		g_printerr("Immediate Alert Service not found on %s\n",
+								opt_dst);
+		g_main_loop_quit(main_loop);
 
-	for (list = services; list; list = g_slist_next(list)) {
-		char *svc_path = list->data;
-
-		g_slist_foreach(characteristics, change_alert_level, svc_path);
+		return FALSE;
 	}
+
+	g_slist_foreach(characteristics, change_alert_level, NULL);
 
 	return FALSE;
 }
@@ -188,8 +191,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	interface = g_dbus_proxy_get_interface(proxy);
 	path = g_dbus_proxy_get_path(proxy);
-
-	g_printerr("interface %s path %s\n", interface, path);
 
 	if (g_str_equal(interface, "org.bluez.Adapter1")) {
 		dbus_bool_t discovering;
@@ -272,13 +273,12 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &uuid);
 
-		g_printerr("uuid: %s\n", uuid);
-
 		if (!g_str_equal(uuid, IMMEDIATE_ALERT_UUID))
 			return;
 
-		services = g_slist_append(services, g_strdup(path));
+		g_printerr("Found Immediate Alert Service: %s\n", path);
 
+		ias_path = g_strdup(path);
 	} else if (g_str_equal(interface, CHARACTERISTIC_INTERFACE)) {
 		struct characteristic *chr = g_new0(struct characteristic, 1);
 		chr->path = g_strdup(path);
@@ -360,6 +360,7 @@ done:
 	g_free(opt_src);
 	g_free(opt_dst);
 	g_free(opt_alert_level);
+	g_free(ias_path);
 	g_dbus_proxy_unref(adapter);
 
 	return err;
