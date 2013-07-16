@@ -2859,6 +2859,17 @@ done:
 	search_cb(recs, err, user_data);
 }
 
+static void gatt_discovery_finished(gpointer user_data)
+{
+	struct browse_req *req = user_data;
+	struct btd_device *device = req->device;
+
+	DBG("");
+
+	device->browse = NULL;
+	browse_request_free(req);
+}
+
 static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 {
 	struct browse_req *req;
@@ -2870,13 +2881,15 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 	if (device->browse)
 		return -EBUSY;
 
-	err = gatt_discover_attributes(device);
-	if (err < 0)
-		return err;
-
 	req = g_new0(struct browse_req, 1);
 	req->device = device;
 	device->browse = req;
+
+	err = gatt_discover_attributes(device, req, gatt_discovery_finished);
+	if (err < 0) {
+		gatt_discovery_finished(req);
+		return err;
+	}
 
 	if (msg == NULL)
 		return 0;

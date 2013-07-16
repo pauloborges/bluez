@@ -159,6 +159,11 @@ struct gatt_device {
 	GSList *services;
 	unsigned int channel_id;
 	unsigned int attrib_id;
+
+	/* Callback for notifying that service discovery has finished, so
+	   caller can destroy resources. */
+	GDestroyNotify destroy;
+	void *user_data;
 };
 
 static GList *local_attribute_db = NULL;
@@ -2766,6 +2771,9 @@ done:
 	if (device_is_bonded(find->device) == TRUE)
 		database_store(find->device, gdev->database);
 
+	if (gdev->destroy)
+		gdev->destroy(gdev->user_data);
+
 	g_free(find);
 
 	/*
@@ -3016,7 +3024,8 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	return 0;
 }
 
-int gatt_discover_attributes(struct btd_device *device)
+int gatt_discover_attributes(struct btd_device *device, void *user_data,
+							GDestroyNotify destroy)
 {
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	bt_uuid_t uuid;
@@ -3025,6 +3034,9 @@ int gatt_discover_attributes(struct btd_device *device)
 		gdev = g_new0(struct gatt_device, 1);
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
+
+	gdev->destroy = destroy;
+	gdev->user_data = user_data;
 
 	if (gdev->attrib == NULL)
 		return gatt_connect(device, NULL);

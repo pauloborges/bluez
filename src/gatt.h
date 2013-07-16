@@ -29,7 +29,8 @@ void gatt_service_manager_init(void);
 
 void gatt_service_manager_cleanup(void);
 
-int gatt_discover_attributes(struct btd_device *device);
+int gatt_discover_attributes(struct btd_device *device, void *user_data,
+							GDestroyNotify destroy);
 
 void gatt_device_remove(struct btd_device *device);
 
