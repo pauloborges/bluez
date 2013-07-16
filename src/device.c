@@ -88,7 +88,6 @@ struct bonding_req {
 	struct btd_device *device;
 	struct agent *agent;
 	struct btd_adapter_pin_cb_iter *cb_iter;
-	uint8_t status;
 	guint retry_timer;
 	struct timespec attempt_start_time;
 	long last_attempt_duration_ms;
@@ -3289,7 +3288,7 @@ static gboolean device_bonding_retry(gpointer data)
 	err = adapter_bonding_attempt(adapter, &device->bdaddr,
 				device->bdaddr_type, io_cap);
 	if (err < 0)
-		device_bonding_complete(device, bonding->status);
+		device_bonding_complete(device, MGMT_STATUS_AUTH_FAILED);
 
 	return FALSE;
 }
