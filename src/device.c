@@ -3321,9 +3321,24 @@ int device_bonding_attempt_retry(struct btd_device *device)
 void device_bonding_failed(struct btd_device *device, uint8_t status)
 {
 	struct bonding_req *bonding = device->bonding;
+	struct browse_req *browse = device->browse;
 	DBusMessage *reply;
 
 	DBG("status %u", status);
+
+	/*
+	 * Connect or ConnectProfiles for non-bonded device can
+	 * trigger automatic just work pairing method. If it fails
+	 * a reply needs to be sent.
+	 */
+
+	if (browse) {
+		reply = btd_error_failed(browse->msg, mgmt_errstr(status));
+		g_dbus_send_message(dbus_conn, reply);
+		device->browse = NULL;
+		browse_request_free(browse);
+		return;
+	}
 
 	if (!bonding)
 		return;
