@@ -2636,9 +2636,6 @@ static void reply_pending_requests(struct btd_adapter *adapter)
 {
 	GSList *l;
 
-	if (!adapter)
-		return;
-
 	/* pending bonding */
 	for (l = adapter->devices; l; l = l->next) {
 		struct btd_device *device = l->data;
