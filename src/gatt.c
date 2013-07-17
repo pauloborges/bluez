@@ -370,8 +370,8 @@ static struct btd_attribute *new_attribute(bt_uuid_t *type,
 	memcpy(&attr->type, type, sizeof(*type));
 	attr->read_cb = read_cb;
 	attr->write_cb = write_cb;
-	attr->notifiers = g_hash_table_new_full(g_int_hash, g_int_equal, NULL,
-								g_free);
+	attr->notifiers = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+								NULL, g_free);
 
 	return attr;
 }
