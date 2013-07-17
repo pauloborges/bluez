@@ -2861,10 +2861,16 @@ done:
 
 static void gatt_discovery_finished(gpointer user_data)
 {
-	struct browse_req *req = user_data;
-	struct btd_device *device = req->device;
+	struct btd_device *device = user_data;
+	struct browse_req *req = device->browse;
 
 	DBG("");
+
+	/* device->browse is NULL when device removal was requested while GATT
+	 * discovery is in progress, which means this resource was already
+	 * freed. */
+	if (device->browse == NULL)
+		return;
 
 	device->browse = NULL;
 	browse_request_free(req);
@@ -2885,7 +2891,10 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 	req->device = device;
 	device->browse = req;
 
-	err = gatt_discover_attributes(device, req, gatt_discovery_finished);
+	/* FIXME: passing device as user_data here assumes that
+	 * gatt_discover_attributes() implementation will hold a btd_device
+	 * reference by the time gatt_discovery_finished() is called. */
+	err = gatt_discover_attributes(device, device, gatt_discovery_finished);
 	if (err < 0) {
 		gatt_discovery_finished(req);
 		return err;
