@@ -3746,13 +3746,17 @@ struct btd_device *btd_device_ref(struct btd_device *device)
 {
 	__sync_fetch_and_add(&device->ref_count, 1);
 
+	DBG("%p: ref=%d", device, device->ref_count);
+
 	return device;
 }
 
 void btd_device_unref(struct btd_device *device)
 {
-	if (__sync_sub_and_fetch(&device->ref_count, 1))
+	if (__sync_sub_and_fetch(&device->ref_count, 1)) {
+		DBG("%p: ref=%d", device, device->ref_count);
 		return;
+	}
 
 	if (!device->path) {
 		error("freeing device without an object path");
