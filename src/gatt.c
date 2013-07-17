@@ -290,10 +290,11 @@ static void destroy_attribute(struct btd_attribute *attr)
 	g_free(attr);
 }
 
-static void gatt_device_free(gpointer user_data)
+static void gatt_device_clear(struct gatt_device *gdev)
 {
-	struct gatt_device *gdev = user_data;
 	GSList *l;
+
+	DBG("");
 
 	for (l = gdev->char_paths; l; l = l->next) {
 		char *path = l->data;
@@ -302,7 +303,7 @@ static void gatt_device_free(gpointer user_data)
 	}
 
 	g_slist_free_full(gdev->char_paths, g_free);
-
+	gdev->char_paths = NULL;
 
 	for (l = gdev->svc_paths; l; l = l->next) {
 		char *path = l->data;
@@ -311,17 +312,30 @@ static void gatt_device_free(gpointer user_data)
 	}
 
 	g_slist_free_full(gdev->svc_paths, g_free);
+	gdev->svc_paths = NULL;
 
-	if (gdev->channel_id > 0)
+	if (gdev->channel_id > 0) {
 		g_source_remove(gdev->channel_id);
+		gdev->channel_id = 0;
+	}
+
+	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
+	gdev->database = NULL;
+
+	g_slist_free(gdev->services);
+	gdev->services = NULL;
+}
+
+static void gatt_device_free(gpointer user_data)
+{
+	struct gatt_device *gdev = user_data;
+
+	gatt_device_clear(gdev);
 
 	if (gdev->attrib) {
 		g_attrib_unregister(gdev->attrib, gdev->attrib_id);
 		g_attrib_unref(gdev->attrib);
 	}
-
-	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
-	g_slist_free(gdev->services);
 
 	g_free(gdev);
 }
@@ -3038,14 +3052,18 @@ int gatt_discover_attributes(struct btd_device *device, void *user_data,
 	gdev->destroy = destroy;
 	gdev->user_data = user_data;
 
+	/*
+	 * Pairing and discovery are executed in parallel. If pairing fails and
+	 * the remote disconnects the link, some attributes may already be
+	 * discovered. To prevent inconsistent attributes/objects, all attributes
+	 * are removed/cleared if the core calls discover attribute twice.
+	 */
+
+	if (gdev->database)
+		gatt_device_clear(gdev);
+
 	if (gdev->attrib == NULL)
 		return gatt_connect(device, NULL);
-
-	/* FIXME: */
-	if (gdev->database) {
-		DBG("Attribute database found: skip discovery");
-		return 0;
-	}
 
 	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
 	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &uuid,
