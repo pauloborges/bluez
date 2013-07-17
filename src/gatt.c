@@ -2005,6 +2005,7 @@ static void channel_remove(gpointer user_data)
 	/* If called from the destroy func of the hash table, this function
 	 * is called when the element is already not present in the hash table
 	 */
+	DBG("");
 	if (gdev == NULL)
 		return;
 
@@ -2901,6 +2902,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	bdaddr_t dba;
 	int err = 0;
 
+	DBG("");
+
 	bt_io_get(io, NULL,
 			BT_IO_OPT_SOURCE_BDADDR, &sba,
 			BT_IO_OPT_DEST_BDADDR, &dba,
@@ -2952,6 +2955,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		/* Attributes already discovered, we may continue informing
 		 * the services that the device is connected
 		 */
+		DBG("Skipping attribute discovery");
+		device_probe_profiles(device, NULL);
 		goto done;
 	}
 
@@ -3004,6 +3009,7 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	ba2str(addr, addrstr);
 
 	/* FIXME: over BR/EDR */
+	DBG("Connecting to: %s", addrstr);
 
 	if (device_is_bonded(device))
 		seclevel = BT_IO_SEC_MEDIUM;
