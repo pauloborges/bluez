@@ -115,7 +115,7 @@ struct notifier {
 
 struct attr_read_data {
 	btd_attr_read_result_t func;
-	void* user_data;
+	void *user_data;
 };
 
 struct attr_write_data {
@@ -123,7 +123,7 @@ struct attr_write_data {
 	uint8_t *value;
 	size_t vlen;
 	uint16_t offset;
-	void* user_data;
+	void *user_data;
 };
 
 struct att_transaction {
@@ -2381,7 +2381,8 @@ static void read_by_group_resp(GAttrib *attrib, uint16_t start,
 		if (bt_uuid_cmp(&attr->type, pattern) != 0)
 			continue;
 
-		if (uuid_type != BT_UUID_UNSPEC && uuid_type != attr->type.type) {
+		if (uuid_type != BT_UUID_UNSPEC &&
+						uuid_type != attr->type.type) {
 			/*
 			 * Groups should contain the same length: UUID16 and
 			 * UUID128 should be sent on different ATT PDUs
@@ -2705,7 +2706,8 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	case ATT_OP_PREP_WRITE_REQ:
 	case ATT_OP_EXEC_WRITE_REQ:
 	case ATT_OP_SIGNED_WRITE_CMD:
-		send_error(gdev->attrib, ipdu[0], 0x0000, ATT_ECODE_REQ_NOT_SUPP);
+		send_error(gdev->attrib, ipdu[0], 0x0000,
+						ATT_ECODE_REQ_NOT_SUPP);
 		break;
 
 	case ATT_OP_READ_BY_GROUP_REQ:
