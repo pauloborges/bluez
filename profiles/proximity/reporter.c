@@ -75,7 +75,7 @@ static void create_proximity_file_name(struct btd_device *device,
 	char srcaddr[18], dstaddr[18];
 	const bdaddr_t *sba, *dba;
 
-	sba = adapter_get_address(adapter);
+	sba = btd_adapter_get_address(adapter);
 	ba2str(sba, srcaddr);
 
 	dba = device_get_address(device);
