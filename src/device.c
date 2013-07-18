@@ -3354,8 +3354,10 @@ void device_bonding_failed(struct btd_device *device, uint8_t status)
 	 */
 
 	if (browse) {
-		reply = btd_error_failed(browse->msg, mgmt_errstr(status));
-		g_dbus_send_message(dbus_conn, reply);
+		if (browse->msg) {
+			reply = btd_error_failed(browse->msg, mgmt_errstr(status));
+			g_dbus_send_message(dbus_conn, reply);
+		}
 		device->browse = NULL;
 		browse_request_free(browse);
 		return;
