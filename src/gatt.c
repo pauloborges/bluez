@@ -131,6 +131,11 @@ struct att_transaction {
 	struct btd_device *device;
 };
 
+struct attr_notif_data {
+	btd_attr_write_result_t func;
+	void *user_data;
+};
+
 struct read_by_type_transaction {
 	struct btd_device *device;
 	GList *match;			/* List of matching attributes */
@@ -800,6 +805,72 @@ static void remote_read_attribute_cb(struct btd_device *device,
 	}
 }
 
+static void indication_result(guint8 status, const guint8 *pdu,
+					guint16 len, gpointer user_data)
+{
+	struct attr_notif_data *nd = user_data;
+	btd_attr_write_result_t func = nd->func;
+
+	DBG("");
+	func(status, nd->user_data);
+
+	g_free(nd);
+}
+
+static void send_notify_value(struct btd_device *device,
+				struct btd_attribute *attr, uint8_t *value,
+				size_t len, btd_attr_write_result_t result,
+				void *user_data)
+{
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	uint8_t opdu[g_attrib_get_mtu(gdev->attrib)];
+	struct btd_attribute *char_decl;
+	struct attr_notif_data *nd = NULL;
+	uint8_t properties;
+	uint16_t handle;
+	size_t olen;
+	GList *l;
+
+	if (gdev->attrib == NULL) {
+		result(ECOMM, user_data);
+		return;
+	}
+
+	att_put_u16(attr->handle, &handle);
+	l = get_chr_decl_node_from_attr(attr);
+	char_decl = l->data;
+	properties = char_decl->value[0];
+
+	if (properties & ATT_CHAR_PROPER_INDICATE) {
+		olen = enc_indication(handle, value, len, opdu, sizeof(opdu));
+		nd = g_new0(struct attr_notif_data, 1);
+		nd->func = result;
+		nd->user_data = user_data;
+	} else
+		olen = enc_notification(handle, value, len, opdu, sizeof(opdu));
+
+	g_attrib_send(gdev->attrib, 0, opdu, olen, indication_result, nd, NULL);
+}
+
+static void notify_value_changed(struct btd_attribute *attr, uint8_t *value,
+						size_t len,
+						btd_attr_write_result_t result,
+						void *user_data)
+{
+	GSList *devices = g_hash_table_lookup(dev_notifiers, attr);
+	GSList *l;
+
+	if (devices == NULL)
+		return;
+
+	/* Send notification for all devices */
+	for (l = devices; l; l = g_slist_next(l)) {
+		struct btd_device *dev = l->data;
+
+		send_notify_value(dev, attr, value, len, result, user_data);
+	}
+}
+
 void btd_gatt_write_attribute(struct btd_device *device,
 				struct btd_attribute *attr,
 				uint8_t *value, size_t len, uint16_t offset,
@@ -807,6 +878,18 @@ void btd_gatt_write_attribute(struct btd_device *device,
 				void *user_data)
 {
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+
+	/* Profiles whose characteristic value is accessed by callbacks can
+	 * report to core that this value has changed by calling
+	 * btd_gatt_write_attribute() with device parameter set to NULL. This
+	 * will skip the write callback call and instead report the new value
+	 * to all devices that have enabled notifications/indications. For
+	 * indications, the result callback will be called when the
+	 * confirmation is received, so the upper layer gets acknowledged. */
+	if (device == NULL) {
+		notify_value_changed(attr, value, len, result, user_data);
+		return;
+	}
 
 	if (gdev->attrib == NULL)
 		result(ECOMM, user_data);
