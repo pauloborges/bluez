@@ -3857,6 +3857,15 @@ struct btd_service *btd_device_get_service(struct btd_device *dev,
 	return NULL;
 }
 
+void btd_device_service_foreach(struct btd_device *dev, GFunc func,
+							void *user_data)
+{
+	GSList *l;
+
+	for (l = dev->services; l != NULL; l = g_slist_next(l))
+		func(l->data, user_data);
+}
+
 void btd_device_init(void)
 {
 	dbus_conn = btd_get_dbus_connection();

@@ -158,6 +158,7 @@ struct gatt_device {
 	GSList *services;
 	unsigned int channel_id;
 	unsigned int attrib_id;
+	gboolean out;			/* Outgoing or incoming connection */
 
 	/* Callback for notifying that service discovery has finished, so
 	   caller can destroy resources. */
@@ -1705,6 +1706,19 @@ static bool characteristic_register(struct btd_device *device,
 	return ret;
 }
 
+static void connecting_complete(gpointer data, gpointer user_data)
+{
+	struct btd_service *service = data;
+	struct gatt_device *gdev = user_data;
+
+	DBG("service %p", service);
+	btd_service_connecting_complete(service, 0);
+
+	gdev->attrib = g_attrib_ref(gdev->attrib);
+	gdev->services = g_slist_append(gdev->services,
+					btd_service_ref(service));
+}
+
 static void prim_service_create(uint8_t status, uint16_t handle,
 				uint8_t *value, size_t vlen, void *user_data)
 {
@@ -2767,6 +2781,10 @@ static void probe_profiles(gpointer user_data)
 	}
 
 	device_probe_profiles(find->device, profiles);
+	if (gdev->out == FALSE)
+		/* Incoming connection */
+		btd_device_service_foreach(find->device,
+					connecting_complete, gdev);
 
 	g_slist_free_full(profiles, g_free);
 
@@ -2880,6 +2898,7 @@ static void prim_service_complete(gpointer user_data)
 				include_create, device, include_complete);
 
 }
+
 static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	struct btd_service *service = user_data;
@@ -2892,8 +2911,6 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	bdaddr_t dba;
 	int err = 0;
 
-	DBG("");
-
 	bt_io_get(io, NULL,
 			BT_IO_OPT_SOURCE_BDADDR, &sba,
 			BT_IO_OPT_DEST_BDADDR, &dba,
@@ -2902,10 +2919,21 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	ba2str(&sba, src);
 	ba2str(&dba, dst);
 
+	DBG("master: %s > %s", src, dst);
+
 	adapter = adapter_find(&sba);
 	device = btd_adapter_find_device(adapter, &dba);
 
 	gdev = g_hash_table_lookup(gatt_devices, device);
+	if (gdev == NULL) {
+		gdev = g_new0(struct gatt_device, 1);
+		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
+	}
+
+	if (gdev->io) {
+		g_io_channel_unref(gdev->io);
+		gdev->io = NULL;
+	}
 
 	if (gerr) {
 		err = gerr->code;
@@ -2913,15 +2941,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		goto done;
 	}
 
-	if (gdev == NULL) {
-		/* For incomming connections we may not have an gatt_device */
-		gdev = g_new0(struct gatt_device, 1);
-		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
-	}
-
-	gdev->attrib = g_attrib_new(io);
-
-	DBG("%p Connected: %s < %s", gdev->attrib, src, dst);
+	gdev->out = TRUE;
+	gdev->attrib = g_attrib_new(io); /* Generic API ref */
 
 	gdev->attrib_id = g_attrib_register(gdev->attrib, GATTRIB_ALL_EVENTS,
 				GATTRIB_ALL_HANDLES, channel_handler_cb,
@@ -2931,23 +2952,84 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
-	/*
-	 * FIXME: Check storage before triggering attributes discovery.
-	 * Missing probe mechanism and reply for connect or pair. Fix
-	 * device weak reference and disconnection when ATT operation
-	 * are still pending. Fix core reverse service discovery.
-	 */
+	if (gdev->database) {
+		/* Attributes already discovered, we may continue informing
+		 * the services that the device is connected
+		 */
+		DBG("Skipping attribute discovery");
+		goto done;
+	}
 
-	if (device_is_bonding(device, NULL) == TRUE)
-		return;
+	/* Trigger attributes discovery */
+
+	bt_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
+	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &uuid,
+				prim_service_create, device,
+				prim_service_complete);
+
+	return;
+
+done:
+	device_probe_profiles(device, NULL);
+
+	btd_service_connecting_complete(service, err);
+
+	gdev->attrib = g_attrib_ref(gdev->attrib);
+	gdev->services = g_slist_append(gdev->services,
+					btd_service_ref(service));
+}
+
+static void listen_cb(GIOChannel *io, GError *gerr, void *user_data)
+{
+	struct btd_adapter *adapter;
+	struct btd_device *device;
+	struct gatt_device *gdev = NULL;
+	char src[18], dst[18];
+	bt_uuid_t uuid;
+	bdaddr_t sba;
+	bdaddr_t dba;
+
+	bt_io_get(io, NULL,
+			BT_IO_OPT_SOURCE_BDADDR, &sba,
+			BT_IO_OPT_DEST_BDADDR, &dba,
+			BT_IO_OPT_INVALID);
+
+	ba2str(&sba, src);
+	ba2str(&dba, dst);
+
+	DBG("slave: %s < %s", src, dst);
+
+	adapter = adapter_find(&sba);
+	device = btd_adapter_find_device(adapter, &dba);
+
+	gdev = g_hash_table_lookup(gatt_devices, device);
+
+	if (gdev == NULL) {
+		/* For incomming connections we may not have an gatt_device */
+		gdev = g_new0(struct gatt_device, 1);
+		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
+	}
+
+	gdev->out = FALSE;
+	gdev->attrib = g_attrib_new(io); /* Generic API ref */
+
+	gdev->attrib_id = g_attrib_register(gdev->attrib, GATTRIB_ALL_EVENTS,
+				GATTRIB_ALL_HANDLES, channel_handler_cb,
+				device, NULL);
+
+	gdev->channel_id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
+				G_IO_ERR | G_IO_HUP, channel_watch_cb,
+				device, (GDestroyNotify) channel_remove);
 
 	if (gdev->database) {
 		/* Attributes already discovered, we may continue informing
 		 * the services that the device is connected
 		 */
 		DBG("Skipping attribute discovery");
-		device_probe_profiles(device, NULL);
-		goto done;
+
+		btd_device_service_foreach(device, connecting_complete, gdev);
+
+		return;
 	}
 
 	/*
@@ -2961,27 +3043,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &uuid,
 				prim_service_create, device,
 				prim_service_complete);
-	return;
-
-done:
-
-	/* io and service are set for outgoing connections only */
-	if (gdev == NULL || gdev->io == NULL)
-		return;
-
-	btd_service_connecting_complete(service, err);
-
-	g_io_channel_unref(gdev->io);
-	gdev->io = NULL;
-
-	if (err)
-		return;
-
-	gdev->attrib = g_attrib_ref(gdev->attrib);
-
-	gdev->services = g_slist_append(gdev->services,
-					btd_service_ref(service));
 }
+
 
 static int gatt_connect(struct btd_device *device, void *user_data)
 {
@@ -3135,7 +3198,7 @@ void gatt_service_manager_init(void)
 
 	DBG("Starting GATT server");
 
-	bredr_io = bt_io_listen(connect_cb, NULL, NULL, NULL, &gerr,
+	bredr_io = bt_io_listen(listen_cb, NULL, NULL, NULL, &gerr,
 					BT_IO_OPT_SOURCE_BDADDR, BDADDR_ANY,
 					BT_IO_OPT_PSM, ATT_PSM,
 					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
@@ -3148,7 +3211,7 @@ void gatt_service_manager_init(void)
 	}
 
 	/* LE socket */
-	le_io = bt_io_listen(connect_cb, NULL, NULL, NULL, &gerr,
+	le_io = bt_io_listen(listen_cb, NULL, NULL, NULL, &gerr,
 					BT_IO_OPT_SOURCE_BDADDR, BDADDR_ANY,
 					BT_IO_OPT_SOURCE_TYPE, BDADDR_LE_PUBLIC,
 					BT_IO_OPT_CID, ATT_CID,
