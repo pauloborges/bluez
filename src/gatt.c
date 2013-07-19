@@ -134,7 +134,6 @@ struct att_transaction {
 struct read_by_type_transaction {
 	struct btd_device *device;
 	GList *match;			/* List of matching attributes */
-	unsigned int timeout;		/* Asynchronous operation timeout */
 	size_t vlen;			/* Pattern: length of each value */
 	size_t olen;			/* Output PDU length */
 	uint8_t opdu[0];		/* Output PDU */
@@ -2136,16 +2135,8 @@ send:
 									NULL);
 
 done:
-	g_source_remove(trans->timeout);
 	g_list_free(trans->match);
 	g_free(trans);
-}
-
-static gboolean transaction_timeout(gpointer user_data)
-{
-	read_by_type_result(ETIMEDOUT, NULL, 0, user_data);
-
-	return FALSE;
 }
 
 static void read_by_type(struct btd_device *device, GAttrib *attrib,
@@ -2204,9 +2195,6 @@ static void read_by_type(struct btd_device *device, GAttrib *attrib,
 		g_free(trans);
 		return;
 	}
-
-	trans->timeout = g_timeout_add_seconds(TRANSACTION_TIMEOUT,
-						transaction_timeout, trans);
 
 	/* Processing the first element */
 	attr = trans->match->data;
