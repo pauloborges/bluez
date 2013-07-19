@@ -172,6 +172,7 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
+static GHashTable *dev_notifiers = NULL;
 
 static GSList *attr_proxy_list = NULL;
 
@@ -459,6 +460,71 @@ static bool is_characteristic(struct btd_attribute *attr)
 		return false;
 }
 
+static void add_notification(struct btd_device *device,
+						struct btd_attribute *attr)
+{
+	GSList *devs = g_hash_table_lookup(dev_notifiers, attr);
+	GSList *l;
+
+	/* Key not found */
+	if (devs == NULL)
+		goto add_list;
+
+	l = g_slist_find(devs, device);
+	/* Already in the list, do nothing */
+	if (l != NULL)
+		return;
+
+add_list:
+	devs = g_slist_append(devs, device);
+
+	g_hash_table_insert(dev_notifiers, attr, devs);
+}
+
+static void remove_notification(struct btd_device *device,
+						struct btd_attribute *attr)
+{
+	GSList *devs = g_hash_table_lookup(dev_notifiers, attr);
+	GSList *l;
+
+	/* Key not found */
+	if (devs == NULL)
+		return;
+
+	l = g_slist_find(devs, device);
+	/* Not in the list, ignore */
+	if (l == NULL)
+		return;
+
+	devs = g_slist_remove(devs, device);
+	if (devs == NULL)
+		g_hash_table_remove(dev_notifiers, attr);
+	else
+		g_hash_table_insert(dev_notifiers, attr, devs);
+}
+
+static struct btd_attribute *get_chr_value_from_desc(struct btd_attribute *desc)
+{
+	struct btd_attribute *char_decl, *char_value;
+	GList *l;
+
+	for (l = g_list_find(local_attribute_db, desc); l;
+						l = g_list_previous(l)) {
+		char_decl = l->data;
+		if (is_characteristic(char_decl))
+			break;
+	}
+
+	if (!l) {
+		error("Declaration not found");
+		return NULL;
+	}
+
+	l = g_list_next(l);
+	char_value = l->data;
+	return char_value;
+}
+
 static void read_char_desc_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
@@ -471,7 +537,27 @@ static void write_char_desc_cb(struct btd_device *device,
 				size_t len, uint16_t offset,
 				btd_attr_write_result_t result, void *user_data)
 {
-	DBG("Write characteristic declaration not implemented.");
+	struct btd_attribute *char_value;
+	uint16_t ccc;
+
+	if (len > 2) {
+		DBG("Invalid size for Characteristic Configuration Bits");
+		return;
+	}
+
+	char_value = get_chr_value_from_desc(attr);
+
+	ccc = att_get_u16(value);
+	if (ccc == 0x0000) {
+		DBG("Disable notification");
+		remove_notification(device, char_value);
+	} else if (ccc & (GATT_CLIENT_CHARAC_CFG_NOTIF_BIT |
+					GATT_CLIENT_CHARAC_CFG_IND_BIT)) {
+		DBG("Enable notification");
+		add_notification(device, char_value);
+	}
+
+	result(0, user_data);
 }
 
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
@@ -3119,6 +3205,14 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	return 0;
 }
 
+static void destroy_dev_notifiers(gpointer key, gpointer value,
+							gpointer user_data)
+{
+	GSList *devs = value;
+
+	g_slist_free(devs);
+}
+
 int gatt_discover_attributes(struct btd_device *device, void *user_data,
 							GDestroyNotify destroy)
 {
@@ -3264,6 +3358,9 @@ void gatt_service_manager_init(void)
 	gatt_devices = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					(GDestroyNotify) btd_device_unref,
 					gatt_device_free);
+
+	dev_notifiers = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+								NULL, NULL);
 }
 
 void gatt_service_manager_cleanup(void)
@@ -3283,4 +3380,8 @@ void gatt_service_manager_cleanup(void)
 
 	g_hash_table_destroy(gatt_devices);
 	gatt_devices = NULL;
+
+	g_hash_table_foreach(dev_notifiers, destroy_dev_notifiers, NULL);
+	g_hash_table_destroy(dev_notifiers);
+	dev_notifiers = NULL;
 }
