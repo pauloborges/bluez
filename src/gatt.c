@@ -451,6 +451,21 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 	}
 }
 
+static void read_char_desc_cb(struct btd_device *device,
+				struct btd_attribute *attr,
+				btd_attr_read_result_t result, void *user_data)
+{
+	DBG("Read characteristic declaration not implemented.");
+}
+
+static void write_char_desc_cb(struct btd_device *device,
+				struct btd_attribute *attr, uint8_t *value,
+				size_t len, uint16_t offset,
+				btd_attr_write_result_t result, void *user_data)
+{
+	DBG("Write characteristic declaration not implemented.");
+}
+
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					btd_attr_read_t read_cb,
 					btd_attr_write_t write_cb,
@@ -458,7 +473,7 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					int key_size)
 {
 	struct btd_attribute *char_decl, *char_value;
-	bt_uuid_t type;
+	bt_uuid_t type, char_type;
 	/* Characteristic properties (1 octet), characteristic value attribute
 	 * handle (2 octets) and characteristic UUID (2 or 16 octets).
 	 */
@@ -495,6 +510,13 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	 * attribute.
 	 */
 	att_put_u16(char_value->handle, &char_decl->value[1]);
+
+	if (properties & (ATT_CHAR_PROPER_NOTIFY | ATT_CHAR_PROPER_INDICATE)) {
+		bt_uuid16_create(&char_type, GATT_CLIENT_CHARAC_CFG_UUID);
+		btd_gatt_add_char_desc(&char_type, read_char_desc_cb,
+					write_char_desc_cb, read_sec, write_sec,
+					key_size);
+	}
 
 	return char_value;
 }
