@@ -3835,11 +3835,14 @@ static void service_state_changed(struct btd_service *service,
 				new_state == BTD_SERVICE_STATE_DISCONNECTING)
 		return;
 
-	/* Disconnected to Connected happens for incomming connection */
+	DBG("old: %d new: %d", old_state, new_state);
+
+	/* Disconnected <> Connected happens for incomming connection */
 	if (old_state == BTD_SERVICE_STATE_CONNECTING ||
 			old_state == BTD_SERVICE_STATE_DISCONNECTED)
 		device_profile_connected(device, profile, err);
-	else if (old_state == BTD_SERVICE_STATE_DISCONNECTING)
+	else if (old_state == BTD_SERVICE_STATE_DISCONNECTING ||
+			old_state == BTD_SERVICE_STATE_CONNECTED)
 		device_profile_disconnected(device, profile, err);
 }
 
