@@ -314,11 +314,6 @@ static void gatt_device_clear(struct gatt_device *gdev)
 	g_slist_free_full(gdev->svc_paths, g_free);
 	gdev->svc_paths = NULL;
 
-	if (gdev->channel_id > 0) {
-		g_source_remove(gdev->channel_id);
-		gdev->channel_id = 0;
-	}
-
 	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
 	gdev->database = NULL;
 
@@ -329,6 +324,11 @@ static void gatt_device_clear(struct gatt_device *gdev)
 static void gatt_device_free(gpointer user_data)
 {
 	struct gatt_device *gdev = user_data;
+
+	if (gdev->channel_id > 0) {
+		g_source_remove(gdev->channel_id);
+		gdev->channel_id = 0;
+	}
 
 	gatt_device_clear(gdev);
 
