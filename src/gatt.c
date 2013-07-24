@@ -2952,6 +2952,15 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
+	/*
+	 * When bonding, attribute discovery starts when
+	 * gatt_discover_attributes function is called.
+	 */
+	if (device_is_bonding(device, NULL)) {
+		DBG("%s bonding to %s", src, dst);
+		return;
+	}
+
 	if (gdev->database) {
 		/* Attributes already discovered, we may continue informing
 		 * the services that the device is connected
