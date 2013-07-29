@@ -32,7 +32,7 @@
 #include <dbus/dbus.h>
 #include <gdbus/gdbus.h>
 
-#include "uuid.h"
+#include "lib/uuid.h"
 
 #define SERVICE_INTERFACE "org.bluez.gatt.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
