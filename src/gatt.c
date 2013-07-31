@@ -2204,7 +2204,7 @@ static void read_by_type_result(int err, uint8_t *value, size_t vlen,
 		goto done;
 
 	if (err) {
-		send_error(gdev->attrib, ATT_OP_READ_REQ, attr->handle,
+		send_error(gdev->attrib, ATT_OP_READ_BY_TYPE_REQ, attr->handle,
 							errno_to_att(err));
 		goto done;
 	}
