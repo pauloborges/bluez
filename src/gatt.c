@@ -503,17 +503,25 @@ static void remove_notification(struct btd_device *device,
 		g_hash_table_insert(dev_notifiers, attr, devs);
 }
 
-static struct btd_attribute *get_chr_value_from_desc(struct btd_attribute *desc)
+static GList *get_chr_decl_node_from_attr(struct btd_attribute *attr)
 {
-	struct btd_attribute *char_decl, *char_value;
 	GList *l;
 
-	for (l = g_list_find(local_attribute_db, desc); l;
+	for (l = g_list_find(local_attribute_db, attr); l;
 						l = g_list_previous(l)) {
+		struct btd_attribute *char_decl;
+
 		char_decl = l->data;
 		if (is_characteristic(char_decl))
 			break;
 	}
+
+	return l;
+}
+
+static struct btd_attribute *get_chr_value_from_desc(struct btd_attribute *desc)
+{
+	GList *l = get_chr_decl_node_from_attr(desc);
 
 	if (!l) {
 		error("Declaration not found");
@@ -521,8 +529,7 @@ static struct btd_attribute *get_chr_value_from_desc(struct btd_attribute *desc)
 	}
 
 	l = g_list_next(l);
-	char_value = l->data;
-	return char_value;
+	return l->data;
 }
 
 static void read_char_desc_cb(struct btd_device *device,
