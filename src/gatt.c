@@ -451,6 +451,14 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 	}
 }
 
+static bool is_characteristic(struct btd_attribute *attr)
+{
+	if (attr->type.value.u16 == GATT_CHARAC_UUID)
+		return true;
+	else
+		return false;
+}
+
 static void read_char_desc_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
@@ -557,14 +565,6 @@ GSList *btd_gatt_get_services(struct btd_device *device, bt_uuid_t *service)
 	}
 
 	return services;
-}
-
-static bool is_characteristic(struct btd_attribute *attr)
-{
-	if (attr->type.value.u16 == GATT_CHARAC_UUID)
-		return true;
-	else
-		return false;
 }
 
 GSList *btd_gatt_get_chars_decl(struct btd_device *device,
