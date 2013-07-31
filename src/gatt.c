@@ -2327,6 +2327,77 @@ static void read_by_type(struct btd_device *device, GAttrib *attrib,
 		attr->read_cb(device, attr, read_by_type_result, trans);
 }
 
+static void find_info_request(struct btd_device *device, GAttrib *attrib,
+				const uint8_t *ipdu, size_t ilen)
+{
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	struct btd_attribute *attr;
+	size_t plen = 0, olen = 0, uuid_len;
+	uint16_t start, end;
+	uint16_t mtu = g_attrib_get_mtu(gdev->attrib);
+	uint8_t opdu[mtu];
+	GList *list;
+
+	if (dec_find_info_req(ipdu, ilen, &start, &end) == 0) {
+		send_error(attrib, ipdu[0], 0x0000,
+						ATT_ECODE_INVALID_PDU);
+		return;
+	}
+
+	if (start == 0x0000 || start > end) {
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_HANDLE);
+		return;
+	}
+
+	for (list = local_attribute_db; list; list = g_list_next(list)) {
+		attr = list->data;
+
+		if (attr->handle < start)
+			continue;
+
+		if (attr->handle > end)
+			break;
+
+		uuid_len = (size_t)bt_uuid_len(&attr->type);
+
+		if (olen == 0) {
+			/* Add opcode and data format */
+
+			/* Pair UUID and handle length */
+			plen = uuid_len + 2;
+
+			opdu[olen++] = ATT_OP_FIND_INFO_RESP;
+
+			if (attr->type.type == BT_UUID16)
+				opdu[olen++] = ATT_FIND_INFO_RESP_FMT_16BIT;
+			else
+				opdu[olen++] = ATT_FIND_INFO_RESP_FMT_128BIT;
+		} else if (plen != uuid_len + 2)
+			/* Found a different UUID format */
+			goto send;
+
+		/* Check it there space enough for another handle-uuid pair */
+		if (olen + plen > mtu)
+			goto send;
+
+		/* Copy attribute handle into opdu */
+		att_put_u16(attr->handle, &opdu[olen]);
+		olen += 2;
+
+		/* Copy attribute UUID into opdu */
+		att_put_uuid(attr->type, &opdu[olen]);
+		olen += uuid_len;
+	}
+
+	if (olen == 0) {
+		send_error(attrib, ipdu[0], start, ATT_ECODE_ATTR_NOT_FOUND);
+		return;
+	}
+
+send:
+	g_attrib_send(gdev->attrib, 0, opdu, olen, NULL, NULL, NULL);
+}
+
 static GList *get_char_decl_from_attr(GList *attr_node)
 {
 	GList *char_decl_node;
@@ -2808,8 +2879,11 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 		read_by_type(device, gdev->attrib, ipdu, ilen);
 		break;
 
-	case ATT_OP_MTU_REQ:
 	case ATT_OP_FIND_INFO_REQ:
+		find_info_request(device, gdev->attrib, ipdu, ilen);
+		break;
+
+	case ATT_OP_MTU_REQ:
 	case ATT_OP_FIND_BY_TYPE_REQ:
 	case ATT_OP_READ_BLOB_REQ:
 	case ATT_OP_READ_MULTI_REQ:
