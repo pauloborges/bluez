@@ -2756,8 +2756,10 @@ static void value_changed(struct gatt_device *gdev, const uint8_t *ipdu,
 	gpointer key, value;
 	bool cfm = true;
 
-	/* Malformed PDU: Ignore */
-	if (ilen < 5)
+	/* Correct PDU for Indication/Notification has at least: opcode
+	 * (1 octet) + handle (2 octets) + value parameter (can be 0 or more
+	 * octets). So, for malformed PDU (< 3 octets): Ignore */
+	if (ilen < 3)
 		return;
 
 	handle = att_get_u16(&ipdu[1]);
