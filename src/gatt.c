@@ -2154,20 +2154,6 @@ static void read_appearance_cb(struct btd_device *device,
 	result(0, appearance, sizeof(appearance), user_data);
 }
 
-static void ccc_written_cb(struct btd_device *device,
-			struct btd_attribute *attr, uint8_t *value,
-			size_t len, uint16_t offset,
-			btd_attr_write_result_t result, void *user_data)
-{
-	uint16_t ccc = att_get_u16(value);
-
-	/* FIXME: How to access the sender? Missing proper storage */
-
-	DBG("CCC: 0x%04x", ccc);
-
-	result(0, user_data);
-}
-
 static void add_gap(void)
 {
 	bt_uuid_t uuid;
@@ -2199,11 +2185,6 @@ static void add_gatt(void)
 	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE, NULL, NULL,
 					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
-
-	/* Descriptor: <<Client Characteristic Configuration>> */
-	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
-	btd_gatt_add_char_desc(&uuid, NULL, ccc_written_cb, BT_SECURITY_LOW,
-							BT_SECURITY_LOW, 0);
 
 	btd_gatt_dump_local_attribute_database();
 }
