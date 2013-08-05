@@ -1518,7 +1518,7 @@ done:
 	g_dbus_send_message(btd_get_dbus_connection(), reply);
 }
 
-static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
+static DBusMessage *remote_chr_read_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
 	struct attribute_iface *iface = user_data;
@@ -1554,8 +1554,8 @@ done:
 	g_dbus_send_message(btd_get_dbus_connection(), reply);
 }
 
-static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
-							void *user_data)
+static DBusMessage *remote_chr_write_value(DBusConnection *conn,
+					DBusMessage *msg, void *user_data)
 {
 	struct attribute_iface *iface = user_data;
 	struct btd_attribute *attr;
@@ -1597,10 +1597,10 @@ static const GDBusMethodTable chr_methods[] = {
 	{ GDBUS_EXPERIMENTAL_ASYNC_METHOD("ReadValue",
 				GDBUS_ARGS({"offset", "q"}),
 				GDBUS_ARGS({"value", "ay"}),
-				chr_read_value) },
+				remote_chr_read_value) },
 	{ GDBUS_EXPERIMENTAL_ASYNC_METHOD("WriteValue",
 				GDBUS_ARGS({"offset", "q"}, {"value", "ay"}),
-				NULL, chr_write_value) },
+				NULL, remote_chr_write_value) },
 	{ }
 };
 
