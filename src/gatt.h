@@ -211,7 +211,9 @@ void btd_gatt_write_attribute(struct btd_device *device,
 				btd_attr_write_result_t result,
 				void *user_data);
 
-/* btd_gatt_add_notifier - Add a notifier to an attribute.
+/* btd_gatt_add_notifier - Add a notifier to an remote attribute. Callback
+ * gets called when a notification or indication is received for the informed
+ * remote attribute.
  * @attr:	Target attribute.
  * @value_cb:	Callback function to be called when notify.
  * @user_data:	Data to be passed to the value_cb callback function.
