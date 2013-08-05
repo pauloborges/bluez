@@ -63,6 +63,13 @@
 
 #define REGISTER_TIMER		1
 
+/*
+ * Ref. Bluetooth Core SPEC page 1902, Table 3.11: Client
+ * Characteristic Configuration bit field definition
+ */
+#define CCC_NOTIFICATION_BIT	(1 << 0)
+#define CCC_INDICATION_BIT	(1 << 1)
+
 struct characteristic {
 	char *path;
 	bt_uuid_t uuid;
@@ -169,6 +176,10 @@ struct gatt_device {
 	   caller can destroy resources. */
 	GDestroyNotify destroy;
 	void *user_data;
+
+	/* Local services overlay: per device attributes */
+	char *ccc_fname;
+	GKeyFile *ccc_keyfile;
 };
 
 static GList *local_attribute_db = NULL;
@@ -177,7 +188,6 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
-static GHashTable *dev_notifiers = NULL;
 
 static GSList *attr_proxy_list = NULL;
 
@@ -327,9 +337,35 @@ static void gatt_device_clear(struct gatt_device *gdev)
 	gdev->services = NULL;
 }
 
+static struct gatt_device *gatt_device_new(struct btd_device *device)
+{
+	struct gatt_device *gdev = g_new0(struct gatt_device, 1);
+	struct btd_adapter *adapter = device_get_adapter(device);
+	char srcaddr[18], dstaddr[18];
+	const bdaddr_t *src, *dst;
+
+	src = adapter_get_address(adapter);
+	ba2str(src, srcaddr);
+
+	dst = device_get_address(device);
+	ba2str(dst, dstaddr);
+
+	gdev->ccc_fname = g_strdup_printf("%s/%s/%s/ccc",
+						STORAGEDIR, srcaddr, dstaddr);
+
+	gdev->ccc_keyfile = g_key_file_new();
+
+	g_key_file_load_from_file(gdev->ccc_keyfile, gdev->ccc_fname,
+						G_KEY_FILE_NONE, NULL);
+
+	return gdev;
+}
+
 static void gatt_device_free(gpointer user_data)
 {
 	struct gatt_device *gdev = user_data;
+	char *data;
+	size_t len;
 
 	if (gdev->channel_id > 0) {
 		g_source_remove(gdev->channel_id);
@@ -342,6 +378,17 @@ static void gatt_device_free(gpointer user_data)
 		g_attrib_unregister(gdev->attrib, gdev->attrib_id);
 		g_attrib_unref(gdev->attrib);
 	}
+
+	/* Flushing data to Local Database overlay */
+	data = g_key_file_to_data(gdev->ccc_keyfile, &len, NULL);
+	if (len > 0) {
+		create_file(gdev->ccc_fname, S_IRUSR | S_IWUSR);
+		g_file_set_contents(gdev->ccc_fname, data, len, NULL);
+	}
+	g_free(data);
+
+	g_free(gdev->ccc_fname);
+	g_key_file_free(gdev->ccc_keyfile);
 
 	g_free(gdev);
 }
@@ -465,49 +512,6 @@ static bool is_characteristic(struct btd_attribute *attr)
 		return false;
 }
 
-static void add_notification(struct btd_device *device,
-						struct btd_attribute *attr)
-{
-	GSList *devs = g_hash_table_lookup(dev_notifiers, attr);
-	GSList *l;
-
-	/* Key not found */
-	if (devs == NULL)
-		goto add_list;
-
-	l = g_slist_find(devs, device);
-	/* Already in the list, do nothing */
-	if (l != NULL)
-		return;
-
-add_list:
-	devs = g_slist_append(devs, device);
-
-	g_hash_table_insert(dev_notifiers, attr, devs);
-}
-
-static void remove_notification(struct btd_device *device,
-						struct btd_attribute *attr)
-{
-	GSList *devs = g_hash_table_lookup(dev_notifiers, attr);
-	GSList *l;
-
-	/* Key not found */
-	if (devs == NULL)
-		return;
-
-	l = g_slist_find(devs, device);
-	/* Not in the list, ignore */
-	if (l == NULL)
-		return;
-
-	devs = g_slist_remove(devs, device);
-	if (devs == NULL)
-		g_hash_table_remove(dev_notifiers, attr);
-	else
-		g_hash_table_insert(dev_notifiers, attr, devs);
-}
-
 static GList *get_chr_decl_node_from_attr(struct btd_attribute *attr)
 {
 	GList *l;
@@ -537,14 +541,37 @@ static struct btd_attribute *get_chr_value_from_desc(struct btd_attribute *desc)
 	return l->data;
 }
 
-static void read_char_desc_cb(struct btd_device *device,
+static void read_ccc_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
 	DBG("Read characteristic declaration not implemented.");
 }
 
-static void write_char_desc_cb(struct btd_device *device,
+static void database_store_ccc(struct btd_device *device,
+				uint16_t handle, uint16_t value)
+{
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	char group[7];
+
+	/*
+	 * When notification or indication arrives, it contains the handle of
+	 * Characteristic Attribute value. In order to simplify the logic, the
+	 * CCC storage uses the Attribute Characteristic value handle as key
+	 * instead of using the Descriptor handle.
+	 */
+
+	snprintf(group, sizeof(group), "0x%04x", handle);
+
+	if (value == 0x0000)
+		g_key_file_remove_key(gdev->ccc_keyfile, group, "Value",
+								NULL);
+	else
+		g_key_file_set_integer(gdev->ccc_keyfile, group, "Value",
+								value);
+}
+
+static void write_ccc_cb(struct btd_device *device,
 				struct btd_attribute *attr, uint8_t *value,
 				size_t len, uint16_t offset,
 				btd_attr_write_result_t result, void *user_data)
@@ -558,16 +585,15 @@ static void write_char_desc_cb(struct btd_device *device,
 	}
 
 	char_value = get_chr_value_from_desc(attr);
+	if (char_value == NULL) {
+		DBG("CCC 0x%04x: Characteristic declaration missing",
+							attr->handle);
+		result(EPERM, user_data);
+		return;
+	}
 
 	ccc = att_get_u16(value);
-	if (ccc == 0x0000) {
-		DBG("Disable notification");
-		remove_notification(device, char_value);
-	} else if (ccc & (GATT_CLIENT_CHARAC_CFG_NOTIF_BIT |
-					GATT_CLIENT_CHARAC_CFG_IND_BIT)) {
-		DBG("Enable notification");
-		add_notification(device, char_value);
-	}
+	database_store_ccc(device, char_value->handle, ccc);
 
 	result(0, user_data);
 }
@@ -619,8 +645,8 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 
 	if (properties & (ATT_CHAR_PROPER_NOTIFY | ATT_CHAR_PROPER_INDICATE)) {
 		bt_uuid16_create(&char_type, GATT_CLIENT_CHARAC_CFG_UUID);
-		btd_gatt_add_char_desc(&char_type, read_char_desc_cb,
-					write_char_desc_cb, read_sec, write_sec,
+		btd_gatt_add_char_desc(&char_type, read_ccc_cb,
+					write_ccc_cb, read_sec, write_sec,
 					key_size);
 	}
 
@@ -817,58 +843,47 @@ static void indication_result(guint8 status, const guint8 *pdu,
 	g_free(nd);
 }
 
-static void send_notify_value(struct btd_device *device,
-				struct btd_attribute *attr, uint8_t *value,
-				size_t len, btd_attr_write_result_t result,
-				void *user_data)
-{
-	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
-	uint8_t opdu[g_attrib_get_mtu(gdev->attrib)];
-	struct btd_attribute *char_decl;
-	struct attr_notif_data *nd = NULL;
-	uint8_t properties;
-	uint16_t handle;
-	size_t olen;
-	GList *l;
-
-	if (gdev->attrib == NULL) {
-		result(ECOMM, user_data);
-		return;
-	}
-
-	att_put_u16(attr->handle, &handle);
-	l = get_chr_decl_node_from_attr(attr);
-	char_decl = l->data;
-	properties = char_decl->value[0];
-
-	if (properties & ATT_CHAR_PROPER_INDICATE) {
-		olen = enc_indication(handle, value, len, opdu, sizeof(opdu));
-		nd = g_new0(struct attr_notif_data, 1);
-		nd->func = result;
-		nd->user_data = user_data;
-	} else
-		olen = enc_notification(handle, value, len, opdu, sizeof(opdu));
-
-	g_attrib_send(gdev->attrib, 0, opdu, olen, indication_result, nd, NULL);
-}
-
 static void notify_value_changed(struct btd_attribute *attr, uint8_t *value,
 						size_t len,
 						btd_attr_write_result_t result,
 						void *user_data)
 {
-	GSList *devices = g_hash_table_lookup(dev_notifiers, attr);
-	GSList *l;
+	char handle[7];
+	GHashTableIter iter;
+	gpointer key, hashval;
 
-	if (devices == NULL)
-		return;
+	snprintf(handle, sizeof(handle), "0x%04x", attr->handle);
 
-	/* Send notification for all devices */
-	for (l = devices; l; l = g_slist_next(l)) {
-		struct btd_device *dev = l->data;
+	g_hash_table_iter_init(&iter, gatt_devices);
+	while (g_hash_table_iter_next(&iter, &key, &hashval)) {
+		struct gatt_device *gdev = hashval;
+		struct attr_notif_data *nd;
+		uint8_t opdu[ATT_DEFAULT_LE_MTU];
+		uint16_t ccc;
+		size_t olen;
 
-		send_notify_value(dev, attr, value, len, result, user_data);
+		if (gdev->attrib == NULL)
+			continue;
+
+		ccc = g_key_file_get_integer(gdev->ccc_keyfile, handle,
+							"Value", NULL);
+		nd = NULL;
+		if (ccc & CCC_INDICATION_BIT) {
+			olen = enc_indication(attr->handle, value, len, opdu,
+								sizeof(opdu));
+			nd = g_new0(struct attr_notif_data, 1);
+			nd->func = result;
+			nd->user_data = user_data;
+		} else if (ccc & CCC_NOTIFICATION_BIT) {
+			olen = enc_notification(attr->handle, value, len, opdu,
+								sizeof(opdu));
+		} else
+			continue;
+
+		g_attrib_send(gdev->attrib, 0, opdu, olen, indication_result, nd, NULL);
 	}
+
+	result(0, user_data);
 }
 
 void btd_gatt_write_attribute(struct btd_device *device,
@@ -2071,7 +2086,7 @@ bool gatt_load_from_storage(struct btd_device *device)
 		return false;
 	}
 
-	gdev = g_new0(struct gatt_device, 1);
+	gdev = gatt_device_new(device);
 	g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 
 	groups = g_key_file_get_groups(key_file, NULL);
@@ -3181,7 +3196,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	gdev = g_hash_table_lookup(gatt_devices, device);
 	if (gdev == NULL) {
-		gdev = g_new0(struct gatt_device, 1);
+		gdev = gatt_device_new(device);
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
 
@@ -3270,7 +3285,7 @@ static void listen_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	if (gdev == NULL) {
 		/* For incomming connections we may not have an gatt_device */
-		gdev = g_new0(struct gatt_device, 1);
+		gdev = gatt_device_new(device);
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
 
@@ -3352,14 +3367,6 @@ static int gatt_connect(struct btd_device *device, void *user_data)
 	return 0;
 }
 
-static void destroy_dev_notifiers(gpointer key, gpointer value,
-							gpointer user_data)
-{
-	GSList *devs = value;
-
-	g_slist_free(devs);
-}
-
 int gatt_discover_attributes(struct btd_device *device, void *user_data,
 							GDestroyNotify destroy)
 {
@@ -3367,7 +3374,7 @@ int gatt_discover_attributes(struct btd_device *device, void *user_data,
 	bt_uuid_t uuid;
 
 	if (gdev == NULL) {
-		gdev = g_new0(struct gatt_device, 1);
+		gdev = gatt_device_new(device);
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
 
@@ -3417,7 +3424,7 @@ int btd_gatt_connect(struct btd_service *service)
 	 * of the discovered attributes for bonded devices only.
 	 */
 	if (gdev == NULL) {
-		gdev = g_new0(struct gatt_device, 1);
+		gdev = gatt_device_new(device);
 		g_hash_table_insert(gatt_devices, btd_device_ref(device), gdev);
 	}
 
@@ -3505,9 +3512,6 @@ void gatt_service_manager_init(void)
 	gatt_devices = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					(GDestroyNotify) btd_device_unref,
 					gatt_device_free);
-
-	dev_notifiers = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-								NULL, NULL);
 }
 
 void gatt_service_manager_cleanup(void)
@@ -3527,8 +3531,4 @@ void gatt_service_manager_cleanup(void)
 
 	g_hash_table_destroy(gatt_devices);
 	gatt_devices = NULL;
-
-	g_hash_table_foreach(dev_notifiers, destroy_dev_notifiers, NULL);
-	g_hash_table_destroy(dev_notifiers);
-	dev_notifiers = NULL;
 }
