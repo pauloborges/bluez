@@ -545,7 +545,26 @@ static void read_ccc_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
-	DBG("Read characteristic declaration not implemented.");
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	struct btd_attribute *char_value;
+	char handle[7];
+	uint8_t value[2];
+	uint16_t ccc;
+
+	char_value = get_chr_value_from_desc(attr);
+	if (char_value == NULL) {
+		DBG("CCC 0x%04x: Characteristic declaration missing",
+							attr->handle);
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
+
+	snprintf(handle, sizeof(handle), "0x%04x", char_value->handle);
+	ccc = g_key_file_get_integer(gdev->ccc_keyfile, handle, "Value", NULL);
+
+	att_put_u16(ccc, value);
+
+	result(0, value, sizeof(value), user_data);
 }
 
 static void database_store_ccc(struct btd_device *device,
