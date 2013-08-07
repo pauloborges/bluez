@@ -1771,6 +1771,7 @@ static void database_store(struct btd_device *device, GList *database)
 	struct btd_adapter *adapter = device_get_adapter(device);
 	char srcaddr[18], dstaddr[18], handle[7], uuidstr[MAX_LEN_UUID_STR];
 	char filename[PATH_MAX + 1], *data;
+	struct btd_attribute *prev, *attr;
 	const bdaddr_t *src, *dst;
 	GKeyFile *key_file;
 	GList *list;
@@ -1791,12 +1792,13 @@ static void database_store(struct btd_device *device, GList *database)
 
 	g_key_file_load_from_file(key_file, filename, G_KEY_FILE_NONE, NULL);
 
-	for (list = database; list; list = g_list_next(list)) {
-		struct btd_attribute *attr = list->data;
+	for (list = database, prev = NULL; list;
+				list = g_list_next(list), prev = attr) {
 		char *str;
 
-		/* Avoid storing characteristic value */
-		if (attr->value_len == 0)
+		attr = list->data;
+		/* Skip storing characteristic value */
+		if ((attr->value_len == 0) && prev && is_characteristic(prev))
 			continue;
 
 		snprintf(handle, sizeof(handle), "0x%04x", attr->handle);
