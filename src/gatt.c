@@ -1807,9 +1807,10 @@ static void database_store(struct btd_device *device, GList *database)
 		g_key_file_set_string(key_file, handle, "Type", uuidstr);
 
 		str = buf2str(attr->value, attr->value_len);
-		g_key_file_set_string(key_file, handle, "Value", str);
-
-		g_free(str);
+		if (str) {
+			g_key_file_set_string(key_file, handle, "Value", str);
+			g_free(str);
+		}
 
 		data = g_key_file_to_data(key_file, &len, NULL);
 		if (len > 0) {
