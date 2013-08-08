@@ -163,8 +163,9 @@ struct gatt_device {
 	GAttrib *attrib;
 	GList *database;
 	GIOChannel *io;	/* While GAttrib is not created */
-	GSList *char_paths;
-	GSList *svc_paths;
+
+	GSList *svc_objs;      /* Service object paths */
+	GHashTable *chr_objs;  /* key: Handle value: characteristic path */
 	GSList *services;
 	unsigned int channel_id;
 	unsigned int attrib_id;
@@ -308,27 +309,30 @@ static void destroy_attribute(struct btd_attribute *attr)
 
 static void gatt_device_clear(struct gatt_device *gdev)
 {
+	GHashTableIter iter;
+	gpointer key, hashval;
 	GSList *l;
+	char *path;
 
 	DBG("");
 
-	for (l = gdev->char_paths; l; l = l->next) {
-		char *path = l->data;
-		g_dbus_unregister_interface(btd_get_dbus_connection(), path,
-						CHARACTERISTIC_INTERFACE);
+	g_hash_table_iter_init(&iter, gdev->chr_objs);
+	while (g_hash_table_iter_next(&iter, &key, &hashval)) {
+		path = hashval;
+		g_dbus_unregister_interface(btd_get_dbus_connection(),
+					path, CHARACTERISTIC_INTERFACE);
 	}
 
-	g_slist_free_full(gdev->char_paths, g_free);
-	gdev->char_paths = NULL;
+	g_hash_table_remove_all(gdev->chr_objs);
 
-	for (l = gdev->svc_paths; l; l = l->next) {
-		char *path = l->data;
-		g_dbus_unregister_interface(btd_get_dbus_connection(), path,
-						SERVICE_INTERFACE);
+	for (l = gdev->svc_objs; l; l = g_slist_next(l)) {
+		path = l->data;
+		g_dbus_unregister_interface(btd_get_dbus_connection(),
+						path, SERVICE_INTERFACE);
 	}
 
-	g_slist_free_full(gdev->svc_paths, g_free);
-	gdev->svc_paths = NULL;
+	g_slist_free(gdev->svc_objs);
+	gdev->svc_objs = NULL;
 
 	g_list_free_full(gdev->database, (GDestroyNotify) destroy_attribute);
 	gdev->database = NULL;
@@ -358,6 +362,9 @@ static struct gatt_device *gatt_device_new(struct btd_device *device)
 	g_key_file_load_from_file(gdev->ccc_keyfile, gdev->ccc_fname,
 						G_KEY_FILE_NONE, NULL);
 
+	gdev->chr_objs = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+								NULL, g_free);
+
 	return gdev;
 }
 
@@ -373,6 +380,7 @@ static void gatt_device_free(gpointer user_data)
 	}
 
 	gatt_device_clear(gdev);
+	g_hash_table_destroy(gdev->chr_objs);
 
 	if (gdev->attrib) {
 		g_attrib_unregister(gdev->attrib, gdev->attrib_id);
@@ -1881,7 +1889,6 @@ static bool prim_service_register(struct btd_device *device,
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	struct attribute_iface *iface;
 	char *path;
-	bool ret = true;
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
@@ -1893,16 +1900,17 @@ static bool prim_service_register(struct btd_device *device,
 	if (g_dbus_register_interface(btd_get_dbus_connection(),
 					path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties, iface,
-					g_free) == FALSE) {
-		error("Unable to register service interface for %s", path);
-
-		g_free(iface);
-		ret = false;
+					g_free) == TRUE) {
+		gdev->svc_objs = g_slist_append(gdev->svc_objs, path);
+		return true;
 	}
 
-	gdev->svc_paths = g_slist_prepend(gdev->svc_paths, path);
+	error("Unable to register service interface for %s", path);
 
-	return ret;
+	g_free(iface);
+	g_free(path);
+
+	return false;
 }
 
 static bool characteristic_register(struct btd_device *device,
@@ -1911,8 +1919,8 @@ static bool characteristic_register(struct btd_device *device,
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	struct attribute_iface *iface;
 	struct btd_attribute *parent;
+	uint16_t handle = attr->handle;
 	char *path;
-	bool ret = true;
 
 	if (!gdev->database)
 		return false;
@@ -1931,16 +1939,19 @@ static bool characteristic_register(struct btd_device *device,
 	if (g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
-					iface, g_free) == FALSE) {
+					iface, g_free) == TRUE) {
 
-		error("Couldn't register characteristic interface");
-		g_free(iface);
-		ret = false;
+		g_hash_table_insert(gdev->chr_objs, GINT_TO_POINTER(handle),
+								path);
+		return true;
 	}
 
-	gdev->char_paths = g_slist_prepend(gdev->char_paths, path);
+	error("Unable to register Characteristic interface for %s", path);
 
-	return ret;
+	g_free(iface);
+	g_free(path);
+
+	return false;
 }
 
 static void connecting_complete(gpointer data, gpointer user_data)
@@ -2772,9 +2783,10 @@ static void value_changed(struct gatt_device *gdev, const uint8_t *ipdu,
 	struct notifier *notif;
 	GHashTableIter iter;
 	GList *list;
-	uint16_t handle;
+	uint16_t handle = att_get_u16(&ipdu[1]);
 	gpointer key, value;
 	bool cfm = true;
+	char *path = g_hash_table_lookup(gdev->chr_objs, &handle);
 
 	/* Correct PDU for Indication/Notification has at least: opcode
 	 * (1 octet) + handle (2 octets) + value parameter (can be 0 or more
@@ -2782,7 +2794,10 @@ static void value_changed(struct gatt_device *gdev, const uint8_t *ipdu,
 	if (ilen < 3)
 		return;
 
-	handle = att_get_u16(&ipdu[1]);
+	if (path == NULL) {
+		DBG("Path not found");
+		return;
+	}
 
 	/* TODO: Missing checking for <<CCC>> */
 	list = g_list_find_custom(gdev->database,
@@ -2804,6 +2819,9 @@ static void value_changed(struct gatt_device *gdev, const uint8_t *ipdu,
 							notif->user_data))
 			cfm = false;
 	}
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
+					CHARACTERISTIC_INTERFACE, "Value");
 
 	/*
 	 * Below: Processing Indication. If at least one client/watcher
