@@ -196,6 +196,8 @@ static uint8_t errno_to_att(int err)
 	switch (err) {
 	case EACCES:
 		return ATT_ECODE_AUTHORIZATION;
+	case EINVAL:
+		return ATT_ECODE_INVAL_ATTR_VALUE_LEN;
 	default:
 		return ATT_ECODE_UNLIKELY;
 	}
@@ -598,8 +600,9 @@ static void write_ccc_cb(struct btd_device *device,
 	struct btd_attribute *char_value;
 	uint16_t ccc;
 
-	if (len > 2) {
+	if (len != 2) {
 		DBG("Invalid size for Characteristic Configuration Bits");
+		result(EINVAL, user_data);
 		return;
 	}
 
