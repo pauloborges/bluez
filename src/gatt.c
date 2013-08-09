@@ -486,6 +486,15 @@ static bool is_service(struct btd_attribute *attr)
 		return false;
 
 }
+
+static bool is_characteristic(struct btd_attribute *attr)
+{
+	if (attr->type.value.u16 == GATT_CHARAC_UUID)
+		return true;
+	else
+		return false;
+}
+
 void btd_gatt_remove_service(struct btd_attribute *service)
 {
 	GList *list = g_list_find(local_attribute_db, service);
@@ -502,14 +511,6 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 		destroy_attribute(list->data);
 		list = g_list_delete_link(list, list);
 	}
-}
-
-static bool is_characteristic(struct btd_attribute *attr)
-{
-	if (attr->type.value.u16 == GATT_CHARAC_UUID)
-		return true;
-	else
-		return false;
 }
 
 static GList *get_chr_decl_node_from_attr(struct btd_attribute *attr)
