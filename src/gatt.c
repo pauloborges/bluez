@@ -183,7 +183,7 @@ struct gatt_device {
 };
 
 static GList *local_attribute_db = NULL;
-static unsigned int next_nofifier_id = 1;
+static unsigned int next_notifier_id = 1;
 static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
@@ -1019,7 +1019,7 @@ unsigned int btd_gatt_add_notifier(struct btd_attribute *attr,
 	notif->value_cb = value_cb;
 	notif->user_data = user_data;
 
-	id = next_nofifier_id++;
+	id = next_notifier_id++;
 	g_hash_table_insert(attr->notifiers, &id, notif);
 
 	return id;
