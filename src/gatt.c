@@ -95,8 +95,6 @@ struct application {
 	guint register_timer;
 };
 
-static GSList *applications = NULL;
-
 struct btd_attribute {
 	uint16_t handle;
 	bt_uuid_t type;
@@ -188,7 +186,7 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
-
+static GSList *applications = NULL;
 static GSList *attr_proxy_list = NULL;
 
 static uint8_t errno_to_att(int err)
