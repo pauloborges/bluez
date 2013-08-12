@@ -161,22 +161,26 @@ struct find_info {
 
 struct gatt_device {
 	GAttrib *attrib;
-	GList *database;
-	GIOChannel *io;	/* While GAttrib is not created */
-
-	GSList *svc_objs;      /* Service object paths */
-	GHashTable *chr_objs;  /* key: Handle value: characteristic path */
-	GSList *services;
-	unsigned int channel_id;
-	unsigned int attrib_id;
+	GList *database;		/* Remote attributes */
+	GIOChannel *io;			/* While GAttrib is not created */
+	GSList *svc_objs;      		/* Service object paths */
+	GHashTable *chr_objs;  		/* Map: { Handle : char path } */
+	GSList *services;		/* Refs for btd_service */
+	unsigned int channel_id;	/* ERR and HUP watch */
+	unsigned int attrib_id;		/* GAttrib events/cmds handler */
 	gboolean out;			/* Outgoing or incoming connection */
 
-	/* Callback for notifying that service discovery has finished, so
-	   caller can destroy resources. */
+	/*
+	 * Callback for notifying that service discovery
+	 * has finished, so caller can destroy resources.
+	 */
 	GDestroyNotify destroy;
 	void *user_data;
 
-	/* Local services overlay: per device attributes */
+	/*
+	 * Local services overlay: per device attributes. Stores
+	 * << CCC >> descriptor values changed by the remote.
+	 */
 	char *ccc_fname;
 	GKeyFile *ccc_keyfile;
 };
