@@ -45,6 +45,7 @@ struct context {
 	struct gatt_primary prim;
 	struct gatt_char chr;
 	struct gatt_char_desc desc;
+	struct gatt_included incl;
 };
 
 void btd_debug(const char *format, ...)
@@ -423,7 +424,7 @@ static gboolean handle_read_by_type(int fd, struct context *context)
 	uint8_t pdu[ATT_DEFAULT_LE_MTU];
 	ssize_t len;
 	uint16_t start, end, pdu_len;
-	bt_uuid_t uuid, gatt_uuid, char_uuid;
+	bt_uuid_t uuid, gatt_uuid, char_uuid, incl_uuid;
 	struct att_data_list *adl;
 	uint8_t *value;
 
@@ -435,6 +436,7 @@ static gboolean handle_read_by_type(int fd, struct context *context)
 
 	bt_string_to_uuid(&gatt_uuid, GATT_UUID);
 	bt_uuid16_create(&char_uuid, GATT_CHARAC_UUID);
+	bt_uuid16_create(&incl_uuid, GATT_INCLUDE_UUID);
 
 	if (start == 0x0001 && end == 0xffff &&
 					bt_uuid_cmp(&uuid, &gatt_uuid) == 0) {
@@ -476,6 +478,21 @@ static gboolean handle_read_by_type(int fd, struct context *context)
 		context->chr.value_handle = 0x0005;
 		strcpy(context->chr.uuid,
 					"00001234-0000-1000-8000-00805f9b34fb");
+	} else if (start == 0xfffe && end == 0xffff &&
+					bt_uuid_cmp(&uuid, &incl_uuid) == 0) {
+		adl = att_data_list_alloc(1, sizeof(uint16_t) * 3);
+		g_assert(adl != NULL);
+
+		value = adl->data[0];
+		att_put_u16(0xffff, &value[0]);
+		att_put_u16(0xfffd, &value[2]);
+		att_put_u16(0xfffd, &value[4]);
+
+		context->incl.handle = 0xffff;
+		context->incl.range.start = 0xfffd;
+		context->incl.range.end = 0xfffd;
+		strcpy(context->incl.uuid,
+					"00005678-0000-1000-8000-00805f9b34fb");
 	} else {
 		/* Signal end of procedure */
 		pdu_len = enc_error_resp(pdu[0], start,
@@ -504,6 +521,7 @@ static gboolean handle_read(int fd)
 	ssize_t len, resp_len;
 	uint16_t pdu_len, handle;
 	const char str[] = "0123-4567-89AB-CDEF-01";
+	bt_uuid_t uuid;
 
 	len = recv(fd, pdu, sizeof(pdu), 0);
 	g_assert_cmpint(len, >, 0);
@@ -519,6 +537,12 @@ static gboolean handle_read(int fd)
 	case 0x0002:
 		resp_len = sizeof(str) - 1;
 		memcpy(resp, str, resp_len);
+		break;
+	case 0xfffd:
+		bt_string_to_uuid(&uuid,
+					"00005678-0000-1000-8000-00805f9b34fb");
+		att_put_uuid128(uuid, resp);
+		resp_len = 16;
 		break;
 	default:
 		g_assert_not_reached();
@@ -1018,6 +1042,36 @@ static void test_gatt_write_long_char(void)
 	execute_context(context);
 }
 
+static bool find_included_cb(uint8_t status, GSList *services, void *user_data)
+{
+	struct context *context = user_data;
+	struct gatt_included *incl;
+
+	g_assert_cmpuint(status, ==, 0);
+	g_assert_cmpuint(g_slist_length(services), ==, 1);
+	incl = g_slist_nth_data(services, 0);
+
+	if (g_test_verbose() == TRUE)
+		printf("Got service include handle range 0x%04x-0x%04x\n",
+					incl->range.start, incl->range.end);
+
+	g_assert(memcmp(incl, &context->incl, sizeof(context->incl)) == 0);
+
+	g_main_loop_quit(context->main_loop);
+
+	return true;
+}
+
+static void test_gatt_find_included(void)
+{
+	struct context *context = create_context();
+
+	gatt_find_included(context->attrib, 0xfffe, 0xffff, find_included_cb,
+								context);
+
+	execute_context(context);
+}
+
 int main(int argc, char *argv[])
 {
 	g_test_init(&argc, &argv, NULL);
@@ -1041,6 +1095,7 @@ int main(int argc, char *argv[])
 	g_test_add_func("/gatt/gatt_write_char", test_gatt_write_char);
 	g_test_add_func("/gatt/gatt_write_long_char",
 						test_gatt_write_long_char);
+	g_test_add_func("/gatt/gatt_find_included", test_gatt_find_included);
 
 	return g_test_run();
 }
