@@ -525,6 +525,24 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 	}
 }
 
+static GList *remote_get_chr_decl_node(struct btd_device *device,
+					struct btd_attribute *attr)
+{
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	GList *l;
+
+	for (l = g_list_find(gdev->database, attr); l;
+						l = g_list_previous(l)) {
+		struct btd_attribute *char_decl;
+
+		char_decl = l->data;
+		if (is_characteristic(char_decl))
+			return l;
+	}
+
+	return NULL;
+}
+
 static GList *get_chr_decl_node_from_attr(struct btd_attribute *attr)
 {
 	GList *l;
@@ -2082,7 +2100,7 @@ static void include_create(uint8_t status, uint16_t handle,
 	remote_database_add(device, attr);
 }
 
-static void descriptor_create(uint16_t handle, bt_uuid_t *type,
+static struct btd_attribute *descriptor_create(uint16_t handle, bt_uuid_t *type,
 						struct btd_device *device)
 {
 	struct btd_attribute *attr;
@@ -2091,17 +2109,55 @@ static void descriptor_create(uint16_t handle, bt_uuid_t *type,
 	attr->handle = handle;
 
 	remote_database_add(device, attr);
+
+	return attr;
+}
+
+static void remote_ccc_enabled(int err, void *user_data)
+{
+	struct btd_attribute *attr = user_data;
+
+	if (err == 0)
+		return;
+
+	DBG("%p CCC write failed", attr);
+
+	/* FIXME: Reset internal flag of CCC value control */
 }
 
 static void descriptor_cb(uint8_t status, uint16_t handle,
 					bt_uuid_t *type, void *user_data)
 {
 	struct find_info *find = user_data;
+	struct btd_attribute *attr, *decl;
+	GList *l;
+	bt_uuid_t uuid;
+	uint8_t value[2];
 
 	if (status)
 		return;
 
-	descriptor_create(handle, type, find->device);
+	attr = descriptor_create(handle, type, find->device);
+
+	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+	if (bt_uuid_cmp(type, &uuid) != 0)
+		return;
+
+	l = remote_get_chr_decl_node(find->device, attr);
+	if (!l) {
+		error("Declaration not found");
+		return;
+	}
+
+	decl = l->data;
+
+	if (decl->value[0] & ATT_CHAR_PROPER_NOTIFY)
+		att_put_u16(CCC_NOTIFICATION_BIT, value);
+	else if (decl->value[0] & ATT_CHAR_PROPER_INDICATE)
+		att_put_u16(CCC_INDICATION_BIT, value);
+
+	btd_gatt_write_attribute(find->device, attr, value, sizeof(value),
+					0x00, remote_ccc_enabled, NULL);
 }
 
 bool gatt_load_from_storage(struct btd_device *device)
