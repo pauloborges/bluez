@@ -1342,6 +1342,8 @@ static void destroy_external_app(void *data)
 	if (eapp->watch > 0)
 		g_dbus_remove_watch(btd_get_dbus_connection(), eapp->watch);
 
+	g_dbus_client_unref(eapp->client);
+
 	external_apps = g_slist_remove(external_apps, eapp);
 
 	g_free(eapp);
