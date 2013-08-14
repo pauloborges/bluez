@@ -1352,20 +1352,31 @@ static void external_app_disconnected(DBusConnection *conn, void *user_data)
 	destroy_external_app(user_data);
 }
 
-static struct external_app *new_external_app(const char *sender)
+static struct external_app *new_external_app(DBusConnection *conn,
+							const char *sender)
 {
 	struct external_app *eapp;
+	GDBusClient *client;
+
+	client = g_dbus_client_new(conn, sender, "/");
+	if (client == NULL)
+		return NULL;
 
 	eapp = g_new0(struct external_app, 1);
 
 	eapp->watch = g_dbus_add_disconnect_watch(btd_get_dbus_connection(),
 				sender, external_app_disconnected, eapp, NULL);
 	if (eapp->watch == 0) {
+		g_dbus_client_unref(client);
 		g_free(eapp);
 		return NULL;
 	}
 
 	eapp->owner = g_strdup(sender);
+	eapp->client = client;
+
+	g_dbus_client_set_proxy_handlers(client, proxy_added,
+				proxy_removed, property_changed, eapp);
 
 	external_apps = g_slist_prepend(external_apps, eapp);
 
@@ -1434,20 +1445,11 @@ static DBusMessage *register_services(DBusConnection *conn,
 	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
 		goto invalid;
 
-	eapp = new_external_app(dbus_message_get_sender(msg));
+	eapp = new_external_app(conn, dbus_message_get_sender(msg));
 	if (eapp == NULL)
 		return btd_error_failed(msg, "Not enough resources");
 
 	DBG("new app %p", eapp);
-
-	eapp->client = g_dbus_client_new(conn, eapp->owner, "/");
-	if (eapp->client == NULL) {
-		destroy_external_app(eapp);
-		return btd_error_failed(msg, "Not enough resources");
-	}
-
-	g_dbus_client_set_proxy_handlers(eapp->client, proxy_added,
-				proxy_removed, property_changed, eapp);
 
 	dbus_message_iter_recurse(&args, &iter);
 
