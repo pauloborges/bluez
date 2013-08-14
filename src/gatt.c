@@ -70,7 +70,7 @@
 #define CCC_NOTIFICATION_BIT	(1 << 0)
 #define CCC_INDICATION_BIT	(1 << 1)
 
-struct characteristic {
+struct external_characteristic {
 	char *path;
 	bt_uuid_t uuid;
 	uint8_t properties;
@@ -80,12 +80,12 @@ struct characteristic {
 	GDBusProxy *proxy;
 };
 
-struct service {
+struct external_service {
 	char *path;
 	bt_uuid_t uuid;
 };
 
-struct application {
+struct external_app {
 	char *owner;
 	GSList *services;
 	GSList *prim_services;
@@ -191,7 +191,7 @@ static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
-static GSList *applications = NULL;
+static GSList *external_apps = NULL;
 static GSList *attr_proxy_list = NULL;
 
 static uint8_t errno_to_att(int err)
@@ -1046,16 +1046,16 @@ void btd_gatt_remove_notifier(struct btd_attribute *attr, unsigned int id)
 
 static void destroy_char(void *user_data)
 {
-	struct characteristic *chr = user_data;
+	struct external_characteristic *echr = user_data;
 
-	g_free(chr->path);
-	g_dbus_proxy_unref(chr->proxy);
-	g_free(chr);
+	g_free(echr->path);
+	g_dbus_proxy_unref(echr->proxy);
+	g_free(echr);
 }
 
 static void destroy_service(void *data)
 {
-	struct service *srv = data;
+	struct external_service *srv = data;
 
 	g_free(srv->path);
 	g_free(srv);
@@ -1202,15 +1202,15 @@ static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
 
 static int service_path_cmp(gconstpointer a, gconstpointer b)
 {
-	const struct service *srv = a;
+	const struct external_service *esrv = a;
 	const char *path = b;
 
-	return strcmp(srv->path, path);
+	return strcmp(esrv->path, path);
 }
 
 static void proxy_added(GDBusProxy *proxy, void *user_data)
 {
-	struct application *app = user_data;
+	struct external_app *eapp = user_data;
 	DBusMessageIter iter;
 	const char *interface;
 	const char *path;
@@ -1222,7 +1222,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 	DBG("path %s iface %s", path, interface);
 
 	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
-		struct characteristic *chr;
+		struct external_characteristic *echr;
 		const char *security;
 		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
 		uint8_t properties, key_size = 0;
@@ -1268,21 +1268,21 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &properties);
 
-		chr = g_new0(struct characteristic, 1);
-		chr->path = g_strdup(path);
-		bt_string_to_uuid(&chr->uuid, uuid);
-		chr->properties = properties;
-		chr->read_sec = read_sec;
-		chr->write_sec = write_sec;
-		chr->key_size = key_size;
-		chr->proxy = g_dbus_proxy_ref(proxy);
+		echr = g_new0(struct external_characteristic, 1);
+		echr->path = g_strdup(path);
+		bt_string_to_uuid(&echr->uuid, uuid);
+		echr->properties = properties;
+		echr->read_sec = read_sec;
+		echr->write_sec = write_sec;
+		echr->key_size = key_size;
+		echr->proxy = g_dbus_proxy_ref(proxy);
 
-		app->chrs = g_slist_append(app->chrs, chr);
+		eapp->chrs = g_slist_append(eapp->chrs, echr);
 	} else if (g_strcmp0(interface, SERVICE_INTERFACE) == 0) {
-		struct service *srv;
+		struct external_service *esrv;
 		GSList *l;
 
-		l = g_slist_find_custom(app->services, path, service_path_cmp);
+		l = g_slist_find_custom(eapp->services, path, service_path_cmp);
 		if (l == NULL) {
 			DBG("Ignoring service not registered: %s", path);
 			return;
@@ -1300,8 +1300,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 		dbus_message_iter_get_basic(&iter, &uuid);
 
-		srv = l->data;
-		bt_string_to_uuid(&srv->uuid, uuid);
+		esrv = l->data;
+		bt_string_to_uuid(&esrv->uuid, uuid);
 	}
 }
 
@@ -1324,95 +1324,98 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 	DBG("iface %s", interface);
 }
 
-static void destroy_application(void *data)
+static void destroy_external_app(void *data)
 {
-	struct application *app = data;
+	struct external_app *eapp = data;
 
-	DBG("app %p", app);
+	DBG("app %p", eapp);
 
-	if (app->register_timer > 0)
-		g_source_remove(app->register_timer);
+	if (eapp->register_timer > 0)
+		g_source_remove(eapp->register_timer);
 
-	g_free(app->owner);
+	g_free(eapp->owner);
 
-	g_slist_free_full(app->prim_services, remove_local_service);
-	g_slist_free_full(app->services, destroy_service);
-	g_slist_free_full(app->chrs, destroy_char);
+	g_slist_free_full(eapp->prim_services, remove_local_service);
+	g_slist_free_full(eapp->services, destroy_service);
+	g_slist_free_full(eapp->chrs, destroy_char);
 
-	if (app->watch > 0)
-		g_dbus_remove_watch(btd_get_dbus_connection(), app->watch);
+	if (eapp->watch > 0)
+		g_dbus_remove_watch(btd_get_dbus_connection(), eapp->watch);
 
-	applications = g_slist_remove(applications, app);
+	external_apps = g_slist_remove(external_apps, eapp);
 
-	g_free(app);
+	g_free(eapp);
 }
 
-static void application_disconnected(DBusConnection *conn, void *user_data)
+static void external_app_disconnected(DBusConnection *conn, void *user_data)
 {
-	destroy_application(user_data);
+	destroy_external_app(user_data);
 }
 
-static struct application *new_application(const char *sender)
+static struct external_app *new_external_app(const char *sender)
 {
-	struct application *app;
+	struct external_app *eapp;
 
-	app = g_new0(struct application, 1);
+	eapp = g_new0(struct external_app, 1);
 
-	app->watch = g_dbus_add_disconnect_watch(btd_get_dbus_connection(),
-				sender, application_disconnected, app, NULL);
-	if (app->watch == 0) {
-		g_free(app);
+	eapp->watch = g_dbus_add_disconnect_watch(btd_get_dbus_connection(),
+				sender, external_app_disconnected, eapp, NULL);
+	if (eapp->watch == 0) {
+		g_free(eapp);
 		return NULL;
 	}
 
-	app->owner = g_strdup(sender);
+	eapp->owner = g_strdup(sender);
 
-	applications = g_slist_prepend(applications, app);
+	external_apps = g_slist_prepend(external_apps, eapp);
 
-	return app;
+	return eapp;
 }
 
-static void register_chars(gpointer a, gpointer b)
+static void register_external_chars(gpointer a, gpointer b)
 {
-	struct characteristic *chr = a;
+	struct external_characteristic *echr = a;
 	struct btd_attribute *attr;
 	const char *path = b;
 
-	if (!g_str_has_prefix(chr->path, path))
+	if (!g_str_has_prefix(echr->path, path))
 		return;
 
-	attr = btd_gatt_add_char(&chr->uuid, chr->properties, read_char_cb,
-					write_char_cb, chr->read_sec,
-					chr->write_sec, chr->key_size);
+	attr = btd_gatt_add_char(&echr->uuid, echr->properties, read_char_cb,
+					write_char_cb, echr->read_sec,
+					echr->write_sec, echr->key_size);
 
-	attr_set_proxy(attr, chr->proxy);
+	attr_set_proxy(attr, echr->proxy);
 
-	DBG("new char %s", chr->path);
+	DBG("new char %s", echr->path);
 }
 
 static gboolean finish_register(gpointer user_data)
 {
-	struct application *app = user_data;
+	struct external_app *eapp = user_data;
 	GSList *list;
 
-	app->register_timer = 0;
+	eapp->register_timer = 0;
 
-	for (list = app->services; list; list = g_slist_next(list)) {
-		struct service *srv = list->data;
+	for (list = eapp->services; list; list = g_slist_next(list)) {
+		struct external_service *esrv = list->data;
 		struct btd_attribute *attr;
 
-		attr = btd_gatt_add_service(&srv->uuid, true);
-		app->prim_services = g_slist_append(app->prim_services, attr);
-		DBG("new service %s, attribute 0x%04x", srv->path, attr->handle);
+		attr = btd_gatt_add_service(&esrv->uuid, true);
+		eapp->prim_services = g_slist_append(eapp->prim_services,
+								attr);
+		DBG("new service %s, attribute 0x%04x", esrv->path,
+							attr->handle);
 
-		g_slist_foreach(app->chrs, register_chars, srv->path);
+		g_slist_foreach(eapp->chrs, register_external_chars,
+							esrv->path);
 	}
 
-	g_slist_free_full(app->services, destroy_service);
-	app->services = NULL;
+	g_slist_free_full(eapp->services, destroy_service);
+	eapp->services = NULL;
 
-	g_slist_free_full(app->chrs, destroy_char);
-	app->chrs = NULL;
+	g_slist_free_full(eapp->chrs, destroy_char);
+	eapp->chrs = NULL;
 
 	return FALSE;
 }
@@ -1420,7 +1423,7 @@ static gboolean finish_register(gpointer user_data)
 static DBusMessage *register_services(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
-	struct application *app;
+	struct external_app *eapp;
 	DBusMessageIter args, iter;
 
 	DBG("Registering GATT Service");
@@ -1431,41 +1434,41 @@ static DBusMessage *register_services(DBusConnection *conn,
 	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
 		goto invalid;
 
-	app = new_application(dbus_message_get_sender(msg));
-	if (app == NULL)
+	eapp = new_external_app(dbus_message_get_sender(msg));
+	if (eapp == NULL)
 		return btd_error_failed(msg, "Not enough resources");
 
-	DBG("new app %p", app);
+	DBG("new app %p", eapp);
 
-	app->client = g_dbus_client_new(conn, app->owner, "/");
-	if (app->client == NULL) {
-		destroy_application(app);
+	eapp->client = g_dbus_client_new(conn, eapp->owner, "/");
+	if (eapp->client == NULL) {
+		destroy_external_app(eapp);
 		return btd_error_failed(msg, "Not enough resources");
 	}
 
-	g_dbus_client_set_proxy_handlers(app->client, proxy_added,
-					proxy_removed, property_changed, app);
+	g_dbus_client_set_proxy_handlers(eapp->client, proxy_added,
+				proxy_removed, property_changed, eapp);
 
 	dbus_message_iter_recurse(&args, &iter);
 
 	while (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_OBJECT_PATH) {
-		struct service *srv;
+		struct external_service *esrv;
 		const char *path;
 
 		dbus_message_iter_get_basic(&iter, &path);
 
-		srv = g_new0(struct service, 1);
-		srv->path = g_strdup(path);
+		esrv = g_new0(struct external_service, 1);
+		esrv->path = g_strdup(path);
 
-		app->services = g_slist_append(app->services, srv);
+		eapp->services = g_slist_append(eapp->services, esrv);
 
 		DBG("path %s", path);
 
 		dbus_message_iter_next(&iter);
 	}
 
-	app->register_timer = g_timeout_add_seconds(REGISTER_TIMER,
-							finish_register, app);
+	eapp->register_timer = g_timeout_add_seconds(REGISTER_TIMER,
+							finish_register, eapp);
 
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 
