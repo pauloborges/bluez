@@ -2250,7 +2250,7 @@ bool gatt_load_from_storage(struct btd_device *device)
 	return true;
 }
 
-static void read_name_cb(struct btd_device *device,
+static void read_local_name_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result,
 				void *user_data)
@@ -2261,7 +2261,7 @@ static void read_name_cb(struct btd_device *device,
 	result(0, (uint8_t *) name, strlen(name), user_data);
 }
 
-static void read_appearance_cb(struct btd_device *device,
+static void read_local_appearance_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result,
 				void *user_data)
@@ -2281,12 +2281,12 @@ static void add_gap(void)
 
 	/* Declaration and Value: <<Device Name>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_DEVICE_NAME);
-	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_name_cb, NULL,
-					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_local_name_cb,
+				NULL, BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
 
 	/* Declaration and Value: <<Appearance>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
-	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_appearance_cb,
+	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_local_appearance_cb,
 				NULL, BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
 }
 
