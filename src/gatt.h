@@ -25,9 +25,9 @@ struct btd_attribute;
 
 /* Functions used by the core */
 
-void gatt_service_manager_init(void);
+void gatt_init(void);
 
-void gatt_service_manager_cleanup(void);
+void gatt_cleanup(void);
 
 int gatt_discover_attributes(struct btd_device *device, void *user_data,
 							GDestroyNotify destroy);
@@ -35,6 +35,8 @@ int gatt_discover_attributes(struct btd_device *device, void *user_data,
 void gatt_device_remove(struct btd_device *device);
 
 bool gatt_load_from_storage(struct btd_device *device);
+
+int btd_attribute_value_get(struct btd_attribute *attr, uint8_t *value, int buflen);
 
 /* Functions and declarations used by GATT based Profiles */
 
