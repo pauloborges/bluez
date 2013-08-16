@@ -1125,7 +1125,7 @@ static void read_char_destroy(void *user_data)
 	g_free(user_data);
 }
 
-static void read_char_cb(struct btd_device *device, struct btd_attribute *attr,
+static void read_external_char_cb(struct btd_device *device, struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
 	GDBusProxy *proxy;
@@ -1186,7 +1186,7 @@ static void write_char_destroy(void *user_data)
 	g_free(user_data);
 }
 
-static void write_char_cb(struct btd_device *device, struct btd_attribute *attr,
+static void write_external_char_cb(struct btd_device *device, struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
@@ -1412,8 +1412,9 @@ static void register_external_chars(gpointer a, gpointer b)
 	if (!g_str_has_prefix(echr->path, path))
 		return;
 
-	attr = btd_gatt_add_char(&echr->uuid, echr->properties, read_char_cb,
-					write_char_cb, echr->read_sec,
+	attr = btd_gatt_add_char(&echr->uuid, echr->properties,
+					read_external_char_cb,
+					write_external_char_cb, echr->read_sec,
 					echr->write_sec, echr->key_size);
 
 	attr_set_proxy(attr, echr->proxy);
