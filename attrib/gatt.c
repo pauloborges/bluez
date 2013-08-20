@@ -1308,8 +1308,8 @@ static unsigned int foreach_by_type(struct foreach_data *data, uint16_t start)
 								data, NULL);
 }
 
-unsigned int gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
-				bt_uuid_t *type, gatt_func_by_type_t func,
+guint gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
+				const bt_uuid_t *type, gatt_func_by_type_t func,
 				void *user_data, GDestroyNotify destroy)
 {
 	struct foreach_data *data;

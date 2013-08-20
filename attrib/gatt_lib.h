@@ -104,7 +104,7 @@ gboolean gatt_parse_record(const sdp_record_t *rec,
 					uint16_t *start, uint16_t *end);
 
 guint gatt_foreach_by_type(GAttrib *attrib, uint16_t start, uint16_t end,
-				bt_uuid_t *type, gatt_func_by_type_t func,
+				const bt_uuid_t *type, gatt_func_by_type_t func,
 				void *user_data, GDestroyNotify destroy);
 
 unsigned int gatt_foreach_by_info(GAttrib *attrib, uint16_t start,
