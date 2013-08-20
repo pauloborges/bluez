@@ -412,8 +412,8 @@ static void gatt_device_free(gpointer user_data)
  *
  * Returns a new attribute.
  */
-static struct btd_attribute *new_const_attribute(bt_uuid_t *type,
-							uint8_t *value,
+static struct btd_attribute *new_const_attribute(const bt_uuid_t *type,
+							const uint8_t *value,
 							uint16_t len)
 {
 	struct btd_attribute *attr = g_malloc0(sizeof(struct btd_attribute) +
@@ -426,7 +426,7 @@ static struct btd_attribute *new_const_attribute(bt_uuid_t *type,
 	return attr;
 }
 
-static struct btd_attribute *new_attribute(bt_uuid_t *type,
+static struct btd_attribute *new_attribute(const bt_uuid_t *type,
 						btd_attr_read_t read_cb,
 						btd_attr_write_t write_cb)
 {
