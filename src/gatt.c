@@ -440,22 +440,35 @@ void btd_gatt_remove_service(struct btd_attribute *service)
 	}
 }
 
-static GList *remote_get_chr_decl_node(struct btd_device *device,
-					struct btd_attribute *attr)
+static gint find_by_handle(gconstpointer a, gconstpointer b)
 {
-	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	const struct btd_attribute *attr = a;
+
+	return attr->handle - GPOINTER_TO_UINT(b);
+}
+
+static struct btd_attribute *find_declaration(GList *list, uint16_t handle)
+{
 	GList *l;
+	struct btd_attribute *decl = NULL, *attr;
 
-	for (l = g_list_find(gdev->database, attr); l;
-						l = g_list_previous(l)) {
-		struct btd_attribute *char_decl;
+	/*
+	 * Given a handle, this function returns the characteristic
+	 * declaration attribute which this attribute belongs to.
+	 * At this point, Descriptor/Value Attribute may not be inserted
+	 * in the database, search needs to be sequential.
+	 */
+	for (l = g_list_first(list); l; l = g_list_next(l)) {
+		attr = l->data;
 
-		char_decl = l->data;
-		if (is_characteristic(char_decl))
-			return l;
+		/* Characteristic Declaration ? */
+		if (is_characteristic(attr))
+			decl = attr;
+		else if (attr->handle >= handle)
+			break;
 	}
 
-	return NULL;
+	return decl;
 }
 
 static GList *get_chr_decl_node_from_attr(struct btd_attribute *attr)
@@ -1069,15 +1082,12 @@ static void database_store(struct btd_device *device, GList *database)
 }
 
 static struct btd_attribute *new_const_remote_attribute(uint16_t handle,
-						uint16_t type, uint8_t *value,
-						size_t vlen)
+					const bt_uuid_t *type, uint8_t *value,
+					size_t vlen)
 {
 	struct btd_attribute *attr;
-	bt_uuid_t uuid;
 
-	bt_uuid16_create(&uuid, type);
-
-	attr = new_const_attribute(&uuid, value, vlen);
+	attr = new_const_attribute(type, value, vlen);
 	attr->handle = handle;
 
 	return attr;
@@ -1118,8 +1128,7 @@ static void prim_service_create(uint8_t status, uint16_t handle,
 	if (status)
 		return;
 
-	attr = new_const_remote_attribute(handle, GATT_PRIM_SVC_UUID,
-							value, vlen);
+	attr = new_const_remote_attribute(handle, &primary_uuid, value, vlen);
 	remote_database_add(device, attr);
 }
 
@@ -1132,7 +1141,7 @@ static void snd_service_create(uint8_t status, uint16_t handle,
 	if (status)
 		return;
 
-	attr = new_const_remote_attribute(handle, GATT_SND_SVC_UUID,
+	attr = new_const_remote_attribute(handle, &secondary_uuid,
 							value, vlen);
 
 	remote_database_add(device, attr);
@@ -1154,8 +1163,7 @@ static void char_declaration_create(uint8_t status,
 		return;
 
 	/* Characteristic Declaration */
-	attr = new_const_remote_attribute(handle, GATT_CHARAC_UUID,
-							value, vlen);
+	attr = new_const_remote_attribute(handle, &chr_uuid, value, vlen);
 
 	remote_database_add(device, attr);
 
@@ -1203,12 +1211,17 @@ static void include_create(uint8_t status, uint16_t handle,
 }
 
 static struct btd_attribute *descriptor_create(uint16_t handle, bt_uuid_t *type,
+						uint8_t *value, size_t vlen,
 						struct btd_device *device)
 {
 	struct btd_attribute *attr;
 
-	attr = new_attribute(type, NULL, NULL);
-	attr->handle = handle;
+	if (value)
+		/* Constant descriptors */
+		attr = new_const_remote_attribute(handle, type, value, vlen);
+	else
+		/* FIXME: Missing read descriptors dynamically */
+		attr = new_remote_attribute(handle, type, NULL, NULL);
 
 	remote_database_add(device, attr);
 
@@ -1231,32 +1244,47 @@ static void descriptor_cb(uint8_t status, uint16_t handle,
 					bt_uuid_t *type, void *user_data)
 {
 	struct find_info *find = user_data;
+	struct gatt_device *gdev;
 	struct btd_attribute *attr, *decl;
-	GList *l;
-	bt_uuid_t uuid;
+	uint16_t enable;
 	uint8_t value[2];
+	bt_uuid_t uuid;
 
 	if (status)
 		return;
 
-	attr = descriptor_create(handle, type, find->device);
-
+	/* Descriptor: Others different than CCC */
 	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
-	if (bt_uuid_cmp(type, &uuid) != 0)
+	if (bt_uuid_cmp(type, &uuid) != 0) {
+		attr = descriptor_create(handle, type, NULL, 0, find->device);
 		return;
+	}
 
-	l = remote_get_chr_decl_node(find->device, attr);
-	if (!l) {
+	/* Descriptor: <<< Client Characteristic Configuration >>> */
+
+	gdev = g_hash_table_lookup(gatt_devices, find->device);
+
+	/* Finding Characteristic Declaration */
+	decl = find_declaration(gdev->database, handle);
+	if (!decl) {
 		error("Declaration not found");
 		return;
 	}
 
-	decl = l->data;
-
 	if (decl->value[0] & ATT_CHAR_PROPER_NOTIFY)
-		att_put_u16(CCC_NOTIFICATION_BIT, value);
+		enable = CCC_NOTIFICATION_BIT;
 	else if (decl->value[0] & ATT_CHAR_PROPER_INDICATE)
-		att_put_u16(CCC_INDICATION_BIT, value);
+		enable = CCC_INDICATION_BIT;
+	else
+		return;
+
+	/*
+	 * Enable automatically notification or indication if
+	 * the remote characteristic supports.
+	 */
+	att_put_u16(enable, &value);
+	attr = descriptor_create(handle, type, value, sizeof(value),
+						find->device);
 
 	btd_gatt_write_attribute(find->device, attr, value, sizeof(value),
 					0x00, remote_ccc_enabled, NULL);
@@ -1388,10 +1416,10 @@ bool gatt_load_from_storage(struct btd_device *device)
 				include_create(0, handle, buf, buflen, device);
 				break;
 			default:
-				descriptor_create(handle, &uuid, device);
+				descriptor_create(handle, &uuid, buf, buflen, device);
 			}
 		} else {
-			descriptor_create(handle, &uuid, device);
+			descriptor_create(handle, &uuid, buf, buflen, device);
 		}
 
 		g_free(valuestr);
@@ -1525,13 +1553,6 @@ static uint8_t check_attribute_security(struct btd_attribute *attr,
 		return ATT_ECODE_INSUFF_ENCR_KEY_SIZE;
 
 	return 0;
-}
-
-static gint find_by_handle(gconstpointer a, gconstpointer b)
-{
-	const struct btd_attribute *attr = a;
-
-	return attr->handle - GPOINTER_TO_UINT(b);
 }
 
 static void read_by_type_result(int err, uint8_t *value, size_t vlen,
