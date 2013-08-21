@@ -2274,27 +2274,13 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 	}
 }
 
-static void probe_profiles(gpointer user_data)
+static GSList *database_get_profiles(GList *database)
 {
-	struct find_info *find = user_data;
-	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices,
-							find->device);
 	GList *list;
 	GSList *profiles = NULL;
 	bt_uuid_t uuid128;
 
-	find->refcount--;
-	/*
-	 * Find Info Transactions pending? Device probe must
-	 * be called when descriptor discovery finishes.
-	 */
-	if (find->refcount > 0)
-		return;
-
-	if (gdev->database == NULL)
-		goto done;
-
-	for (list = gdev->database; list; list = g_list_next(list)) {
+	for (list = database; list; list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
 		char str[MAX_LEN_UUID_STR];
 
@@ -2313,15 +2299,37 @@ static void probe_profiles(gpointer user_data)
 		DBG("Profile: %s", str);
 	}
 
+	return profiles;
+}
+
+static void probe_profiles(gpointer user_data)
+{
+	struct find_info *find = user_data;
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices,
+							find->device);
+	GSList *profiles;
+
+	find->refcount--;
+	/*
+	 * Find Info Transactions pending? Device probe must
+	 * be called when descriptor discovery finishes.
+	 */
+	if (find->refcount > 0)
+		return;
+
+	if (gdev->database == NULL)
+		goto done;
+
 	register_objects(find->device, gdev);
 
+	profiles = database_get_profiles(gdev->database);
 	device_probe_profiles(find->device, profiles);
+	g_slist_free_full(profiles, g_free);
+
 	if (gdev->out == FALSE)
 		/* Incoming connection */
 		btd_device_service_foreach(find->device,
 					connecting_complete, gdev);
-
-	g_slist_free_full(profiles, g_free);
 
 	dump_database(gdev->database);
 
