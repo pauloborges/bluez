@@ -2278,7 +2278,7 @@ static GSList *database_get_profiles(GList *database)
 {
 	GList *list;
 	GSList *profiles = NULL;
-	bt_uuid_t uuid128;
+	bt_uuid_t uuid;
 
 	for (list = database; list; list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
@@ -2287,14 +2287,11 @@ static GSList *database_get_profiles(GList *database)
 		if (bt_uuid_cmp(&attr->type, &primary_uuid) != 0)
 			continue;
 
-		if (attr->value_len == 2) {
-			bt_uuid_t uuid16 = att_get_uuid16(attr->value);
-			bt_uuid_to_uuid128(&uuid16, &uuid128);
-		} else {
-			uuid128 = att_get_uuid128(attr->value);
-		}
+		uuid = (attr->value_len == 2 ?
+				att_get_uuid16(attr->value) :
+				att_get_uuid128(attr->value));
 
-		bt_uuid_to_string(&uuid128, str, MAX_LEN_UUID_STR);
+		bt_uuid_to_128string(&uuid, str, MAX_LEN_UUID_STR);
 		profiles = g_slist_append(profiles, g_strdup(str));
 		DBG("Profile: %s", str);
 	}
