@@ -155,11 +155,12 @@ int bt_uuid32_create(bt_uuid_t *btuuid, uint32_t value);
 int bt_uuid128_create(bt_uuid_t *btuuid, uint128_t value);
 
 int bt_uuid_cmp(const bt_uuid_t *uuid1, const bt_uuid_t *uuid2);
-void bt_uuid_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst);
+int bt_uuid_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst);
 
 #define MAX_LEN_UUID_STR 37
 
 int bt_uuid_to_string(const bt_uuid_t *uuid, char *str, size_t n);
+int bt_uuid_to_128string(const bt_uuid_t *uuid, char *str, size_t n);
 int bt_string_to_uuid(bt_uuid_t *uuid, const char *string);
 
 int bt_uuid_len(const bt_uuid_t *uuid);

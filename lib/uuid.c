@@ -70,7 +70,7 @@ static void bt_uuid32_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst)
 				&src->value.u32, sizeof(src->value.u32));
 }
 
-void bt_uuid_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst)
+int bt_uuid_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst)
 {
 	switch (src->type) {
 	case BT_UUID128:
@@ -83,8 +83,10 @@ void bt_uuid_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst)
 		bt_uuid16_to_uuid128(src, dst);
 		break;
 	default:
-		break;
+		return -EINVAL;
 	}
+
+	return 0;
 }
 
 static int bt_uuid128_cmp(const bt_uuid_t *u1, const bt_uuid_t *u2)
@@ -176,6 +178,48 @@ int bt_uuid_to_string(const bt_uuid_t *uuid, char *str, size_t n)
 		snprintf(str, n, "Type of UUID (%x) unknown.", uuid->type);
 		return -EINVAL;	/* Enum type of UUID not set */
 	}
+
+	return 0;
+}
+
+int bt_uuid_to_128string(const bt_uuid_t *uuid, char *str, size_t n)
+{
+	bt_uuid_t uuid128;
+	unsigned int   data0;
+	unsigned short data1;
+	unsigned short data2;
+	unsigned short data3;
+	unsigned int   data4;
+	unsigned short data5;
+	uint128_t nvalue;
+	const uint8_t *data = (uint8_t *) &nvalue;
+	int ret;
+
+	if (!uuid) {
+		snprintf(str, n, "NULL");
+		return -EINVAL;
+	}
+
+	memset(&uuid128, 0, sizeof(uuid128));
+	ret = bt_uuid_to_uuid128(uuid, &uuid128);
+	if (ret < 0) {
+		snprintf(str, n, "Type of UUID (%x) unknown.", uuid->type);
+		return ret;
+	}
+
+	hton128(&uuid128.value.u128, &nvalue);
+
+	memcpy(&data0, &data[0], 4);
+	memcpy(&data1, &data[4], 2);
+	memcpy(&data2, &data[6], 2);
+	memcpy(&data3, &data[8], 2);
+	memcpy(&data4, &data[10], 4);
+	memcpy(&data5, &data[14], 2);
+
+	snprintf(str, n, "%.8x-%.4x-%.4x-%.4x-%.8x%.4x",
+			ntohl(data0), ntohs(data1),
+			ntohs(data2), ntohs(data3),
+			ntohl(data4), ntohs(data5));
 
 	return 0;
 }
