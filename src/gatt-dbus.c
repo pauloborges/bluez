@@ -79,6 +79,10 @@ struct attribute_iface {
 	struct btd_device *device;
 	struct btd_attribute *attr;
 	char *uuid;
+	char *path;
+	uint8_t *value;
+	size_t vlen;
+	unsigned int watch;
 };
 
 struct external_read_data {
@@ -150,7 +154,12 @@ static void iface_destroy(gpointer user_data)
 	struct attribute_iface *iface = user_data;
 	attr_remove_proxy(iface->attr);
 
+	if (iface->watch)
+		btd_gatt_remove_notifier(iface->attr, iface->watch);
+
 	g_free(iface->uuid);
+	g_free(iface->path);
+	g_free(iface->value);
 	g_free(iface);
 }
 
@@ -777,7 +786,12 @@ static gboolean chr_get_uuid(const GDBusPropertyTable *property,
 static gboolean chr_get_value(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	/* FIXME: */
+	struct attribute_iface *iface = data;
+
+	if (iface->value)
+		dbus_message_iter_append_fixed_array(iter, DBUS_TYPE_BYTE,
+					&iface->value, iface->vlen);
+
 	return TRUE;
 }
 
@@ -802,7 +816,6 @@ static gboolean chr_get_props(const GDBusPropertyTable *property,
 	struct btd_attribute *attr = iface->attr;
 	uint8_t prop;
 
-
 	btd_attribute_value_get(attr, &prop, sizeof(prop));
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &prop);
@@ -813,7 +826,7 @@ static gboolean chr_get_props(const GDBusPropertyTable *property,
 static gboolean chr_exist_props(const GDBusPropertyTable *property,
 								void *data)
 {
-	return TRUE;
+	return FALSE;
 }
 
 static gboolean chr_get_descriptors(const GDBusPropertyTable *property,
@@ -854,13 +867,14 @@ char *gatt_dbus_service_register(struct btd_device *device, uint16_t handle,
 	char *path;
 	gboolean ret;
 
+	path = g_strdup_printf("%s/service%d", device_get_path(device),
+								handle);
+
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
 	iface->device = device;
 	iface->uuid = g_strdup(uuid128);
-
-	path = g_strdup_printf("%s/service%d", device_get_path(device),
-								handle);
+	iface->path = g_strdup(path);
 
 	ret = g_dbus_register_interface(btd_get_dbus_connection(),
 					path, SERVICE_INTERFACE,
@@ -873,6 +887,7 @@ char *gatt_dbus_service_register(struct btd_device *device, uint16_t handle,
 	error("Unable to register service interface for %s", path);
 
 	g_free(path);
+	iface_destroy(iface);
 
 	return NULL;
 }
@@ -883,35 +898,55 @@ void gatt_dbus_service_unregister(const char *path)
 					path, SERVICE_INTERFACE);
 }
 
+static bool chr_value_changed(uint8_t *value, size_t len, void *user_data)
+{
+	struct attribute_iface *iface = user_data;
+
+	if (iface->value)
+		g_free(iface->value);
+
+	iface->value = g_memdup(value, len);
+	iface->vlen = len;
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), iface->path,
+					CHARACTERISTIC_INTERFACE, "Value");
+
+	return true;
+}
+
 char *gatt_dbus_characteristic_register(struct btd_device *device,
-					const char *service_path,
-					uint16_t handle, const char *uuid128,
-					struct btd_attribute *attr)
+		const char *service_path,
+		uint16_t handle, const char *uuid128,
+		struct btd_attribute *attr)
 {
 	struct attribute_iface *iface;
 	char *path;
 	gboolean ret;
 
+	path = g_strdup_printf("%s/characteristics%d", service_path, handle);
+
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
 	iface->device = device;
 	iface->uuid = g_strdup(uuid128);
-
-	path = g_strdup_printf("%s/characteristics%d", service_path, handle);
+	iface->path = g_strdup(path);
 
 	ret = g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
 					iface, iface_destroy);
 
-	if (ret == TRUE)
-		return path;
+	if (ret == FALSE) {
+		error("Unable to register Characteristic interface for %s",
+									path);
+		g_free(path);
+		iface_destroy(iface);
+		return NULL;
+	}
 
-	error("Unable to register Characteristic interface for %s", path);
+	iface->watch = btd_gatt_add_notifier(attr, chr_value_changed, iface);
 
-	g_free(path);
-
-	return NULL;
+	return path;
 }
 
 void gatt_dbus_characteristic_unregister(const char *path)
