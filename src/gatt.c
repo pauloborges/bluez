@@ -2282,7 +2282,7 @@ static GSList *database_get_profiles(GList *database)
 
 	for (list = database; list; list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
-		char str[MAX_LEN_UUID_STR];
+		char *str;
 
 		if (bt_uuid_cmp(&attr->type, &primary_uuid) != 0)
 			continue;
@@ -2291,8 +2291,9 @@ static GSList *database_get_profiles(GList *database)
 				att_get_uuid16(attr->value) :
 				att_get_uuid128(attr->value));
 
+		str = g_malloc(MAX_LEN_UUID_STR);
 		bt_uuid_to_128string(&uuid, str, MAX_LEN_UUID_STR);
-		profiles = g_slist_append(profiles, g_strdup(str));
+		profiles = g_slist_append(profiles, str);
 		DBG("Profile: %s", str);
 	}
 
