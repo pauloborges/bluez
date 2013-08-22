@@ -693,11 +693,8 @@ static DBusMessage *remote_chr_read_value(DBusConnection *conn, DBusMessage *msg
 							void *user_data)
 {
 	struct attribute_iface *iface = user_data;
-	struct btd_attribute *value;
 
-	value = btd_gatt_get_char_value(iface->device, iface->attr);
-
-	btd_gatt_read_attribute(iface->device, value,
+	btd_gatt_read_attribute(iface->device, iface->attr,
 				read_value_response, dbus_message_ref(msg));
 
 	return NULL;
