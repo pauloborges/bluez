@@ -82,6 +82,7 @@ struct attribute_iface {
 	char *path;
 	uint8_t *value;
 	size_t vlen;
+	uint8_t properties;
 	unsigned int watch;
 };
 
@@ -813,12 +814,9 @@ static gboolean chr_get_props(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
 	struct attribute_iface *iface = data;
-	struct btd_attribute *attr = iface->attr;
-	uint8_t prop;
 
-	btd_attribute_value_get(attr, &prop, sizeof(prop));
-
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &prop);
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE,
+						&iface->properties);
 
 	return TRUE;
 }
@@ -915,9 +913,10 @@ static bool chr_value_changed(uint8_t *value, size_t len, void *user_data)
 }
 
 char *gatt_dbus_characteristic_register(struct btd_device *device,
-		const char *service_path,
-		uint16_t handle, const char *uuid128,
-		struct btd_attribute *attr)
+				const char *service_path,
+				uint16_t handle, const char *uuid128,
+				uint8_t properties,
+				struct btd_attribute *attr)
 {
 	struct attribute_iface *iface;
 	char *path;
@@ -930,6 +929,7 @@ char *gatt_dbus_characteristic_register(struct btd_device *device,
 	iface->device = device;
 	iface->uuid = g_strdup(uuid128);
 	iface->path = g_strdup(path);
+	iface->properties = properties;
 
 	ret = g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,

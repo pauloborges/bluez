@@ -34,5 +34,6 @@ void gatt_dbus_service_unregister(const char *path);
 char *gatt_dbus_characteristic_register(struct btd_device *device,
 					const char *service_path,
 					uint16_t handle, const char *uuid128,
+					uint8_t properties,
 					struct btd_attribute *attr);
 void gatt_dbus_characteristic_unregister(const char *path);
