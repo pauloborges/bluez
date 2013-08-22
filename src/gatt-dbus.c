@@ -783,10 +783,16 @@ static gboolean chr_get_value(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
 	struct attribute_iface *iface = data;
+	DBusMessageIter array;
+
+	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_BYTE_AS_STRING, &array);
 
 	if (iface->value)
-		dbus_message_iter_append_fixed_array(iter, DBUS_TYPE_BYTE,
-					&iface->value, iface->vlen);
+		dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
+						&iface->value, iface->vlen);
+
+	dbus_message_iter_close_container(iter, &array);
 
 	return TRUE;
 }
@@ -802,7 +808,7 @@ static void chr_set_value(const GDBusPropertyTable *property,
 static gboolean chr_exist_value(const GDBusPropertyTable *property,
 								void *data)
 {
-	return FALSE;
+	return TRUE;
 }
 
 static gboolean chr_get_props(const GDBusPropertyTable *property,
