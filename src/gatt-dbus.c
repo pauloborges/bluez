@@ -819,7 +819,7 @@ static gboolean chr_get_props(const GDBusPropertyTable *property,
 static gboolean chr_exist_props(const GDBusPropertyTable *property,
 								void *data)
 {
-	return FALSE;
+	return TRUE;
 }
 
 static gboolean chr_get_descriptors(const GDBusPropertyTable *property,
