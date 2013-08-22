@@ -461,43 +461,43 @@ static struct btd_attribute *find_declaration(GList *list, uint16_t handle)
 	for (l = g_list_first(list); l; l = g_list_next(l)) {
 		attr = l->data;
 
+		if (attr->handle >= handle)
+			break;
+
 		/* Characteristic Declaration ? */
 		if (is_characteristic(attr))
 			decl = attr;
-		else if (attr->handle >= handle)
-			break;
 	}
 
 	return decl;
 }
 
-static GList *get_chr_decl_node_from_attr(struct btd_attribute *attr)
+static struct btd_attribute *find_value(struct btd_attribute *desc)
 {
 	GList *l;
 
-	for (l = g_list_find(local_attribute_db, attr); l;
+	/*
+	 * Characteristic Value Attribute is always the next
+	 * attribute after the Characteristic Declaration attribute.
+	 * << Characteristic >>: Declaration
+	 *     << UUID >>: Characteristic UUID
+	 *     << Descriptors 1 >>: Characteristic Descriptors
+	 */
+	for (l = g_list_find(local_attribute_db, desc); l;
 						l = g_list_previous(l)) {
-		struct btd_attribute *char_decl;
+		GList *next;
 
-		char_decl = l->data;
-		if (is_characteristic(char_decl))
-			break;
+		/* Characteristic Declaration? */
+		if (!is_characteristic(l->data))
+			continue;
+
+		/* Characteristic Value */
+		next = g_list_next(l);
+
+		return (next ? next->data : NULL);
 	}
 
-	return l;
-}
-
-static struct btd_attribute *get_chr_value_from_desc(struct btd_attribute *desc)
-{
-	GList *l = get_chr_decl_node_from_attr(desc);
-
-	if (!l) {
-		error("Declaration not found");
-		return NULL;
-	}
-
-	l = g_list_next(l);
-	return l->data;
+	return NULL;
 }
 
 static void read_ccc_cb(struct btd_device *device,
@@ -510,7 +510,7 @@ static void read_ccc_cb(struct btd_device *device,
 	uint8_t value[2];
 	uint16_t ccc;
 
-	char_value = get_chr_value_from_desc(attr);
+	char_value = find_value(attr);
 	if (char_value == NULL) {
 		DBG("CCC 0x%04x: Characteristic declaration missing",
 							attr->handle);
@@ -563,7 +563,7 @@ static void write_ccc_cb(struct btd_device *device,
 		return;
 	}
 
-	char_value = get_chr_value_from_desc(attr);
+	char_value = find_value(attr);
 	if (char_value == NULL) {
 		DBG("CCC 0x%04x: Characteristic declaration missing",
 							attr->handle);
