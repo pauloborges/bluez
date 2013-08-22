@@ -729,7 +729,6 @@ static DBusMessage *remote_chr_write_value(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
 	struct attribute_iface *iface = user_data;
-	struct btd_attribute *attr;
 	DBusMessageIter args, iter;
 	const uint8_t *value;
 	uint16_t offset;
@@ -752,9 +751,8 @@ static DBusMessage *remote_chr_write_value(DBusConnection *conn,
 
 	dbus_message_iter_get_fixed_array(&iter, &value, &len);
 
-	attr = btd_gatt_get_char_value(iface->device, iface->attr);
-
-	btd_gatt_write_attribute(iface->device, attr, (uint8_t *) value, len,
+	btd_gatt_write_attribute(iface->device, iface->attr,
+					(uint8_t *) value, len,
 					offset, write_value_response,
 					dbus_message_ref(msg));
 
