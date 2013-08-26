@@ -1216,12 +1216,15 @@ static struct btd_attribute *descriptor_create(uint16_t handle, bt_uuid_t *type,
 {
 	struct btd_attribute *attr;
 
-	if (value)
-		/* Constant descriptors */
-		attr = new_const_remote_attribute(handle, type, value, vlen);
-	else
-		/* FIXME: Missing read descriptors dynamically */
-		attr = new_remote_attribute(handle, type, NULL, NULL);
+	/*
+	 * For descriptors (specially CCC), default value should be set.
+	 * Some descriptors may not be readable or writeable, the upper-layer
+	 * defines its requirements. Read callback has higher priority
+	 * than the local cached value, see btd_gatt_read_attribute().
+	 */
+	attr = new_const_remote_attribute(handle, type, value, vlen);
+	attr->write_cb = remote_write_attribute_cb;
+	attr->read_cb = remote_read_attribute_cb;
 
 	remote_database_add(device, attr);
 
