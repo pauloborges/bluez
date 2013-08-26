@@ -193,7 +193,6 @@ static void read_external_char_cb(struct btd_device *device, struct btd_attribut
 				btd_attr_read_result_t result, void *user_data)
 {
 	GDBusProxy *proxy;
-	const char *path;
 	struct external_read_data *rdata;
 
 	rdata = g_new0(struct external_read_data, 1);
@@ -201,7 +200,6 @@ static void read_external_char_cb(struct btd_device *device, struct btd_attribut
 	rdata->user_data = user_data;
 
 	proxy = g_hash_table_lookup(proxy_hash, attr);
-	path = g_dbus_proxy_get_path(proxy);
 
 	if (!g_dbus_proxy_method_call(proxy, "ReadValue",
 						read_char_setup,
@@ -214,7 +212,8 @@ static void read_external_char_cb(struct btd_device *device, struct btd_attribut
 		return;
 	}
 
-	DBG("Server: Read characteristic callback %s", path);
+	DBG("Server: Read characteristic callback %s",
+					g_dbus_proxy_get_path(proxy));
 }
 
 static void write_char_setup(DBusMessageIter *iter, void *user_data)
@@ -255,7 +254,6 @@ static void write_external_char_cb(struct btd_device *device, struct btd_attribu
 			btd_attr_write_result_t result, void *user_data)
 {
 	GDBusProxy *proxy;
-	const char *path;
 	struct external_write_data *wdata;
 
 	wdata = g_new0(struct external_write_data, 1);
@@ -266,7 +264,6 @@ static void write_external_char_cb(struct btd_device *device, struct btd_attribu
 	wdata->user_data = user_data;
 
 	proxy = g_hash_table_lookup(proxy_hash, attr);
-	path = g_dbus_proxy_get_path(proxy);
 
 	if (!g_dbus_proxy_method_call(proxy, "WriteValue",
 					write_char_setup,
@@ -279,7 +276,8 @@ static void write_external_char_cb(struct btd_device *device, struct btd_attribu
 		return;
 	}
 
-	DBG("Server: Write characteristic callback %s", path);
+	DBG("Server: Write characteristic callback %s",
+					g_dbus_proxy_get_path(proxy));
 }
 
 static int service_path_cmp(gconstpointer a, gconstpointer b)
