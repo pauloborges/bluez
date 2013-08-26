@@ -2033,7 +2033,8 @@ static void value_changed(struct gatt_device *gdev, const uint8_t *ipdu,
 	uint16_t handle = att_get_u16(&ipdu[1]);
 	gpointer key, value;
 	bool cfm = true;
-	char *path = g_hash_table_lookup(gdev->chr_objs, &handle);
+	char *path = g_hash_table_lookup(gdev->chr_objs,
+					GINT_TO_POINTER(handle));
 
 	/* Correct PDU for Indication/Notification has at least: opcode
 	 * (1 octet) + handle (2 octets) + value parameter (can be 0 or more
