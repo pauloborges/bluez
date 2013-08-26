@@ -866,7 +866,7 @@ char *gatt_dbus_service_register(struct btd_device *device, uint16_t handle,
 	char *path;
 	gboolean ret;
 
-	path = g_strdup_printf("%s/service%d", device_get_path(device),
+	path = g_strdup_printf("%s/service%04X", device_get_path(device),
 								handle);
 
 	iface = g_new0(struct attribute_iface, 1);
@@ -923,7 +923,7 @@ char *gatt_dbus_characteristic_register(struct btd_device *device,
 	char *path;
 	gboolean ret;
 
-	path = g_strdup_printf("%s/characteristics%d", service_path, handle);
+	path = g_strdup_printf("%s/characteristics%04X", service_path, handle);
 
 	iface = g_new0(struct attribute_iface, 1);
 	iface->attr = attr;
