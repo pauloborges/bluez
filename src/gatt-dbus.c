@@ -99,61 +99,15 @@ struct external_write_data {
 	void *user_data;
 };
 
-struct attr_proxy {
-	struct btd_attribute *attr;
-	GDBusProxy *proxy;
-};
-
 static GSList *external_apps = NULL;
-static GSList *attr_proxy_list = NULL;
-
-static void attr_set_proxy(struct btd_attribute *attr, GDBusProxy *proxy)
-{
-	struct attr_proxy *attr_proxy;
-
-	attr_proxy = g_new0(struct attr_proxy, 1);
-
-	attr_proxy->proxy = g_dbus_proxy_ref(proxy);
-	attr_proxy->attr = attr;
-
-	attr_proxy_list = g_slist_append(attr_proxy_list, attr_proxy);
-}
-
-static GDBusProxy *attr_get_proxy(struct btd_attribute *attr)
-{
-	GSList *list;
-
-	for (list = attr_proxy_list; list; list = g_slist_next(list)) {
-		struct attr_proxy *attr_proxy = list->data;
-
-		if (attr_proxy->attr == attr)
-			return attr_proxy->proxy;
-	}
-
-	return NULL;
-}
-
-static void attr_remove_proxy(struct btd_attribute *attr)
-{
-	GSList *list;
-
-	for (list = attr_proxy_list; list; list = g_slist_next(list)) {
-		struct attr_proxy *attr_proxy = list->data;
-
-		if (attr_proxy->attr == attr) {
-			attr_proxy_list = g_slist_remove(attr_proxy_list,
-								attr_proxy);
-			g_dbus_proxy_unref(attr_proxy->proxy);
-			g_free(attr_proxy);
-			return;
-		}
-	}
-}
+static GHashTable *proxy_hash = NULL;
 
 static void iface_destroy(gpointer user_data)
 {
 	struct attribute_iface *iface = user_data;
-	attr_remove_proxy(iface->attr);
+
+	if (proxy_hash)
+		g_hash_table_remove(proxy_hash, iface->attr);
 
 	if (iface->watch)
 		btd_gatt_remove_notifier(iface->attr, iface->watch);
@@ -246,7 +200,7 @@ static void read_external_char_cb(struct btd_device *device, struct btd_attribut
 	rdata->func = result;
 	rdata->user_data = user_data;
 
-	proxy = attr_get_proxy(attr);
+	proxy = g_hash_table_lookup(proxy_hash, attr);
 	path = g_dbus_proxy_get_path(proxy);
 
 	if (!g_dbus_proxy_method_call(proxy, "ReadValue",
@@ -311,7 +265,7 @@ static void write_external_char_cb(struct btd_device *device, struct btd_attribu
 	wdata->offset = offset;
 	wdata->user_data = user_data;
 
-	proxy = attr_get_proxy(attr);
+	proxy = g_hash_table_lookup(proxy_hash, attr);
 	path = g_dbus_proxy_get_path(proxy);
 
 	if (!g_dbus_proxy_method_call(proxy, "WriteValue",
@@ -527,7 +481,7 @@ static void register_external_chars(gpointer a, gpointer b)
 					write_external_char_cb, echr->read_sec,
 					echr->write_sec, echr->key_size);
 
-	attr_set_proxy(attr, echr->proxy);
+	g_hash_table_insert(proxy_hash, attr, g_dbus_proxy_ref(echr->proxy));
 
 	DBG("new char %s", echr->path);
 }
@@ -958,6 +912,10 @@ void gatt_dbus_characteristic_unregister(const char *path)
 
 gboolean gatt_dbus_manager_register(void)
 {
+
+	proxy_hash = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+				NULL, (GDestroyNotify) g_dbus_proxy_unref);
+
 	return g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
@@ -965,6 +923,9 @@ gboolean gatt_dbus_manager_register(void)
 
 void gatt_dbus_manager_unregister(void)
 {
+	g_hash_table_destroy(proxy_hash);
+	proxy_hash = NULL;
+
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.gatt.ServiceManager1");
 
