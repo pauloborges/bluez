@@ -2591,7 +2591,6 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	char src[18], dst[18];
 	bdaddr_t sba;
 	bdaddr_t dba;
-	int err = 0;
 
 	bt_io_get(io, NULL,
 			BT_IO_OPT_SOURCE_BDADDR, &sba,
@@ -2618,9 +2617,9 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	}
 
 	if (gerr) {
-		err = gerr->code;
 		error("ATT Connect: %s", gerr->message);
-		goto done;
+		btd_service_connecting_complete(service, gerr->code);
+		return;
 	}
 
 	gdev->out = TRUE;
@@ -2643,26 +2642,24 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		return;
 	}
 
-	if (gdev->database) {
-		/* Attributes already discovered, we may continue informing
-		 * the services that the device is connected
-		 */
-		DBG("Skipping attribute discovery");
-		goto done;
+	if (gdev->database == NULL) {
+		/* Trigger attributes discovery */
+		gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff,
+				&primary_uuid, prim_service_create,
+				device, prim_service_complete);
+		return;
 	}
 
-	/* Trigger attributes discovery */
+	/*
+	 * Attributes already discovered, we may continue
+	 * informing the services that the device is connected
+	 */
 
-	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &primary_uuid,
-				prim_service_create, device,
-				prim_service_complete);
+	DBG("Skipping attribute discovery");
 
-	return;
-
-done:
 	device_probe_profiles(device, NULL);
 
-	btd_service_connecting_complete(service, err);
+	btd_service_connecting_complete(service, 0);
 
 	gdev->attrib = g_attrib_ref(gdev->attrib);
 	gdev->services = g_slist_append(gdev->services,
