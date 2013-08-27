@@ -1467,7 +1467,11 @@ static void read_local_appearance_cb(struct btd_device *device,
 				btd_attr_read_result_t result,
 				void *user_data)
 {
-	uint8_t appearance[] = { 0x00, 0x00 };
+	uint32_t cls = btd_adapter_get_class(btd_adapter_get_default());
+	uint8_t appearance[2];
+
+	appearance[0] = cls;
+	appearance[1] = (cls >> 8) & 0x1f; /* Remove service class */
 
 	result(0, appearance, sizeof(appearance), user_data);
 }
