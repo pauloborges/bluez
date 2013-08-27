@@ -265,7 +265,7 @@ static struct gatt_device *gatt_device_new(struct btd_device *device)
 	char srcaddr[18], dstaddr[18];
 	const bdaddr_t *src, *dst;
 
-	src = adapter_get_address(adapter);
+	src = btd_adapter_get_address(adapter);
 	ba2str(src, srcaddr);
 
 	dst = device_get_address(device);
