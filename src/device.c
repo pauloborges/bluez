@@ -2896,7 +2896,7 @@ static int device_browse_primary(struct btd_device *device, DBusMessage *msg)
 	 * reference by the time gatt_discovery_finished() is called. */
 	err = gatt_discover_attributes(device, device, gatt_discovery_finished);
 	if (err < 0) {
-		gatt_discovery_finished(req);
+		gatt_discovery_finished(device);
 		return err;
 	}
 
