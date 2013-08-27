@@ -62,9 +62,6 @@
 #include "glib-helper.h"
 #include "agent.h"
 #include "storage.h"
-#include "attrib/gattrib.h"
-#include "attrib/att.h"
-#include "attrib/gatt_lib.h"
 #include "eir.h"
 
 #define ADAPTER_INTERFACE	"org.bluez.Adapter1"
@@ -3027,59 +3024,6 @@ static void convert_file(char *file, char *address,
 	textfile_foreach(filename, convert_entry, &converter);
 }
 
-static gboolean record_has_uuid(const sdp_record_t *rec,
-				const char *profile_uuid)
-{
-	sdp_list_t *pat;
-
-	for (pat = rec->pattern; pat != NULL; pat = pat->next) {
-		char *uuid;
-		int ret;
-
-		uuid = bt_uuid2string(pat->data);
-		if (!uuid)
-			continue;
-
-		ret = strcasecmp(uuid, profile_uuid);
-
-		g_free(uuid);
-
-		if (ret == 0)
-			return TRUE;
-	}
-
-	return FALSE;
-}
-
-static void store_attribute_uuid(GKeyFile *key_file, uint16_t start,
-					uint16_t end, char *att_uuid,
-					uuid_t uuid)
-{
-	char handle[6], uuid_str[33];
-	int i;
-
-	switch (uuid.type) {
-	case SDP_UUID16:
-		sprintf(uuid_str, "%4.4X", uuid.value.uuid16);
-		break;
-	case SDP_UUID32:
-		sprintf(uuid_str, "%8.8X", uuid.value.uuid32);
-		break;
-	case SDP_UUID128:
-		for (i = 0; i < 16; i++)
-			sprintf(uuid_str + (i * 2), "%2.2X",
-					uuid.value.uuid128.data[i]);
-		break;
-	default:
-		uuid_str[0] = '\0';
-	}
-
-	sprintf(handle, "%hu", start);
-	g_key_file_set_string(key_file, handle, "UUID", att_uuid);
-	g_key_file_set_string(key_file, handle, "Value", uuid_str);
-	g_key_file_set_integer(key_file, handle, "EndGroupHandle", end);
-}
-
 static void store_sdp_record(char *local, char *peer, int handle, char *value)
 {
 	char filename[PATH_MAX + 1];
@@ -3115,15 +3059,8 @@ static void convert_sdp_entry(char *key, char *value, void *user_data)
 	char type = BDADDR_BREDR;
 	int handle, ret;
 	char filename[PATH_MAX + 1];
-	GKeyFile *key_file;
 	struct stat st;
-	sdp_record_t *rec;
-	uuid_t uuid;
-	char *att_uuid, *prim_uuid;
-	uint16_t start = 0, end = 0, psm = 0;
 	int err;
-	char *data;
-	gsize length = 0;
 
 	ret = sscanf(key, "%17s#%hhu#%08X", dst_addr, &type, &handle);
 	if (ret < 3) {
@@ -3146,127 +3083,6 @@ static void convert_sdp_entry(char *key, char *value, void *user_data)
 
 	/* store device records in cache */
 	store_sdp_record(src_addr, dst_addr, handle, value);
-
-	/* Retrieve device record and check if there is an
-	 * attribute entry in it */
-	sdp_uuid16_create(&uuid, ATT_UUID);
-	att_uuid = bt_uuid2string(&uuid);
-
-	sdp_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	prim_uuid = bt_uuid2string(&uuid);
-
-	rec = record_from_string(value);
-
-	if (record_has_uuid(rec, att_uuid))
-		goto failed;
-
-	if (!gatt_parse_record(rec, &uuid, &psm, &start, &end))
-		goto failed;
-
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attributes", src_addr,
-								dst_addr);
-	filename[PATH_MAX] = '\0';
-
-	key_file = g_key_file_new();
-	g_key_file_load_from_file(key_file, filename, 0, NULL);
-
-	store_attribute_uuid(key_file, start, end, prim_uuid, uuid);
-
-	data = g_key_file_to_data(key_file, &length, NULL);
-	if (length > 0) {
-		create_file(filename, S_IRUSR | S_IWUSR);
-		g_file_set_contents(filename, data, length, NULL);
-	}
-
-	g_free(data);
-	g_key_file_free(key_file);
-
-failed:
-	sdp_record_free(rec);
-	g_free(prim_uuid);
-	g_free(att_uuid);
-}
-
-static void convert_primaries_entry(char *key, char *value, void *user_data)
-{
-	char *address = user_data;
-	int device_type = -1;
-	uuid_t uuid;
-	char **services, **service, *prim_uuid;
-	char filename[PATH_MAX + 1];
-	GKeyFile *key_file;
-	int ret;
-	uint16_t start, end;
-	char uuid_str[MAX_LEN_UUID_STR + 1];
-	char *data;
-	gsize length = 0;
-
-	if (strchr(key, '#')) {
-		key[17] = '\0';
-		device_type = key[18] - '0';
-	}
-
-	if (bachk(key) != 0)
-		return;
-
-	services = g_strsplit(value, " ", 0);
-	if (services == NULL)
-		return;
-
-	sdp_uuid16_create(&uuid, GATT_PRIM_SVC_UUID);
-	prim_uuid = bt_uuid2string(&uuid);
-
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attributes", address,
-									key);
-	filename[PATH_MAX] = '\0';
-
-	key_file = g_key_file_new();
-	g_key_file_load_from_file(key_file, filename, 0, NULL);
-
-	for (service = services; *service; service++) {
-		ret = sscanf(*service, "%04hX#%04hX#%s", &start, &end,
-								uuid_str);
-		if (ret < 3)
-			continue;
-
-		bt_string2uuid(&uuid, uuid_str);
-		sdp_uuid128_to_uuid(&uuid);
-
-		store_attribute_uuid(key_file, start, end, prim_uuid, uuid);
-	}
-
-	g_strfreev(services);
-
-	data = g_key_file_to_data(key_file, &length, NULL);
-	if (length == 0)
-		goto end;
-
-	create_file(filename, S_IRUSR | S_IWUSR);
-	g_file_set_contents(filename, data, length, NULL);
-
-	if (device_type < 0)
-		goto end;
-
-	g_free(data);
-	g_key_file_free(key_file);
-
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/info", address, key);
-	filename[PATH_MAX] = '\0';
-
-	key_file = g_key_file_new();
-	g_key_file_load_from_file(key_file, filename, 0, NULL);
-	set_device_type(key_file, device_type);
-
-	data = g_key_file_to_data(key_file, &length, NULL);
-	if (length > 0) {
-		create_file(filename, S_IRUSR | S_IWUSR);
-		g_file_set_contents(filename, data, length, NULL);
-	}
-
-end:
-	g_free(data);
-	g_free(prim_uuid);
-	g_key_file_free(key_file);
 }
 
 static void convert_ccc_entry(char *key, char *value, void *user_data)
@@ -3440,11 +3256,6 @@ static void convert_device_storage(struct btd_adapter *adapter)
 
 	/* Convert profiles */
 	convert_file("profiles", address, convert_profiles_entry, TRUE);
-
-	/* Convert primaries */
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/primaries", address);
-	filename[PATH_MAX] = '\0';
-	textfile_foreach(filename, convert_primaries_entry, address);
 
 	/* Convert linkkeys */
 	convert_file("linkkeys", address, convert_linkkey_entry, TRUE);
