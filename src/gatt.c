@@ -1472,17 +1472,14 @@ static void read_local_appearance_cb(struct btd_device *device,
 	result(0, appearance, sizeof(appearance), user_data);
 }
 
-static sdp_record_t *server_record_new(uuid_t *uuid, uint16_t start,
+static sdp_record_t *server_record_new(uint16_t profile, uint16_t start,
 								uint16_t end)
 {
 	sdp_list_t *svclass_id, *apseq, *proto[2], *root, *aproto;
-	uuid_t root_uuid, proto_uuid, l2cap;
+	uuid_t uuid, root_uuid, proto_uuid, l2cap;
 	sdp_record_t *record;
 	sdp_data_t *psm, *sh, *eh;
 	uint16_t lp = ATT_PSM;
-
-	if (uuid == NULL)
-		return NULL;
 
 	if (start > end)
 		return NULL;
@@ -1496,7 +1493,8 @@ static sdp_record_t *server_record_new(uuid_t *uuid, uint16_t start,
 	sdp_set_browse_groups(record, root);
 	sdp_list_free(root, NULL);
 
-	svclass_id = sdp_list_append(NULL, uuid);
+	sdp_uuid16_create(&uuid, profile);
+	svclass_id = sdp_list_append(NULL, &uuid);
 	sdp_set_service_classes(record, svclass_id);
 	sdp_list_free(svclass_id, NULL);
 
@@ -1528,24 +1526,20 @@ static sdp_record_t *server_record_new(uuid_t *uuid, uint16_t start,
 	return record;
 }
 
-static void register_sdp_record(const char *name, uint16_t uuid,
+static void register_sdp_record(const char *name, uint16_t profile,
 					uint16_t start, uint16_t end)
 {
-	uuid_t profile, gap_uuid;
 	sdp_record_t *record;
 	int ret;
 
-	sdp_uuid16_create(&profile, uuid);
-
-	record = server_record_new(&profile, start, end);
+	record = server_record_new(profile, start, end);
 	if (record == NULL)
 		return;
 
 	if (name != NULL)
 		sdp_set_info_attr(record, name, "BlueZ", NULL);
 
-	sdp_uuid16_create(&gap_uuid, GENERIC_ACCESS_PROFILE_ID);
-	if (sdp_uuid_cmp(&profile, &gap_uuid) == 0) {
+	if (profile == GENERIC_ACCESS_PROFILE_ID) {
 		sdp_set_url_attr(record, "http://www.bluez.org/",
 				"http://www.bluez.org/",
 				"http://www.bluez.org/");
@@ -1586,16 +1580,28 @@ static void add_gap(void)
 
 static void add_gatt(void)
 {
+	struct btd_attribute *attr;
+	uint16_t start, end;
 	bt_uuid_t uuid;
 
 	/* Primary Service: <<GATT Service>> */
 	bt_uuid16_create(&uuid, GENERIC_ATTRIB_PROFILE_ID);
-	btd_gatt_add_service(&uuid, true);
+	attr = btd_gatt_add_service(&uuid, true);
+	start = attr->handle;
 
 	/* Declaration and Value: <<Service Changed>> */
 	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
-	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE, NULL, NULL,
+	attr = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE, NULL, NULL,
 					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+
+	/*
+	 * attr contains the reference to the attribute value, add
+	 * one to consider CCC descriptor attribute. FIXME: Workaround!
+	 */
+	end = attr->handle + 1;
+	register_sdp_record("Generic Attribute Profile",
+					GENERIC_ATTRIB_PROFILE_ID,
+					start, end);
 
 	btd_gatt_dump_local_attribute_database();
 }
