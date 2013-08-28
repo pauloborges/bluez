@@ -204,7 +204,8 @@ static void read_char_destroy(void *user_data)
 	g_free(user_data);
 }
 
-static void read_external_char_cb(struct btd_device *device, struct btd_attribute *attr,
+static void read_external_char_cb(struct btd_device *device,
+				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
 	GDBusProxy *proxy;
@@ -264,7 +265,8 @@ static void write_char_destroy(void *user_data)
 	g_free(user_data);
 }
 
-static void write_external_char_cb(struct btd_device *device, struct btd_attribute *attr,
+static void write_external_char_cb(struct btd_device *device,
+			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
 			btd_attr_write_result_t result, void *user_data)
 {
@@ -656,8 +658,8 @@ done:
 	g_dbus_send_message(btd_get_dbus_connection(), reply);
 }
 
-static DBusMessage *remote_chr_read_value(DBusConnection *conn, DBusMessage *msg,
-							void *user_data)
+static DBusMessage *remote_chr_read_value(DBusConnection *conn,
+					DBusMessage *msg, void *user_data)
 {
 	struct char_iface *iface = user_data;
 
