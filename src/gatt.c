@@ -688,28 +688,29 @@ GSList *btd_gatt_get_chars_decl(struct btd_device *device,
 
 	list = g_list_find(gdev->database, service);
 	if (!list)
-		goto error;
+		return NULL;
 
 	for (list = g_list_next(list); list && !is_service(list->data);
 						list = g_list_next(list)) {
-		struct btd_attribute *attr = list->data;
+		struct btd_attribute *value_decl, *attr = list->data;
+		GList *next_attr;
 
-		if (is_characteristic(attr)) {
-			GList *next_attr = g_list_next(list);
-			struct btd_attribute *value_decl = next_attr->data;
+		if (!is_characteristic(attr))
+			continue;
 
-			if (!bt_uuid_cmp(&value_decl->type, type))
-				chars = g_slist_prepend(chars, attr);
+		next_attr = g_list_next(list);
+		value_decl = next_attr->data;
 
-			/*
-			 * Avoid searching for a characteristic declaration in
-			 * a characteristic value declaration.
-			*/
-			list = next_attr;
-		}
+		if (!bt_uuid_cmp(&value_decl->type, type))
+			chars = g_slist_prepend(chars, attr);
+
+		/*
+		 * Avoid searching for a characteristic declaration in
+		 * a characteristic value declaration.
+		 */
+		list = next_attr;
 	}
 
-error:
 	return chars;
 }
 
