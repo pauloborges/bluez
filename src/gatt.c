@@ -655,19 +655,21 @@ GSList *btd_gatt_get_services(struct btd_device *device, bt_uuid_t *service)
 	GList *list;
 	GSList *services = NULL;
 
-	for (list = g_list_first(gdev->database); list; list = g_list_next(list)) {
+	for (list = g_list_first(gdev->database); list;
+					list = g_list_next(list)) {
 		struct btd_attribute *attr = list->data;
+		bt_uuid_t curr_svc;
 
-		if (is_service(attr)) {
-			bt_uuid_t curr_svc;
-			if (attr->value_len == 2)
-				curr_svc = att_get_uuid16(attr->value);
-			else
-				curr_svc = att_get_uuid128(attr->value);
+		if (!is_service(attr))
+			continue;
 
-			if (!bt_uuid_cmp(&curr_svc, service))
-				services = g_slist_prepend(services, attr);
-		}
+		if (attr->value_len == 2)
+			curr_svc = att_get_uuid16(attr->value);
+		else
+			curr_svc = att_get_uuid128(attr->value);
+
+		if (!bt_uuid_cmp(&curr_svc, service))
+			services = g_slist_prepend(services, attr);
 	}
 
 	return services;
