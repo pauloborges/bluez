@@ -75,15 +75,21 @@ struct external_app {
 	guint register_timer;
 };
 
-struct attribute_iface {
+struct service_iface {
 	struct btd_device *device;
 	struct btd_attribute *attr;
 	char *uuid;
-	char *path;
-	uint8_t *value;
-	size_t vlen;
-	uint8_t properties;
-	unsigned int watch;
+};
+
+struct char_iface {
+	struct btd_device *device;
+	struct btd_attribute *attr;
+	char *uuid;
+	char *path;			/* Object path */
+	uint8_t *value;			/* Cached value */
+	size_t vlen;			/* Value length */
+	uint8_t properties;		/* Bit field. See Core page 1898 */
+	unsigned int watch;		/* Tracks value changed */
 };
 
 struct external_read_data {
@@ -102,9 +108,9 @@ struct external_write_data {
 static GSList *external_apps = NULL;
 static GHashTable *proxy_hash = NULL;
 
-static void iface_destroy(gpointer user_data)
+static void char_iface_destroy(gpointer user_data)
 {
-	struct attribute_iface *iface = user_data;
+	struct char_iface *iface = user_data;
 
 	if (proxy_hash)
 		g_hash_table_remove(proxy_hash, iface->attr);
@@ -117,6 +123,15 @@ static void iface_destroy(gpointer user_data)
 	g_free(iface->value);
 	g_free(iface);
 }
+
+static void service_iface_destroy(gpointer user_data)
+{
+	struct service_iface *iface = user_data;
+
+	g_free(iface->uuid);
+	g_free(iface);
+}
+
 
 static int seclevel_string2int(const char *level)
 {
@@ -578,7 +593,7 @@ static const GDBusMethodTable methods[] = {
 static gboolean service_property_get_uuid(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	struct attribute_iface *iface = data;
+	struct service_iface *iface = data;
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &iface->uuid);
 
@@ -644,7 +659,7 @@ done:
 static DBusMessage *remote_chr_read_value(DBusConnection *conn, DBusMessage *msg,
 							void *user_data)
 {
-	struct attribute_iface *iface = user_data;
+	struct char_iface *iface = user_data;
 
 	btd_gatt_read_attribute(iface->device, iface->attr,
 				read_value_response, dbus_message_ref(msg));
@@ -677,7 +692,7 @@ done:
 static DBusMessage *remote_chr_write_value(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
-	struct attribute_iface *iface = user_data;
+	struct char_iface *iface = user_data;
 	DBusMessageIter args, iter;
 	const uint8_t *value;
 	uint16_t offset;
@@ -724,7 +739,7 @@ static const GDBusMethodTable chr_methods[] = {
 static gboolean chr_get_uuid(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	struct attribute_iface *iface = data;
+	struct char_iface *iface = data;
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &iface->uuid);
 
@@ -734,7 +749,7 @@ static gboolean chr_get_uuid(const GDBusPropertyTable *property,
 static gboolean chr_get_value(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	struct attribute_iface *iface = data;
+	struct char_iface *iface = data;
 	DBusMessageIter array;
 
 	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
@@ -766,7 +781,7 @@ static gboolean chr_exist_value(const GDBusPropertyTable *property,
 static gboolean chr_get_props(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
-	struct attribute_iface *iface = data;
+	struct char_iface *iface = data;
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE,
 						&iface->properties);
@@ -814,23 +829,22 @@ static const GDBusPropertyTable chr_properties[] = {
 char *gatt_dbus_service_register(struct btd_device *device, uint16_t handle,
 				const char *uuid128, struct btd_attribute *attr)
 {
-	struct attribute_iface *iface;
+	struct service_iface *iface;
 	char *path;
 	gboolean ret;
 
 	path = g_strdup_printf("%s/service%04X", device_get_path(device),
 								handle);
 
-	iface = g_new0(struct attribute_iface, 1);
+	iface = g_new0(struct service_iface, 1);
 	iface->attr = attr;
 	iface->device = device;
 	iface->uuid = g_strdup(uuid128);
-	iface->path = g_strdup(path);
 
 	ret = g_dbus_register_interface(btd_get_dbus_connection(),
 					path, SERVICE_INTERFACE,
 					NULL, NULL, service_properties, iface,
-					iface_destroy);
+					service_iface_destroy);
 
 	if (ret == TRUE)
 		return path;
@@ -838,7 +852,7 @@ char *gatt_dbus_service_register(struct btd_device *device, uint16_t handle,
 	error("Unable to register service interface for %s", path);
 
 	g_free(path);
-	iface_destroy(iface);
+	service_iface_destroy(iface);
 
 	return NULL;
 }
@@ -851,7 +865,7 @@ void gatt_dbus_service_unregister(const char *path)
 
 static bool chr_value_changed(uint8_t *value, size_t len, void *user_data)
 {
-	struct attribute_iface *iface = user_data;
+	struct char_iface *iface = user_data;
 
 	if (iface->value)
 		g_free(iface->value);
@@ -871,13 +885,13 @@ char *gatt_dbus_characteristic_register(struct btd_device *device,
 				uint8_t properties,
 				struct btd_attribute *attr)
 {
-	struct attribute_iface *iface;
+	struct char_iface *iface;
 	char *path;
 	gboolean ret;
 
 	path = g_strdup_printf("%s/characteristics%04X", service_path, handle);
 
-	iface = g_new0(struct attribute_iface, 1);
+	iface = g_new0(struct char_iface, 1);
 	iface->attr = attr;
 	iface->device = device;
 	iface->uuid = g_strdup(uuid128);
@@ -887,13 +901,13 @@ char *gatt_dbus_characteristic_register(struct btd_device *device,
 	ret = g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
-					iface, iface_destroy);
+					iface, char_iface_destroy);
 
 	if (ret == FALSE) {
 		error("Unable to register Characteristic interface for %s",
 									path);
 		g_free(path);
-		iface_destroy(iface);
+		char_iface_destroy(iface);
 		return NULL;
 	}
 
