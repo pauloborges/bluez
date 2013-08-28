@@ -1338,11 +1338,19 @@ static void register_objects(struct btd_device *device, struct gatt_device *gdev
 			service_path = gatt_dbus_service_register(device,
 							attr->handle, uuidstr,
 							attr);
-			gdev->svc_objs = g_slist_append(gdev->svc_objs,
-							service_path);
+			if (service_path)
+				gdev->svc_objs = g_slist_append(gdev->svc_objs,
+								service_path);
 		} else if (bt_uuid_cmp(&chr_uuid, &attr->type) == 0) {
 			char *path;
 			uint8_t properties = attr->value[0];
+
+			/*
+			 * service_path may be NULL for malformed database
+			 * or if experimental flag is not informed.
+			 */
+			if (service_path == NULL)
+				continue;
 
 			 /* Jump to Characteristic Value Attribute */
 
@@ -1356,8 +1364,10 @@ static void register_objects(struct btd_device *device, struct gatt_device *gdev
 							attr->handle, uuidstr,
 							properties,
 							attr);
-			g_hash_table_insert(gdev->chr_objs,
-					GINT_TO_POINTER(attr->handle), path);
+			if (path)
+				g_hash_table_insert(gdev->chr_objs,
+							GINT_TO_POINTER(attr->handle),
+							path);
 		}
 	}
 }
