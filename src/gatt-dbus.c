@@ -169,9 +169,9 @@ static void destroy_service(void *data)
 
 static void read_char_setup(DBusMessageIter *iter, void *user_data)
 {
-	uint16_t value[] = { 0x0000 };
+	uint16_t offset[] = { 0x0000 };
 
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, value);
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, offset);
 }
 
 static void read_char_reply(DBusMessage *msg, void *user_data)
