@@ -2582,6 +2582,46 @@ static void prim_service_complete(gpointer user_data)
 
 }
 
+static void enable_pending_ccc(GList *list, struct btd_device *device)
+{
+	struct btd_attribute *char_decl;
+	static bt_uuid_t uuid;
+	GList *l;
+
+	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+
+	for (l = g_list_first(list); l; l = g_list_next(l)) {
+		struct btd_attribute *attr = l->data;
+		uint16_t enable;
+
+		if (is_characteristic(attr)) {
+			char_decl = attr;
+			continue;
+		}
+
+		if (bt_uuid_cmp(&attr->type, &uuid) != 0)
+			continue;
+
+		if (attr->value[0] & CCC_INDICATION_BIT ||
+					attr->value[0] & CCC_NOTIFICATION_BIT)
+			continue;
+
+		/* CCC Value was not set yet, so we will set it */
+
+		if (char_decl->value[0] & ATT_CHAR_PROPER_NOTIFY)
+			enable = CCC_NOTIFICATION_BIT;
+		else if (char_decl->value[0] & ATT_CHAR_PROPER_INDICATE)
+			enable = CCC_INDICATION_BIT;
+		else
+			continue;
+
+		att_put_u16(enable, &attr->value);
+		btd_gatt_write_attribute(device, attr, attr->value,
+						sizeof(attr->value), 0x00,
+						remote_ccc_enabled, attr);
+	}
+}
+
 static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	struct btd_service *service = user_data;
@@ -2656,6 +2696,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 */
 
 	DBG("Skipping attribute discovery");
+
+	enable_pending_ccc(gdev->database, device);
 
 	device_probe_profiles(device, NULL);
 
