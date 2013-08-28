@@ -199,11 +199,6 @@ invalid:
 	DBG("Invalid parameters");
 }
 
-static void read_char_destroy(void *user_data)
-{
-	g_free(user_data);
-}
-
 static void read_external_char_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
@@ -221,10 +216,10 @@ static void read_external_char_cb(struct btd_device *device,
 						read_char_setup,
 						read_char_reply,
 						rdata,
-						read_char_destroy)) {
+						g_free)) {
 		error("Could not call ReadValue dbus method");
 		result(ATT_ECODE_IO, NULL, 0, user_data);
-		read_char_destroy(rdata);
+		g_free(rdata);
 		return;
 	}
 
@@ -260,11 +255,6 @@ static void write_char_reply(DBusMessage *msg, void *user_data)
 	wdata->func(0, wdata->user_data);
 }
 
-static void write_char_destroy(void *user_data)
-{
-	g_free(user_data);
-}
-
 static void write_external_char_cb(struct btd_device *device,
 			struct btd_attribute *attr,
 			uint8_t *value, size_t len, uint16_t offset,
@@ -286,10 +276,10 @@ static void write_external_char_cb(struct btd_device *device,
 					write_char_setup,
 					write_char_reply,
 					wdata,
-					write_char_destroy)) {
+					g_free)) {
 		error("Could not call WriteValue D-Bus method");
 		result(ATT_ECODE_IO, user_data);
-		write_char_destroy(wdata);
+		g_free(wdata);
 		return;
 	}
 
