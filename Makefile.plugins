@@ -89,10 +89,8 @@ builtin_modules += alert
 builtin_sources += profiles/alert/server.c
 endif
 
-if FALSE
 builtin_modules += time
 builtin_sources += profiles/time/server.c
-endif
 
 if EXPERIMENTAL
 builtin_modules += proximity
