@@ -335,6 +335,12 @@ struct mgmt_cp_set_scan_params {
 	uint16_t window;
 } __packed;
 
+#define MGMT_OP_LOAD_AUTO_CONN_ADDRS	0x002C
+struct mgmt_cp_load_auto_conn_addrs {
+	uint16_t count;
+	struct mgmt_addr_info addrs[0];
+} __packed;
+
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {
 	uint16_t opcode;
