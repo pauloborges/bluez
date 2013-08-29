@@ -1896,6 +1896,75 @@ send:
 	g_attrib_send(gdev->attrib, 0, opdu, olen, NULL, NULL, NULL);
 }
 
+static void find_by_type_request(struct btd_device *device, GAttrib *attrib,
+					const uint8_t *ipdu, size_t ilen)
+{
+	uint8_t value[ATT_DEFAULT_LE_MTU];
+	uint8_t opdu[g_attrib_get_mtu(attrib)];
+	bt_uuid_t uuid;
+	uint16_t start, end;
+	uint16_t end_grp = 0;
+	size_t vlen, olen = 0;
+	GList *list;
+
+	memset(value, 0, sizeof(value));
+
+	if (dec_find_by_type_req(ipdu, ilen, &start, &end, &uuid,
+						value, &vlen) == 0) {
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_PDU);
+		return;
+
+	}
+
+	if (start == 0x0000 || start > end) {
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_HANDLE);
+		return;
+	}
+
+	/* Grouping attribute type valid? */
+	if (bt_uuid_cmp(&uuid, &primary_uuid) != 0 &&
+		bt_uuid_cmp(&uuid, &secondary_uuid) != 0) {
+		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_UNSUPP_GRP_TYPE);
+		return;
+	}
+
+	opdu[olen++] = ATT_OP_FIND_BY_TYPE_RESP;
+	for (list = local_attribute_db; list; list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+
+		/* Group? */
+		if (bt_uuid_cmp(&attr->type, &uuid) == 0 &&
+			attr->value_len == vlen &&
+			memcmp(attr->value, value, vlen) == 0) {
+
+			/* Setting previous group end */
+			if ((olen & 0x03) == 0x03) {
+				att_put_u16(end_grp, &opdu[olen]);
+				olen += 2;
+			}
+
+			/* Setting new group start */
+			att_put_u16(attr->handle, &opdu[olen]);
+			olen += 2;
+		} else
+			/* Keep the value to set later */
+			end_grp = attr->handle;
+	}
+
+	if (olen == 1) {
+		send_error(attrib, ipdu[0], start, ATT_ECODE_ATTR_NOT_FOUND);
+		return;
+	}
+
+	/* Last grouping: set group end */
+	if ((olen & 0x03) == 0x03) {
+		att_put_u16(end_grp, &opdu[olen]);
+		olen += 2;
+	}
+
+	g_attrib_send(attrib, 0, opdu, olen, NULL, NULL, NULL);
+}
+
 static GList *get_char_decl_from_attr(GList *attr_node)
 {
 	GList *char_decl_node;
@@ -2385,8 +2454,11 @@ static void channel_handler_cb(const uint8_t *ipdu, uint16_t ilen,
 		find_info_request(device, gdev->attrib, ipdu, ilen);
 		break;
 
-	case ATT_OP_MTU_REQ:
 	case ATT_OP_FIND_BY_TYPE_REQ:
+		find_by_type_request(device, gdev->attrib, ipdu, ilen);
+		break;
+
+	case ATT_OP_MTU_REQ:
 	case ATT_OP_READ_BLOB_REQ:
 	case ATT_OP_READ_MULTI_REQ:
 	case ATT_OP_PREP_WRITE_REQ:
