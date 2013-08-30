@@ -44,7 +44,6 @@
 #include "sdpd.h"
 
 #include "log.h"
-#include "error.h"
 #include "lib/uuid.h"
 #include "btio.h"
 #include "textfile.h"
