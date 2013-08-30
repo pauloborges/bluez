@@ -2732,7 +2732,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	if (gerr) {
 		error("ATT Connect: %s", gerr->message);
-		btd_service_connecting_complete(service, gerr->code);
+		if (service)
+			btd_service_connecting_complete(service, gerr->code);
 		return;
 	}
 
