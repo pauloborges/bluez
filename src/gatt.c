@@ -847,6 +847,7 @@ static void notify_value_changed(struct btd_attribute *attr, uint8_t *value,
 		uint16_t ccc;
 		size_t olen;
 
+		 /* TODO: How to manage not connected devices? */
 		if (gdev->attrib == NULL)
 			continue;
 
