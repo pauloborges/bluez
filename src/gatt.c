@@ -869,7 +869,8 @@ static void notify_value_changed(struct btd_attribute *attr, uint8_t *value,
 		g_attrib_send(gdev->attrib, 0, opdu, olen, indication_result, nd, NULL);
 	}
 
-	result(0, user_data);
+	if (result)
+		result(0, user_data);
 }
 
 void btd_gatt_write_attribute(struct btd_device *device,
