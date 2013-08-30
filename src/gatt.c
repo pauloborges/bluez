@@ -288,8 +288,6 @@ static struct gatt_device *gatt_device_new(struct btd_device *device)
 static void gatt_device_free(gpointer user_data)
 {
 	struct gatt_device *gdev = user_data;
-	char *data;
-	size_t len;
 
 	if (gdev->channel_id > 0) {
 		g_source_remove(gdev->channel_id);
@@ -303,14 +301,6 @@ static void gatt_device_free(gpointer user_data)
 		g_attrib_unregister(gdev->attrib, gdev->attrib_id);
 		g_attrib_unref(gdev->attrib);
 	}
-
-	/* Flushing data to Local Database overlay */
-	data = g_key_file_to_data(gdev->ccc_keyfile, &len, NULL);
-	if (len > 0) {
-		create_file(gdev->ccc_fname, S_IRUSR | S_IWUSR);
-		g_file_set_contents(gdev->ccc_fname, data, len, NULL);
-	}
-	g_free(data);
 
 	g_free(gdev->ccc_fname);
 	g_key_file_free(gdev->ccc_keyfile);
@@ -536,6 +526,8 @@ static void database_store_ccc(struct btd_device *device,
 {
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
 	char group[7];
+	char *data;
+	size_t len;
 
 	/*
 	 * When notification or indication arrives, it contains the handle of
@@ -552,6 +544,14 @@ static void database_store_ccc(struct btd_device *device,
 	else
 		g_key_file_set_integer(gdev->ccc_keyfile, group, "Value",
 								value);
+
+	/* Writing data to Local Database overlay */
+	data = g_key_file_to_data(gdev->ccc_keyfile, &len, NULL);
+	if (len > 0) {
+		create_file(gdev->ccc_fname, S_IRUSR | S_IWUSR);
+		g_file_set_contents(gdev->ccc_fname, data, len, NULL);
+	}
+	g_free(data);
 }
 
 static void write_ccc_cb(struct btd_device *device,
