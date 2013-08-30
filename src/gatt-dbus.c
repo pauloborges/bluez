@@ -411,9 +411,9 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 	DBG("iface %s", interface);
 }
 
-static void destroy_external_app(void *data)
+static void external_app_disconnected(DBusConnection *conn, void *user_data)
 {
-	struct external_app *eapp = data;
+	struct external_app *eapp = user_data;
 
 	DBG("app %p", eapp);
 
@@ -434,11 +434,6 @@ static void destroy_external_app(void *data)
 	external_apps = g_slist_remove(external_apps, eapp);
 
 	g_free(eapp);
-}
-
-static void external_app_disconnected(DBusConnection *conn, void *user_data)
-{
-	destroy_external_app(user_data);
 }
 
 static struct external_app *new_external_app(DBusConnection *conn,
