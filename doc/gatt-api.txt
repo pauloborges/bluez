@@ -130,10 +130,18 @@ Service		org.bluez
 Interface	org.bluez.gatt.ServiceManager1
 Object path	/
 
-Methods		RegisterServices(array{object} services)
+Methods		RegisterServices(string id)
 
-			Registers a list of primary services, all the
-			characteristics under it and all the secondary
-			services included by it (using the D-Bus ObjectManager)
+			Registers remote application services exported under
+			the interface Service1. Characteristics objects must
+			be hierarchical to its service and it must use the
+			interface Characteristic1. D-Bus Object Manager is
+			used to fetch the exported objects.
+
+			"id": Unique application identifier used to track
+			applications and attribute handle allocation. UUID
+			128-bit string format should be used to associate
+			it with one service or a group of services exported
+			by a single application.
 
 		UnregisterAllServices(): Not implemented
