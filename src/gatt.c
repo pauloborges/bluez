@@ -153,7 +153,6 @@ struct gatt_device {
 	 * configuration set by a given remote device. eg:
 	 * CCC set in the local attribute by a remote device.
 	 */
-	char *settings_fname;
 	GKeyFile *settings;
 };
 
@@ -175,6 +174,18 @@ static uint8_t errno_to_att(int err)
 	default:
 		return ATT_ECODE_UNLIKELY;
 	}
+}
+
+static inline int create_filename(char *buf, size_t size, const bdaddr_t *src,
+					const bdaddr_t *dst, const char *name)
+{
+	char srcaddr[18], dstaddr[18];
+
+	ba2str(src, srcaddr);
+	ba2str(dst, dstaddr);
+
+	return snprintf(buf, size, "%s/%s/%s/%s", STORAGEDIR,
+						srcaddr, dstaddr, name);
 }
 
 static void print_attribute(gpointer a, gpointer b)
@@ -264,21 +275,16 @@ static struct gatt_device *gatt_device_new(struct btd_device *device)
 {
 	struct gatt_device *gdev = g_new0(struct gatt_device, 1);
 	struct btd_adapter *adapter = device_get_adapter(device);
-	char srcaddr[18], dstaddr[18];
+	char filename[PATH_MAX + 1];
 	const bdaddr_t *src, *dst;
 
 	src = btd_adapter_get_address(adapter);
-	ba2str(src, srcaddr);
-
 	dst = device_get_address(device);
-	ba2str(dst, dstaddr);
-
-	gdev->settings_fname = g_strdup_printf("%s/%s/%s/gatt-settings",
-						STORAGEDIR, srcaddr, dstaddr);
 
 	gdev->settings = g_key_file_new();
 
-	g_key_file_load_from_file(gdev->settings, gdev->settings_fname,
+	create_filename(filename, PATH_MAX, src, dst, "gatt-settings");
+	g_key_file_load_from_file(gdev->settings, filename,
 						G_KEY_FILE_NONE, NULL);
 
 	gdev->chr_objs = g_hash_table_new_full(g_direct_hash, g_direct_equal,
@@ -304,7 +310,6 @@ static void gatt_device_free(gpointer user_data)
 		g_attrib_unref(gdev->attrib);
 	}
 
-	g_free(gdev->settings_fname);
 	g_key_file_free(gdev->settings);
 
 	g_free(gdev);
@@ -548,8 +553,17 @@ static void database_store_ccc(struct btd_device *device,
 	/* Writing data to Local Database overlay */
 	data = g_key_file_to_data(gdev->settings, &len, NULL);
 	if (len > 0) {
-		create_file(gdev->settings_fname, S_IRUSR | S_IWUSR);
-		g_file_set_contents(gdev->settings_fname, data, len, NULL);
+		struct btd_adapter *adapter = device_get_adapter(device);
+		char filename[PATH_MAX + 1];
+		const bdaddr_t *src, *dst;
+
+		src = btd_adapter_get_address(adapter);
+		dst = device_get_address(device);
+
+		create_filename(filename, PATH_MAX, src, dst, "gatt-settings");
+
+		create_file(filename, S_IRUSR | S_IWUSR);
+		g_file_set_contents(filename, data, len, NULL);
 	}
 	g_free(data);
 }
@@ -1037,7 +1051,7 @@ static int str2buf(const char *str, uint8_t *buf, size_t blen)
 static void database_store(struct btd_device *device, GList *database)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
-	char srcaddr[18], dstaddr[18], handle[7], uuidstr[MAX_LEN_UUID_STR];
+	char handle[7], uuidstr[MAX_LEN_UUID_STR];
 	char filename[PATH_MAX + 1], *data;
 	struct btd_attribute *prev, *attr;
 	const bdaddr_t *src, *dst;
@@ -1049,13 +1063,10 @@ static void database_store(struct btd_device *device, GList *database)
 		return;
 
 	src = btd_adapter_get_address(adapter);
-	ba2str(src, srcaddr);
-
 	dst = device_get_address(device);
-	ba2str(dst, dstaddr);
 
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/remote-database",
-							srcaddr, dstaddr);
+	create_filename(filename, PATH_MAX, src, dst, "remote-database");
+
 	key_file = g_key_file_new();
 
 	g_key_file_load_from_file(key_file, filename, G_KEY_FILE_NONE, NULL);
@@ -1378,22 +1389,16 @@ bool gatt_load_from_storage(struct btd_device *device)
 {
 	struct btd_adapter *adapter = device_get_adapter(device);
 	struct gatt_device *gdev;
-	char srcaddr[18], dstaddr[18];
 	char filename[PATH_MAX + 1];
 	char **groups, **group;
 	const bdaddr_t *src, *dst;
 	GKeyFile *key_file;
 
 	src = btd_adapter_get_address(adapter);
-	ba2str(src, srcaddr);
-
 	dst = device_get_address(device);
-	ba2str(dst, dstaddr);
 
-	DBG("src %s dst %s", dstaddr, srcaddr);
+	create_filename(filename, PATH_MAX, src, dst, "remote-database");
 
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/remote-database",
-							srcaddr, dstaddr);
 	key_file = g_key_file_new();
 
 	if (g_key_file_load_from_file(key_file, filename,
