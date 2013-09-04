@@ -149,11 +149,12 @@ struct gatt_device {
 	void *user_data;
 
 	/*
-	 * Local services overlay: per device attributes. Stores
-	 * << CCC >> descriptor values changed by the remote.
+	 * Local services overlay: Stores local attributes
+	 * configuration set by a given remote device. eg:
+	 * CCC set in the local attribute by a remote device.
 	 */
-	char *ccc_fname;
-	GKeyFile *ccc_keyfile;
+	char *settings_fname;
+	GKeyFile *settings;
 };
 
 static GList *local_attribute_db = NULL;
@@ -272,12 +273,12 @@ static struct gatt_device *gatt_device_new(struct btd_device *device)
 	dst = device_get_address(device);
 	ba2str(dst, dstaddr);
 
-	gdev->ccc_fname = g_strdup_printf("%s/%s/%s/ccc",
+	gdev->settings_fname = g_strdup_printf("%s/%s/%s/gatt-settings",
 						STORAGEDIR, srcaddr, dstaddr);
 
-	gdev->ccc_keyfile = g_key_file_new();
+	gdev->settings = g_key_file_new();
 
-	g_key_file_load_from_file(gdev->ccc_keyfile, gdev->ccc_fname,
+	g_key_file_load_from_file(gdev->settings, gdev->settings_fname,
 						G_KEY_FILE_NONE, NULL);
 
 	gdev->chr_objs = g_hash_table_new_full(g_direct_hash, g_direct_equal,
@@ -303,8 +304,8 @@ static void gatt_device_free(gpointer user_data)
 		g_attrib_unref(gdev->attrib);
 	}
 
-	g_free(gdev->ccc_fname);
-	g_key_file_free(gdev->ccc_keyfile);
+	g_free(gdev->settings_fname);
+	g_key_file_free(gdev->settings);
 
 	g_free(gdev);
 }
@@ -515,7 +516,7 @@ static void read_ccc_cb(struct btd_device *device,
 	}
 
 	snprintf(handle, sizeof(handle), "0x%04x", char_value->handle);
-	ccc = g_key_file_get_integer(gdev->ccc_keyfile, handle, "Value", NULL);
+	ccc = g_key_file_get_integer(gdev->settings, "CCC", handle, NULL);
 
 	att_put_u16(ccc, value);
 
@@ -526,7 +527,7 @@ static void database_store_ccc(struct btd_device *device,
 				uint16_t handle, uint16_t value)
 {
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
-	char group[7];
+	char key[7];
 	char *data;
 	size_t len;
 
@@ -537,20 +538,18 @@ static void database_store_ccc(struct btd_device *device,
 	 * instead of using the Descriptor handle.
 	 */
 
-	snprintf(group, sizeof(group), "0x%04x", handle);
+	snprintf(key, sizeof(key), "0x%04x", handle);
 
 	if (value == 0x0000)
-		g_key_file_remove_key(gdev->ccc_keyfile, group, "Value",
-								NULL);
+		g_key_file_remove_key(gdev->settings, "CCC", key, NULL);
 	else
-		g_key_file_set_integer(gdev->ccc_keyfile, group, "Value",
-								value);
+		g_key_file_set_integer(gdev->settings, "CCC", key, value);
 
 	/* Writing data to Local Database overlay */
-	data = g_key_file_to_data(gdev->ccc_keyfile, &len, NULL);
+	data = g_key_file_to_data(gdev->settings, &len, NULL);
 	if (len > 0) {
-		create_file(gdev->ccc_fname, S_IRUSR | S_IWUSR);
-		g_file_set_contents(gdev->ccc_fname, data, len, NULL);
+		create_file(gdev->settings_fname, S_IRUSR | S_IWUSR);
+		g_file_set_contents(gdev->settings_fname, data, len, NULL);
 	}
 	g_free(data);
 }
@@ -852,8 +851,8 @@ static void notify_value_changed(struct btd_attribute *attr, uint8_t *value,
 		if (gdev->attrib == NULL)
 			continue;
 
-		ccc = g_key_file_get_integer(gdev->ccc_keyfile, handle,
-							"Value", NULL);
+		ccc = g_key_file_get_integer(gdev->settings, "CCC",
+							handle, NULL);
 		nd = NULL;
 
 		if (ccc & CCC_INDICATION_BIT) {
