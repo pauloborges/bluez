@@ -528,13 +528,44 @@ static void read_ccc_cb(struct btd_device *device,
 	result(0, value, sizeof(value), user_data);
 }
 
-static void database_store_ccc(struct btd_device *device,
+static void settings_save(const bdaddr_t *src, const bdaddr_t *dst,
+							GKeyFile *kfile)
+{
+	char *data;
+	size_t len;
+
+	/* Writing data to Local Database overlay */
+	data = g_key_file_to_data(kfile, &len, NULL);
+	if (len > 0) {
+		char filename[PATH_MAX + 1];
+
+		create_filename(filename, PATH_MAX, src, dst, "gatt-settings");
+
+		create_file(filename, S_IRUSR | S_IWUSR);
+		g_file_set_contents(filename, data, len, NULL);
+	}
+
+	g_free(data);
+}
+
+static void settings_store_checksum(const bdaddr_t *src, const bdaddr_t *dst,
+						GKeyFile *kfile, const char *hash)
+{
+	if (hash)
+		g_key_file_set_string(kfile, "General", "MD5SUM", hash);
+	else
+		g_key_file_remove_key(kfile, "General", "MD5SUM", NULL);
+
+	settings_save(src, dst, kfile);
+}
+
+static void settings_store_ccc(struct btd_device *device,
 				uint16_t handle, uint16_t value)
 {
 	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	struct btd_adapter *adapter = device_get_adapter(device);
+	const bdaddr_t *src, *dst;
 	char key[7];
-	char *data;
-	size_t len;
 
 	/*
 	 * When notification or indication arrives, it contains the handle of
@@ -550,22 +581,10 @@ static void database_store_ccc(struct btd_device *device,
 	else
 		g_key_file_set_integer(gdev->settings, "CCC", key, value);
 
-	/* Writing data to Local Database overlay */
-	data = g_key_file_to_data(gdev->settings, &len, NULL);
-	if (len > 0) {
-		struct btd_adapter *adapter = device_get_adapter(device);
-		char filename[PATH_MAX + 1];
-		const bdaddr_t *src, *dst;
+	src = btd_adapter_get_address(adapter);
+	dst = device_get_address(device);
 
-		src = btd_adapter_get_address(adapter);
-		dst = device_get_address(device);
-
-		create_filename(filename, PATH_MAX, src, dst, "gatt-settings");
-
-		create_file(filename, S_IRUSR | S_IWUSR);
-		g_file_set_contents(filename, data, len, NULL);
-	}
-	g_free(data);
+	settings_save(src, dst, gdev->settings);
 }
 
 static void write_ccc_cb(struct btd_device *device,
@@ -591,7 +610,7 @@ static void write_ccc_cb(struct btd_device *device,
 	}
 
 	ccc = att_get_u16(value);
-	database_store_ccc(device, char_value->handle, ccc);
+	settings_store_ccc(device, char_value->handle, ccc);
 
 	result(0, user_data);
 }
@@ -2796,6 +2815,9 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 		dbsum = checksum(local_attribute_db);
 		DBG("Local Database MD5SUM: %s", g_checksum_get_string(dbsum));
 	}
+
+	settings_store_checksum(&sba, &dba, gdev->settings,
+					g_checksum_get_string(dbsum));
 
 	/*
 	 * When bonding, attribute discovery starts when
