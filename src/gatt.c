@@ -162,6 +162,7 @@ static uint16_t next_handle = 0;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
+static GChecksum *dbsum = NULL; /* Local Database declarations checksum */
 
 static uint8_t errno_to_att(int err)
 {
@@ -2696,6 +2697,44 @@ static void enable_pending_ccc(GList *list, struct btd_device *device)
 	}
 }
 
+static GChecksum *checksum(GList *database)
+{
+	GChecksum *chksum = g_checksum_new(G_CHECKSUM_MD5);
+	GList *list;
+
+	/*
+	 * MD5SUM is used to check if the local attribute database
+	 * has changed. Value field of the Characteristic value
+	 * attribute and the descriptors value are being ignored
+	 * by the checksum function. Since it is not possible to guess
+	 * when the registration has finished, checksum is calculated
+	 * when the first connection is established.
+	 */
+	for (list = database; list; list = g_list_next(list)) {
+		struct btd_attribute *attr = list->data;
+
+		/* Computing checksum for handle */
+		g_checksum_update(chksum, (uint8_t *) &attr->handle,
+							sizeof(attr->handle));
+
+		/* Computing checksum for UUID/Type */
+		g_checksum_update(chksum, (uint8_t *) &attr->type,
+							sizeof(attr->type));
+
+		/*
+		 * Computing checksum for declaration: Primary,
+		 * Secondary and Characteristics only.
+		 */
+		if ((bt_uuid_cmp(&primary_uuid, &attr->type) == 0) ||
+			(bt_uuid_cmp(&secondary_uuid, &attr->type) == 0) ||
+			(bt_uuid_cmp(&chr_uuid, &attr->type) == 0)) {
+			g_checksum_update(chksum, attr->value, attr->value_len);
+		}
+	}
+
+	return chksum;
+}
+
 static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	struct btd_service *service = user_data;
@@ -2747,6 +2786,12 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	gdev->channel_id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
+
+	 /* MD5 checksum: Service Changed */
+	if (dbsum == NULL) {
+		dbsum = checksum(local_attribute_db);
+		DBG("Local Database MD5SUM: %s", g_checksum_get_string(dbsum));
+	}
 
 	/*
 	 * When bonding, attribute discovery starts when
