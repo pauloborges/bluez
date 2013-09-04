@@ -1055,7 +1055,7 @@ static void database_store(struct btd_device *device, GList *database)
 	dst = device_get_address(device);
 	ba2str(dst, dstaddr);
 
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attrib-database",
+	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/remote-database",
 							srcaddr, dstaddr);
 	key_file = g_key_file_new();
 
@@ -1393,7 +1393,7 @@ bool gatt_load_from_storage(struct btd_device *device)
 
 	DBG("src %s dst %s", dstaddr, srcaddr);
 
-	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/attrib-database",
+	snprintf(filename, PATH_MAX, STORAGEDIR "/%s/%s/remote-database",
 							srcaddr, dstaddr);
 	key_file = g_key_file_new();
 
