@@ -67,6 +67,10 @@
 #define CCC_NOTIFICATION_BIT	(1 << 0)
 #define CCC_INDICATION_BIT	(1 << 1)
 
+#define GAP_START_HANDLE	0x0001
+#define GATT_START_HANDLE	0x0010
+#define DYNAMIC_START_HANDLE	0x0020
+
 /* Common GATT UUIDs */
 static const bt_uuid_t primary_uuid  = { .type = BT_UUID16,
 					.value.u16 = GATT_PRIM_SVC_UUID };
@@ -154,7 +158,7 @@ struct gatt_device {
 
 static GList *local_attribute_db = NULL;
 static unsigned int next_notifier_id = 1;
-static uint16_t next_handle = 1;
+static uint16_t next_handle = 0;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
@@ -3019,8 +3023,18 @@ void gatt_init(void)
 		/* Doesn't have LE support, continue */
 	}
 
+	/*
+	 * Below, three areas for handle allocation is defined. Service
+	 * Changed Attribute Handle on the server shall not change if
+	 * the server has a trusted relationship with any client.
+	 */
+	next_handle = GAP_START_HANDLE;
 	add_gap();
+
+	next_handle = GATT_START_HANDLE;
 	add_gatt();
+
+	next_handle = DYNAMIC_START_HANDLE;
 
 	gatt_dbus_manager_register();
 
