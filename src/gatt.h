@@ -21,6 +21,14 @@
  *
  */
 
+/*
+ * Group ID for internal services. GATT based plugins should use
+ * the definition bellow when registering a new service. The ID
+ * can be any string identifier used to identify handles allocated
+ * to a given group (service).
+ */
+#define GATT_CORE_GROUP_ID	"00000000-0000-1000-8000-00805f9b34fb"
+
 struct btd_attribute;
 
 /* Functions used by the core */
@@ -85,6 +93,7 @@ int btd_gatt_connect(struct btd_service *service);
 int btd_gatt_disconnect(struct btd_service *service);
 
 /* btd_gatt_add_service - Add a service declaration to local attribute database.
+ * @gid:	Group ID for the application.
  * @uuid:	Service UUID.
  * @primary:	Set to 'true' if this is a primary services. Otherwise, it will
  *		be declared as a secondary service.
@@ -93,7 +102,7 @@ int btd_gatt_disconnect(struct btd_service *service);
  * Returns a reference to service declaration attribute. In case of error,
  * NULL is returned.
  */
-struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary);
+struct btd_attribute *btd_gatt_add_service(const char *gid, bt_uuid_t *uuid, bool primary);
 
 /* btd_gatt_remove_service - Remove a service (along with all its
  * characteristics) from the local attribute database.

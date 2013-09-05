@@ -150,7 +150,7 @@ static void register_current_time_service(void)
 
 	/* Current Time service */
 	bt_uuid16_create(&uuid, CURRENT_TIME_SVC_UUID);
-	btd_gatt_add_service(&uuid, true);
+	btd_gatt_add_service(GATT_CORE_GROUP_ID, &uuid, true);
 
 	/* CT Time characteristic */
 	bt_uuid16_create(&uuid, CT_TIME_CHR_UUID);
@@ -216,7 +216,7 @@ static void register_ref_time_update_service(void)
 
 	/* Reference Time Update service */
 	bt_uuid16_create(&uuid, REF_TIME_UPDATE_SVC_UUID);
-	btd_gatt_add_service(&uuid, true);
+	btd_gatt_add_service(GATT_CORE_GROUP_ID, &uuid, true);
 
 	/* Time Update control point */
 	bt_uuid16_create(&uuid, TIME_UPDATE_CTRL_CHR_UUID);

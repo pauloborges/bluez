@@ -307,7 +307,8 @@ static void ias_init(void)
 
 	/* Immediate Alert Primary Service declaration */
 	bt_uuid16_create(&uuid, IMMEDIATE_ALERT_SVC_UUID);
-	immediate_service = btd_gatt_add_service(&uuid, true);
+	immediate_service = btd_gatt_add_service(GATT_CORE_GROUP_ID,
+							&uuid, true);
 
 	/* Declaration and Value: Alert Level */
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
@@ -380,7 +381,8 @@ static void lls_init(void)
 
 	/* Link Loss Primary Service declaration */
 	bt_uuid16_create(&uuid, LINK_LOSS_SVC_UUID);
-	linkloss_service = btd_gatt_add_service(&uuid, true);
+	linkloss_service = btd_gatt_add_service(GATT_CORE_GROUP_ID,
+							&uuid, true);
 
 	/* Declaration and Value: Alert Level */
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);

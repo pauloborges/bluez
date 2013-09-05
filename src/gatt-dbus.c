@@ -497,7 +497,7 @@ static gboolean finish_register(gpointer user_data)
 		struct external_service *esrv = list->data;
 		struct btd_attribute *attr;
 
-		attr = btd_gatt_add_service(&esrv->uuid, true);
+		attr = btd_gatt_add_service(eapp->owner, &esrv->uuid, true);
 		eapp->prim_services = g_slist_append(eapp->prim_services,
 								attr);
 		DBG("new service %s", esrv->path);

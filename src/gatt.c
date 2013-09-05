@@ -431,7 +431,8 @@ static void remote_database_add(struct btd_device *device,
 	gdev->database = g_list_insert_sorted(gdev->database, attr, attribute_cmp);
 }
 
-struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
+struct btd_attribute *btd_gatt_add_service(const char *gid, bt_uuid_t *uuid,
+								bool primary)
 {
 	struct btd_attribute *attr;
 	const bt_uuid_t *type;
@@ -457,8 +458,8 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 	else
 		next_handle = &next_uuid128_handle;
 
-	handle = g_key_file_get_integer(hmapkfile, uuidstr, uuidstr, NULL);
-	pid2 = g_key_file_get_integer(hmapkfile, uuidstr, "PID", NULL);
+	handle = g_key_file_get_integer(hmapkfile, gid, uuidstr, NULL);
+	pid2 = g_key_file_get_integer(hmapkfile, gid, "PID", NULL);
 
 	pid1 = getpid();
 	if (pid2 == pid1) {
@@ -473,8 +474,8 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 
 		DBG("%s re-using inner handle: 0x%04x", uuidstr, handle);
 
+		next_inner_handle = handle;
 		next_handle = &next_inner_handle;
-		*next_handle = handle;
 
 	} else if (handle >= *next_handle) {
 		/* Re-using handle */
@@ -482,16 +483,20 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 		DBG("%s re-using handle: 0x%04x", uuidstr, handle);
 
 		*next_handle = handle;
+
+		/* Overwriting PID */
+		hmap_store_handle(gid, uuidstr, handle, pid1);
 	} else {
 		/* New service or Colision (handle taken already) */
 		if (handle == 0)
 			DBG("%s handle: 0x%04x", uuidstr, *next_handle);
 		else
-			DBG("%s handle colision (0x%04x) assigning: 0x%04x",
+			DBG("%s handle colision 0x%04x assigning: 0x%04x",
 						uuidstr, handle, *next_handle);
 
 		handle = *next_handle;
-		hmap_store_handle(uuidstr, uuidstr, handle, pid1);
+		/* Writing/Overwriting Handle and PID */
+		hmap_store_handle(gid, uuidstr, handle, pid1);
 	}
 
 	if (local_database_add(handle, attr) < 0) {
@@ -1739,7 +1744,7 @@ static void add_gap(void)
 
 	/* Primary Service: <<GAP Service>> */
 	bt_uuid16_create(&uuid, GENERIC_ACCESS_PROFILE_ID);
-	attr = btd_gatt_add_service(&uuid, true);
+	attr = btd_gatt_add_service(GATT_CORE_GROUP_ID, &uuid, true);
 	start = attr->handle;
 
 	/* Declaration and Value: <<Device Name>>*/
@@ -1767,7 +1772,7 @@ static void add_gatt(void)
 
 	/* Primary Service: <<GATT Service>> */
 	bt_uuid16_create(&uuid, GENERIC_ATTRIB_PROFILE_ID);
-	attr = btd_gatt_add_service(&uuid, true);
+	attr = btd_gatt_add_service(GATT_CORE_GROUP_ID, &uuid, true);
 	start = attr->handle;
 
 	/* Declaration and Value: <<Service Changed>> */
