@@ -2720,7 +2720,7 @@ static void enable_pending_ccc(GList *list, struct btd_device *device)
 	}
 }
 
-static GChecksum *checksum(GList *database)
+static GChecksum *checksum_generate(GList *database)
 {
 	GChecksum *chksum = g_checksum_new(G_CHECKSUM_MD5);
 	GList *list;
@@ -2758,6 +2758,27 @@ static GChecksum *checksum(GList *database)
 	return chksum;
 }
 
+static bool checksum_match(GKeyFile *kfile, const char *checksum)
+{
+	char *sum;
+	int ret;
+
+	sum = g_key_file_get_string(kfile, "General", "MD5SUM", NULL);
+	/*
+	 * If checksum is not found: return true to ignore the
+	 * checksum checking. This scenario represents the first
+	 * connection with the given device.
+	 */
+	if (sum == NULL)
+		return true;
+
+	ret = g_strcmp0(sum, checksum);
+
+	g_free(sum);
+
+	return (ret == 0 ? true : false);
+}
+
 static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 {
 	struct btd_service *service = user_data;
@@ -2765,8 +2786,10 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	struct btd_device *device;
 	struct gatt_device *gdev = NULL;
 	char src[18], dst[18];
+	const char *checksum;
 	bdaddr_t sba;
 	bdaddr_t dba;
+	bool store;
 
 	bt_io_get(io, NULL,
 			BT_IO_OPT_SOURCE_BDADDR, &sba,
@@ -2812,12 +2835,20 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	 /* MD5 checksum: Service Changed */
 	if (dbsum == NULL) {
-		dbsum = checksum(local_attribute_db);
-		DBG("Local Database MD5SUM: %s", g_checksum_get_string(dbsum));
+		dbsum = checksum_generate(local_attribute_db);
+		store = true;
 	}
 
-	settings_store_checksum(&sba, &dba, gdev->settings,
-					g_checksum_get_string(dbsum));
+	checksum = g_checksum_get_string(dbsum);
+	DBG("Local Database MD5SUM: %s", checksum);
+
+	if (checksum_match(gdev->settings, checksum) == false) {
+		store = true;
+		/* Send ServiceChanged */
+	}
+
+	if (store)
+		settings_store_checksum(&sba, &dba, gdev->settings, checksum);
 
 	/*
 	 * When bonding, attribute discovery starts when
