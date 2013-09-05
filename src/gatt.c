@@ -2791,13 +2791,18 @@ static void checksum(struct btd_device *device, GKeyFile *kfile,
 	char *checksum2;
 
 	/*
-	 * Generate the local database checksum only once: when
-	 * the first device connects. Each device should keep a copy
-	 * of the checksum in order to check if the database has
-	 * changed when re-connection happens.
+	 * Generate the local database checksum when any device connects.
+	 * Each device should keep a copy of the checksum in order to
+	 * check if the database has changed when re-connection happens.
+	 * If a service is removed while there is an active connection let
+	 * the implementation handle ATT errors (attribute not found).
+	 * If a service is added while there is an active connection, just
+	 * ignore it. The client will be notified in the next connection.
 	 */
-	if (dbsum == NULL)
-		dbsum = checksum_generate(local_attribute_db);
+	if (dbsum)
+		g_checksum_free(dbsum);
+
+	dbsum = checksum_generate(local_attribute_db);
 
 	checksum1 = g_checksum_get_string(dbsum);
 	checksum2 = g_key_file_get_string(kfile, "General", "MD5SUM", NULL);
