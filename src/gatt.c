@@ -163,6 +163,7 @@ static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
 static GChecksum *dbsum = NULL; /* Local Database declarations checksum */
+static struct btd_attribute *svc_changed = NULL;
 
 static uint8_t errno_to_att(int err)
 {
@@ -1634,8 +1635,9 @@ static void add_gatt(void)
 
 	/* Declaration and Value: <<Service Changed>> */
 	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
-	attr = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE, NULL, NULL,
-					BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+	svc_changed = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE,
+					NULL, NULL, BT_SECURITY_LOW,
+					BT_SECURITY_LOW, 0);
 
 	/*
 	 * attr contains the reference to the attribute value, add
@@ -2758,25 +2760,86 @@ static GChecksum *checksum_generate(GList *database)
 	return chksum;
 }
 
-static bool checksum_match(GKeyFile *kfile, const char *checksum)
+static void service_changed_result(guint8 status, const guint8 *pdu,
+					guint16 len, gpointer user_data)
 {
-	char *sum;
-	int ret;
+	struct btd_device *device = user_data;
+	struct btd_adapter *adapter = device_get_adapter(device);
+	struct gatt_device *gdev = g_hash_table_lookup(gatt_devices, device);
+	const bdaddr_t *sba, *dba;
+	const char *checksum;
 
-	sum = g_key_file_get_string(kfile, "General", "MD5SUM", NULL);
+	if (status) {
+		DBG("GATT: ServiceChanged indication failed");
+		return;
+	}
+
+	sba = adapter_get_address(adapter);
+	dba = device_get_address(device);
+
+	checksum = g_checksum_get_string(dbsum);
+	settings_store_checksum(sba, dba, gdev->settings, checksum);
+
+	DBG("Service Changed MD5SUM stored");
+}
+
+static void checksum(struct btd_device *device, GKeyFile *kfile,
+						GAttrib *attrib)
+{
+	struct btd_adapter *adapter = device_get_adapter(device);
+	const char *checksum1;
+	char *checksum2;
+
 	/*
-	 * If checksum is not found: return true to ignore the
-	 * checksum checking. This scenario represents the first
-	 * connection with the given device.
+	 * Generate the local database checksum only once: when
+	 * the first device connects. Each device should keep a copy
+	 * of the checksum in order to check if the database has
+	 * changed when re-connection happens.
 	 */
-	if (sum == NULL)
-		return true;
+	if (dbsum == NULL)
+		dbsum = checksum_generate(local_attribute_db);
 
-	ret = g_strcmp0(sum, checksum);
+	checksum1 = g_checksum_get_string(dbsum);
+	checksum2 = g_key_file_get_string(kfile, "General", "MD5SUM", NULL);
+	if (checksum2 == NULL) {
+		const bdaddr_t *sba, *dba;
 
-	g_free(sum);
+		DBG("GATT Database MD5SUM: %s", checksum1);
 
-	return (ret == 0 ? true : false);
+		sba = adapter_get_address(adapter);
+		dba = device_get_address(device);
+
+		/* Assign the checksum to the connected device */
+
+		settings_store_checksum(sba, dba, kfile, checksum1);
+	} else if (g_strcmp0(checksum1, checksum2) == 0) {
+
+		/* checksum matches: ignoring */
+
+		DBG("GATT Database MD5SUM: %s matches", checksum1);
+	} else {
+		uint8_t opdu[ATT_DEFAULT_LE_MTU];
+		uint8_t range[4];
+		size_t olen;
+
+		DBG("GATT: ServiceChanged detected");
+
+		/*
+		 * Store new checksum later and notify that the
+		 * entire database handle assignment have changed.
+		 */
+
+		att_put_u16(0x0001, &range[0]);
+		att_put_u16(0xffff, &range[2]);
+
+		olen = enc_indication(svc_changed->handle, range,
+					sizeof(range), opdu, sizeof(opdu));
+
+		g_attrib_send(attrib, 0, opdu, olen, service_changed_result,
+								device, NULL);
+	}
+
+	g_free(checksum2);
 }
 
 static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
@@ -2786,10 +2849,8 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 	struct btd_device *device;
 	struct gatt_device *gdev = NULL;
 	char src[18], dst[18];
-	const char *checksum;
 	bdaddr_t sba;
 	bdaddr_t dba;
-	bool store;
 
 	bt_io_get(io, NULL,
 			BT_IO_OPT_SOURCE_BDADDR, &sba,
@@ -2833,22 +2894,7 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
-	 /* MD5 checksum: Service Changed */
-	if (dbsum == NULL) {
-		dbsum = checksum_generate(local_attribute_db);
-		store = true;
-	}
-
-	checksum = g_checksum_get_string(dbsum);
-	DBG("Local Database MD5SUM: %s", checksum);
-
-	if (checksum_match(gdev->settings, checksum) == false) {
-		store = true;
-		/* Send ServiceChanged */
-	}
-
-	if (store)
-		settings_store_checksum(&sba, &dba, gdev->settings, checksum);
+	checksum(device, gdev->settings, gdev->attrib);
 
 	/*
 	 * When bonding, attribute discovery starts when
