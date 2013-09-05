@@ -851,6 +851,45 @@ static void cmd_trust(const char *arg)
 	g_free(str);
 }
 
+static void cmd_auto(const char *arg)
+{
+	GDBusProxy *proxy;
+	char **arguments;
+	dbus_bool_t autocn;
+	char *str;
+
+	if (!arg || !strlen(arg)) {
+		rl_printf("Missing device address argument\n");
+		return;
+	}
+
+	/* Device Address and On/Off */
+	arguments = g_strsplit(arg, " ", 2);
+
+	proxy = find_proxy_by_address(dev_list, arguments[0]);
+	if (!proxy) {
+		g_strfreev(arguments);
+		rl_printf("Device %s not available\n", arg);
+		return;
+	}
+
+	if (parse_argument_on_off(arguments[1], &autocn) == FALSE) {
+		g_strfreev(arguments);
+		return;
+	}
+
+	g_strfreev(arguments);
+
+	str = g_strdup_printf("AutoConnect %s", autocn == TRUE ? "on" : "off");
+
+	if (g_dbus_proxy_set_property_basic(proxy, "AutoConnect",
+					DBUS_TYPE_BOOLEAN, &autocn,
+					generic_callback, str, g_free) == TRUE)
+		return;
+
+	g_free(str);
+}
+
 static void remove_device_reply(DBusMessage *message, void *user_data)
 {
 	DBusError error;
@@ -1087,6 +1126,9 @@ static const struct {
 	{ "pair",         "<dev>",    cmd_pair, "Pair with device",
 							dev_generator },
 	{ "trust",        "<dev>",    cmd_trust, "Trust device",
+							dev_generator },
+	{ "auto",        "<dev> <on/off>",	cmd_auto,
+							"Automatic Connection",
 							dev_generator },
 	{ "remove",       "<dev>",    cmd_remove, "Remove device",
 							dev_generator },
