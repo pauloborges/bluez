@@ -167,6 +167,7 @@ struct btd_adapter {
 	bool pincode_requested;		/* PIN requested during last bonding */
 	GSList *connections;		/* Connected devices */
 	GSList *devices;		/* Devices structure pointers */
+	GSList *auto_conn;		/* Devices on automatic connection mode */
 	sdp_list_t *services;		/* Services associated to adapter */
 
 	gboolean initialized;
@@ -1030,6 +1031,7 @@ static void adapter_remove_device(struct btd_adapter *adapter,
 	GList *l;
 
 	adapter->devices = g_slist_remove(adapter->devices, dev);
+	adapter->auto_conn = g_slist_remove(adapter->auto_conn, dev);
 
 	adapter->discovery_found = g_slist_remove(adapter->discovery_found,
 									dev);
@@ -3538,6 +3540,9 @@ static void adapter_remove(struct btd_adapter *adapter)
 	g_slist_free(adapter->devices);
 	adapter->devices = NULL;
 
+	g_slist_free(adapter->auto_conn);
+	adapter->auto_conn = NULL;
+
 	unload_drivers(adapter);
 
 	g_slist_free(adapter->pin_callbacks);
@@ -5042,6 +5047,78 @@ int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 				adapter->dev_id, sizeof(cp), &cp,
 				NULL, NULL, NULL) > 0)
 		return 0;
+
+	return -EIO;
+}
+
+static int add_auto_connectable(struct btd_adapter *adapter,
+					struct btd_device *device)
+{
+	if (g_slist_find(adapter->auto_conn, device))
+		return -EALREADY;
+
+	adapter->auto_conn = g_slist_append(adapter->auto_conn, device);
+
+	return 0;
+}
+
+static int remove_auto_connectable(struct btd_adapter *adapter,
+					struct btd_device *device)
+{
+	if (!g_slist_find(adapter->auto_conn, device))
+		return -ENOENT;
+
+	adapter->auto_conn = g_slist_remove(adapter->auto_conn, device);
+
+	return 0;
+}
+
+int btd_adapter_set_auto_connectable(struct btd_adapter *adapter,
+					struct btd_device *device,
+					gboolean autocn)
+{
+	struct mgmt_cp_load_auto_conn_addrs *cp;
+	struct mgmt_addr_info *info;
+	GSList *l;
+	int ret, cp_size, count;
+
+	if (autocn)
+		ret = add_auto_connectable(adapter, device);
+	else
+		ret = remove_auto_connectable(adapter, device);
+
+	if (ret < 0)
+		return ret;
+
+	count = g_slist_length(adapter->auto_conn);
+	cp_size = sizeof(*cp) + count * sizeof(*info);
+	cp = alloca(cp_size);
+
+	/*
+	 * Send entire list. If the list is empty, send the command
+	 * without arguments to clean the list in the kernel.
+	 */
+	cp->count = htobs(count);
+	info = &cp->addrs[0];
+	for (l = adapter->auto_conn; l; l = g_slist_next(l)) {
+		struct btd_device *device = l->data;
+		const bdaddr_t *dba = device_get_address(device);
+
+		bacpy(&info->bdaddr, dba);
+		info->type = device_get_address_type(device);
+		info++;
+	}
+
+	if (mgmt_send(adapter->mgmt, MGMT_OP_LOAD_AUTO_CONN_ADDRS,
+				adapter->dev_id, cp_size, cp,
+				NULL, NULL, NULL) > 0)
+		return 0;
+
+	/* Rollback */
+	if (autocn)
+		ret = remove_auto_connectable(adapter, device);
+	else
+		ret = add_auto_connectable(adapter, device);
 
 	return -EIO;
 }
