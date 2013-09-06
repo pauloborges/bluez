@@ -137,8 +137,11 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
  *		(BT_SECURITY_LOW, BT_SECURITY_MEDIUM or BT_SECURITY_HIGH).
  * @key_size:	Minimum encryption key size.
  *
+ * Returns a reference to characteristic descriptor attribute. In case of
+ * error, NULL is returned.
  */
-void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
+struct btd_attribute *btd_gatt_add_char_desc(bt_uuid_t *uuid,
+				btd_attr_read_t read_cb,
 				btd_attr_write_t write_cb,
 				int read_sec, int write_sec, int key_size);
 

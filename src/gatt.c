@@ -362,12 +362,16 @@ static struct btd_attribute *new_attribute(const bt_uuid_t *type,
 	return attr;
 }
 
-static void local_database_add(struct btd_attribute *attr)
+static int local_database_add(struct btd_attribute *attr)
 {
-	/* TODO: Throw error if next_handle overflows */
+	if (next_handle + 1 == 0xffff)
+		return -ENOSPC;
+
 	attr->handle = next_handle++;
 
 	local_attribute_db = g_list_append(local_attribute_db, attr);
+
+	return 0;
 }
 
 static int attribute_cmp(gconstpointer a, gconstpointer b)
@@ -399,7 +403,10 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 
 	attr = new_const_attribute(type, value, len);
 
-	local_database_add(attr);
+	if (local_database_add(attr) < 0) {
+		destroy_attribute(attr);
+		return NULL;
+	}
 
 	return attr;
 }
@@ -622,7 +629,8 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					int read_sec, int write_sec,
 					int key_size)
 {
-	struct btd_attribute *char_decl, *char_value;
+	struct btd_attribute *char_decl = NULL, *char_value = NULL,
+						*char_desc = NULL;
 	bt_uuid_t char_type;
 	/* Characteristic properties (1 octet), characteristic value attribute
 	 * handle (2 octets) and characteristic UUID (2 or 16 octets).
@@ -642,7 +650,8 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	att_put_uuid(*uuid, &value[3]);
 
 	char_decl = new_const_attribute(&chr_uuid, value, len);
-	local_database_add(char_decl);
+	if (local_database_add(char_decl) < 0)
+		goto fail;
 
 	/*
 	 * Create and add the characteristic value attribute
@@ -652,7 +661,8 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	char_value->write_sec = write_sec;
 	char_value->key_size = key_size;
 
-	local_database_add(char_value);
+	if (local_database_add(char_value) < 0)
+		goto fail;
 
 	/* Update characteristic value handle in characteristic declaration
 	 * attribute.
@@ -661,15 +671,31 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 
 	if (properties & (ATT_CHAR_PROPER_NOTIFY | ATT_CHAR_PROPER_INDICATE)) {
 		bt_uuid16_create(&char_type, GATT_CLIENT_CHARAC_CFG_UUID);
-		btd_gatt_add_char_desc(&char_type, read_ccc_cb,
+		char_desc = btd_gatt_add_char_desc(&char_type, read_ccc_cb,
 					write_ccc_cb, read_sec, write_sec,
 					key_size);
+		if (char_desc == NULL)
+			goto fail;
+
 	}
 
 	return char_value;
+
+fail:
+	if (char_decl)
+		destroy_attribute(char_decl);
+
+	if (char_value)
+		destroy_attribute(char_value);
+
+	if (char_desc)
+		destroy_attribute(char_desc);
+
+	return NULL;
 }
 
-void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
+struct btd_attribute *btd_gatt_add_char_desc(bt_uuid_t *uuid,
+				btd_attr_read_t read_cb,
 				btd_attr_write_t write_cb,
 				int read_sec, int write_sec, int key_size)
 {
@@ -680,7 +706,12 @@ void btd_gatt_add_char_desc(bt_uuid_t *uuid, btd_attr_read_t read_cb,
 	attr->write_sec = write_sec;
 	attr->key_size = key_size;
 
-	local_database_add(attr);
+	if (local_database_add(attr) < 0) {
+		destroy_attribute(attr);
+		return NULL;
+	}
+
+	return attr;
 }
 
 GSList *btd_gatt_get_services(struct btd_device *device, bt_uuid_t *service)
