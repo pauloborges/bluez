@@ -71,6 +71,11 @@
 #define GATT_START_HANDLE	0x0010
 #define DYNAMIC_START_HANDLE	0x0020
 
+/*
+ * TODO: At the moment, Handle Mapping is shared between adapters.
+ */
+#define HMAP_FILENAME		STORAGEDIR "/00:00:00:00:00:00/hmap"
+
 /* Common GATT UUIDs */
 static const bt_uuid_t primary_uuid  = { .type = BT_UUID16,
 					.value.u16 = GATT_PRIM_SVC_UUID };
@@ -153,17 +158,18 @@ struct gatt_device {
 	 * configuration set by a given remote device. eg:
 	 * CCC set in the local attribute by a remote device.
 	 */
-	GKeyFile *settings;
+	GKeyFile *settings;		/* Device specific */
 };
 
 static GList *local_attribute_db = NULL;
 static unsigned int next_notifier_id = 1;
-static uint16_t next_handle = 0;
+static uint16_t next_handle = 1;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
 static GChecksum *dbsum = NULL; /* Local Database declarations checksum */
 static struct btd_attribute *svc_changed = NULL;
+static GKeyFile *hmapkfile = NULL;
 
 static uint8_t errno_to_att(int err)
 {
@@ -189,6 +195,20 @@ static inline int create_filename(char *buf, size_t size, const bdaddr_t *src,
 						srcaddr, dstaddr, name);
 }
 
+static void hmap_store_handle(const char *gid, const char *id, uint16_t start)
+{
+	char *data;
+	size_t len;
+
+	/* Writing data to Handle Mapping file: hmap */
+	g_key_file_set_integer(hmapkfile, gid, id, start);
+	data = g_key_file_to_data(hmapkfile, &len, NULL);
+	if (len > 0)
+		g_file_set_contents(HMAP_FILENAME, data, len, NULL);
+
+	g_free(data);
+}
+
 static void print_attribute(gpointer a, gpointer b)
 {
 	struct btd_attribute *attr = a;
@@ -203,8 +223,9 @@ static void print_attribute(gpointer a, gpointer b)
 	for (i = 0; i < attr->value_len; i++)
 		sprintf(&value_str[i * 2], "%02X", attr->value[i]);
 
-	DBG("handle: 0x%04x Type: %s read_cb: %p write_cb: %p value: %s",
-			attr->handle, type, attr->read_cb, attr->write_cb, value_str);
+	DBG("handle: 0x%04x(%d) Type: %s read_cb: %p write_cb: %p value: %s",
+			attr->handle, attr->handle, type, attr->read_cb,
+			attr->write_cb, value_str);
 }
 
 void btd_gatt_dump_local_attribute_database(void)
@@ -362,12 +383,12 @@ static struct btd_attribute *new_attribute(const bt_uuid_t *type,
 	return attr;
 }
 
-static int local_database_add(struct btd_attribute *attr)
+static int local_database_add(uint16_t handle, struct btd_attribute *attr)
 {
 	if (next_handle + 1 == 0xffff)
 		return -ENOSPC;
 
-	attr->handle = next_handle++;
+	attr->handle = handle;
 
 	local_attribute_db = g_list_append(local_attribute_db, attr);
 
@@ -394,6 +415,8 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 	const bt_uuid_t *type;
 	uint16_t len = bt_uuid_len(uuid);
 	uint8_t value[len];
+	char uuidstr[MAX_LEN_UUID_STR];
+	int handle;
 
 	/* Set attribute type */
 	type = (primary ? &primary_uuid : &secondary_uuid);
@@ -403,10 +426,24 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 
 	attr = new_const_attribute(type, value, len);
 
-	if (local_database_add(attr) < 0) {
+	bt_uuid_to_128string(uuid, uuidstr, sizeof(uuidstr));
+
+	handle = g_key_file_get_integer(hmapkfile, uuidstr, uuidstr, NULL);
+	if (handle < next_handle) {
+		/* Colision: Handle taken already */
+		handle = next_handle;
+		hmap_store_handle(uuidstr, uuidstr, handle);
+	} else {
+		/* Re-using handle */
+		next_handle = handle;
+	}
+
+	if (local_database_add(handle, attr) < 0) {
 		destroy_attribute(attr);
 		return NULL;
 	}
+
+	next_handle++;
 
 	return attr;
 }
@@ -650,8 +687,10 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	att_put_uuid(*uuid, &value[3]);
 
 	char_decl = new_const_attribute(&chr_uuid, value, len);
-	if (local_database_add(char_decl) < 0)
+	if (local_database_add(next_handle, char_decl) < 0)
 		goto fail;
+
+	next_handle++;
 
 	/*
 	 * Create and add the characteristic value attribute
@@ -661,8 +700,10 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	char_value->write_sec = write_sec;
 	char_value->key_size = key_size;
 
-	if (local_database_add(char_value) < 0)
+	if (local_database_add(next_handle, char_value) < 0)
 		goto fail;
+
+	next_handle++;
 
 	/* Update characteristic value handle in characteristic declaration
 	 * attribute.
@@ -706,10 +747,12 @@ struct btd_attribute *btd_gatt_add_char_desc(bt_uuid_t *uuid,
 	attr->write_sec = write_sec;
 	attr->key_size = key_size;
 
-	if (local_database_add(attr) < 0) {
+	if (local_database_add(next_handle, attr) < 0) {
 		destroy_attribute(attr);
 		return NULL;
 	}
+
+	next_handle++;
 
 	return attr;
 }
@@ -3208,6 +3251,15 @@ void gatt_init(void)
 	}
 
 	/*
+	 * Handle Map File for services: Allows services to receive
+	 * the same attributes handles range between system reboots.
+	 */
+	hmapkfile = g_key_file_new();
+	if (g_key_file_load_from_file(hmapkfile, HMAP_FILENAME,
+				G_KEY_FILE_NONE, NULL) == FALSE)
+		create_file(HMAP_FILENAME, S_IRUSR | S_IWUSR);
+
+	/*
 	 * Below, three areas for handle allocation is defined. Service
 	 * Changed Attribute Handle on the server shall not change if
 	 * the server has a trusted relationship with any client.
@@ -3243,4 +3295,7 @@ void gatt_cleanup(void)
 
 	g_hash_table_destroy(gatt_devices);
 	gatt_devices = NULL;
+
+	g_key_file_free(hmapkfile);
+	hmapkfile = NULL;
 }
