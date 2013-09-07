@@ -37,9 +37,6 @@
 #include "profile.h"
 #include "service.h"
 #include "gatt.h"
-#include "attrib/att.h"
-#include "attrib/gattrib.h"
-#include "attrib/gatt_lib.h"
 #include "monitor.h"
 #include "reporter.h"
 #include "manager.h"
@@ -53,37 +50,15 @@ static struct enabled enabled  = {
 static int monitor_linkloss_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
-	struct gatt_primary *linkloss;
 
-	linkloss = btd_device_get_primary(device, LINK_LOSS_UUID);
-	if (linkloss == NULL)
-		return -1;
-
-	return monitor_register_linkloss(device, &enabled, linkloss);
+	return monitor_register_linkloss(device, &enabled);
 }
 
 static int monitor_immediate_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
-	struct gatt_primary *immediate;
 
-	immediate = btd_device_get_primary(device, IMMEDIATE_ALERT_UUID);
-	if (immediate == NULL)
-		return -1;
-
-	return monitor_register_immediate(device, &enabled, immediate);
-}
-
-static int monitor_txpower_probe(struct btd_service *service)
-{
-	struct btd_device *device = btd_service_get_device(service);
-	struct gatt_primary *txpower;
-
-	txpower = btd_device_get_primary(device, TX_POWER_UUID);
-	if (txpower == NULL)
-		return -1;
-
-	return monitor_register_txpower(device, &enabled, txpower);
+	return monitor_register_immediate(device, &enabled);
 }
 
 static void monitor_linkloss_remove(struct btd_service *service)
@@ -100,13 +75,6 @@ static void monitor_immediate_remove(struct btd_service *service)
 	monitor_unregister_immediate(device);
 }
 
-static void monitor_txpower_remove(struct btd_service *service)
-{
-	struct btd_device *device = btd_service_get_device(service);
-
-	monitor_unregister_txpower(device);
-}
-
 static struct btd_profile pxp_monitor_linkloss_profile = {
 	.name		= "proximity-linkloss",
 	.remote_uuid	= LINK_LOSS_UUID,
@@ -119,13 +87,6 @@ static struct btd_profile pxp_monitor_immediate_profile = {
 	.remote_uuid	= IMMEDIATE_ALERT_UUID,
 	.device_probe	= monitor_immediate_probe,
 	.device_remove	= monitor_immediate_remove,
-};
-
-static struct btd_profile pxp_monitor_txpower_profile = {
-	.name		= "proximity-txpower",
-	.remote_uuid	= TX_POWER_UUID,
-	.device_probe	= monitor_txpower_probe,
-	.device_remove	= monitor_txpower_remove,
 };
 
 static struct btd_profile pxp_reporter_profile = {
@@ -170,9 +131,6 @@ int proximity_manager_init(GKeyFile *config)
 	if (btd_profile_register(&pxp_monitor_immediate_profile) < 0)
 		goto fail;
 
-	if (btd_profile_register(&pxp_monitor_txpower_profile) < 0)
-		goto fail;
-
 	if (btd_profile_register(&pxp_reporter_profile) < 0)
 		goto fail;
 
@@ -189,7 +147,6 @@ fail:
 void proximity_manager_exit(void)
 {
 	btd_profile_unregister(&pxp_reporter_profile);
-	btd_profile_unregister(&pxp_monitor_txpower_profile);
 	btd_profile_unregister(&pxp_monitor_immediate_profile);
 	btd_profile_unregister(&pxp_monitor_linkloss_profile);
 

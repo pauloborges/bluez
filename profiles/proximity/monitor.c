@@ -44,10 +44,7 @@
 #include "device.h"
 #include "error.h"
 #include "log.h"
-#include "attrib/att.h"
-#include "attrib/gattrib.h"
-#include "attrib/gatt_lib.h"
-#include "attio.h"
+#include "gatt.h"
 #include "proximity.h"
 #include "monitor.h"
 #include "textfile.h"
@@ -55,25 +52,17 @@
 #define PROXIMITY_INTERFACE "org.bluez.ProximityMonitor1"
 
 #define IMMEDIATE_TIMEOUT	5
-#define TX_POWER_SIZE		1
 
 struct monitor {
 	struct btd_device *device;
-	GAttrib *attrib;
-	struct att_range *linkloss;
-	struct att_range *txpower;
-	struct att_range *immediate;
+	struct btd_attribute *linkloss;		/* LL Alert Level */
+	struct btd_attribute *immediate;	/* Immediate Alert Level */
 	struct enabled enabled;
 	char *linklosslevel;		/* Link Loss Alert Level */
 	char *fallbacklevel;		/* Immediate fallback alert level */
 	char *immediatelevel;		/* Immediate Alert Level */
 	char *signallevel;		/* Path Loss RSSI level */
-	uint16_t linklosshandle;	/* Link Loss Characteristic
-					 * Value Handle */
-	uint16_t txpowerhandle;		/* Tx Characteristic Value Handle */
-	uint16_t immediatehandle;	/* Immediate Alert Value Handle */
 	guint immediateto;		/* Reset Immediate Alert to "none" */
-	guint attioid;
 };
 
 static GSList *monitors = NULL;
@@ -158,250 +147,82 @@ static uint8_t str2level(const char *level)
 	return NO_ALERT;
 }
 
-static void linkloss_written(uint8_t status, void *user_data)
+static void linkloss_alert_written(int err, void *user_data)
 {
 	struct monitor *monitor = user_data;
 	struct btd_device *device = monitor->device;
 	const char *path = device_get_path(device);
 
-	if (status != 0) {
-		error("Link Loss Write Request failed: %s",
-							att_ecode2str(status));
+	if (err) {
+		error("Proximity Monitor: Link Loss Write Request failed: %s",
+							strerror(err));
 		return;
 	}
 
-	DBG("Link Loss Alert Level written");
+	DBG("Proximity Monitor: Link Loss Alert Level written");
 
 	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
 				PROXIMITY_INTERFACE, "LinkLossAlertLevel");
 }
 
-static bool char_discovered_cb(uint8_t status, GSList *characteristics,
-								void *user_data)
+static gboolean immediate_timeout(gpointer user_data);
+
+static void immediate_alert_written(int err, void *user_data)
 {
 	struct monitor *monitor = user_data;
-	struct gatt_char *chr;
-	uint8_t value = str2level(monitor->linklosslevel);
+	const char *path = device_get_path(monitor->device);
 
-	if (status) {
-		error("Discover Link Loss handle: %s", att_ecode2str(status));
-		return false;
+	/*
+	 * This callback gets called by SetProperties or a when a timeout
+	 * occurs to reset the Immediate Alert Level. This timeout is
+	 * BlueZ specific logic, it is not defined in the Find Me Profile.
+	 */
+	if (err) {
+		error("Proximity Monitor: Immediate Alert Write " \
+				"Request failed: %s", strerror(err));
+
+		if (monitor->fallbacklevel) {
+			g_free(monitor->immediatelevel);
+			monitor->immediatelevel = monitor->fallbacklevel;
+			monitor->fallbacklevel = NULL;
+		}
+
+		/* Emit signal even when write fails */
+		goto done;
 	}
 
-	DBG("Setting alert level \"%s\" on Reporter", monitor->linklosslevel);
+	g_free(monitor->fallbacklevel);
+	monitor->fallbacklevel = NULL;
 
-	/* Assume there is a single Alert Level characteristic */
-	chr = characteristics->data;
-	monitor->linklosshandle = chr->value_handle;
+	 /* For Find Me: stop alerting after 5 seconds */
+	if (g_strcmp0(monitor->immediatelevel, "none") != 0)
+		monitor->immediateto = g_timeout_add_seconds(IMMEDIATE_TIMEOUT,
+						immediate_timeout, monitor);
 
-	gatt_write_char(monitor->attrib, monitor->linklosshandle, 0, &value, 1,
-						linkloss_written, monitor);
-
-	return true;
-}
-
-static int write_alert_level(struct monitor *monitor)
-{
-	struct att_range *linkloss = monitor->linkloss;
-	bt_uuid_t uuid;
-
-	if (monitor->linklosshandle) {
-		uint8_t value = str2level(monitor->linklosslevel);
-
-		gatt_write_char(monitor->attrib, monitor->linklosshandle, 0,
-					&value, 1, linkloss_written, monitor);
-		return 0;
-	}
-
-	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
-
-	/* FIXME: use cache (requires service changed support) ? */
-	gatt_discover_char(monitor->attrib, linkloss->start, linkloss->end,
-					&uuid, char_discovered_cb, monitor);
-
-	return 0;
-}
-
-static void tx_power_read_cb(uint8_t status, const uint8_t *value, size_t vlen,
-								void *user_data)
-{
-	if (status != 0) {
-		DBG("Tx Power Level read failed: %s", att_ecode2str(status));
-		return;
-	}
-
-	if (vlen != TX_POWER_SIZE) {
-		DBG("Invalid length for TX Power value: %zd", vlen);
-		return;
-	}
-
-	DBG("Tx Power Level: %02x", (int8_t) value[0]);
-}
-
-static bool tx_power_handle_cb(uint8_t status, GSList *characteristics,
-								void *user_data)
-{
-	struct monitor *monitor = user_data;
-	struct gatt_char *chr;
-
-	if (status) {
-		error("Discover Tx Power handle: %s", att_ecode2str(status));
-		return false;
-	}
-
-	chr = characteristics->data;
-	monitor->txpowerhandle = chr->value_handle;
-
-	DBG("Tx Power handle: 0x%04x", monitor->txpowerhandle);
-
-	gatt_read_char(monitor->attrib, monitor->txpowerhandle,
-							tx_power_read_cb, monitor);
-
-	return true;
-}
-
-static void read_tx_power(struct monitor *monitor)
-{
-	struct att_range *txpower = monitor->txpower;
-	bt_uuid_t uuid;
-
-	if (monitor->txpowerhandle != 0) {
-		gatt_read_char(monitor->attrib, monitor->txpowerhandle,
-						tx_power_read_cb, monitor);
-		return;
-	}
-
-	bt_uuid16_create(&uuid, POWER_LEVEL_CHR_UUID);
-
-	gatt_discover_char(monitor->attrib, txpower->start, txpower->end,
-				&uuid, tx_power_handle_cb, monitor);
+done:
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
+				PROXIMITY_INTERFACE, "ImmediateAlertLevel");
 }
 
 static gboolean immediate_timeout(gpointer user_data)
 {
 	struct monitor *monitor = user_data;
-	const char *path = device_get_path(monitor->device);
+	uint8_t value = NO_ALERT;
 
 	monitor->immediateto = 0;
 
 	if (g_strcmp0(monitor->immediatelevel, "none") == 0)
 		return FALSE;
 
-	if (monitor->attrib) {
-		uint8_t value = NO_ALERT;
-		gatt_write_cmd(monitor->attrib, monitor->immediatehandle,
-				&value, 1, NULL, NULL);
-	}
-
 	g_free(monitor->immediatelevel);
 	monitor->immediatelevel = g_strdup("none");
 
-
-	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
-				PROXIMITY_INTERFACE, "ImmediateAlertLevel");
+	/* If connected: reset alert level to NO_ALERT */
+	btd_gatt_write_attribute(monitor->device, monitor->immediate,
+					&value, sizeof(value), 0,
+					immediate_alert_written, monitor);
 
 	return FALSE;
-}
-
-static void immediate_written(gpointer user_data)
-{
-	struct monitor *monitor = user_data;
-	const char *path = device_get_path(monitor->device);
-
-	g_free(monitor->fallbacklevel);
-	monitor->fallbacklevel = NULL;
-
-
-	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
-				PROXIMITY_INTERFACE, "ImmediateAlertLevel");
-
-	monitor->immediateto = g_timeout_add_seconds(IMMEDIATE_TIMEOUT,
-						immediate_timeout, monitor);
-}
-
-static void write_immediate_alert(struct monitor *monitor)
-{
-	uint8_t value = str2level(monitor->immediatelevel);
-
-	gatt_write_cmd(monitor->attrib, monitor->immediatehandle, &value, 1,
-						immediate_written, monitor);
-}
-
-static bool immediate_handle_cb(uint8_t status, GSList *characteristics,
-								void *user_data)
-{
-	struct monitor *monitor = user_data;
-	struct gatt_char *chr;
-
-	if (status) {
-		error("Discover Immediate Alert handle: %s",
-						att_ecode2str(status));
-		return false;
-	}
-
-	chr = characteristics->data;
-	monitor->immediatehandle = chr->value_handle;
-
-	DBG("Immediate Alert handle: 0x%04x", monitor->immediatehandle);
-
-	if (monitor->fallbacklevel)
-		write_immediate_alert(monitor);
-
-	return true;
-}
-
-static void discover_immediate_handle(struct monitor *monitor)
-{
-	struct att_range *immediate = monitor->immediate;
-	bt_uuid_t uuid;
-
-	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
-
-	gatt_discover_char(monitor->attrib, immediate->start, immediate->end,
-					&uuid, immediate_handle_cb, monitor);
-}
-
-static void attio_connected_cb(GAttrib *attrib, gpointer user_data)
-{
-	struct monitor *monitor = user_data;
-
-	monitor->attrib = g_attrib_ref(attrib);
-
-	if (monitor->enabled.linkloss)
-		write_alert_level(monitor);
-
-	if (monitor->enabled.pathloss)
-		read_tx_power(monitor);
-
-	if (monitor->immediatehandle == 0) {
-		if(monitor->enabled.pathloss || monitor->enabled.findme)
-			discover_immediate_handle(monitor);
-	} else if (monitor->fallbacklevel)
-		write_immediate_alert(monitor);
-}
-
-static void attio_disconnected_cb(gpointer user_data)
-{
-	struct monitor *monitor = user_data;
-	const char *path = device_get_path(monitor->device);
-
-	g_attrib_unref(monitor->attrib);
-	monitor->attrib = NULL;
-
-	if (monitor->immediateto == 0)
-		return;
-
-	g_source_remove(monitor->immediateto);
-	monitor->immediateto = 0;
-
-	if (g_strcmp0(monitor->immediatelevel, "none") == 0)
-		return;
-
-	g_free(monitor->immediatelevel);
-	monitor->immediatelevel = g_strdup("none");
-
-	g_dbus_emit_property_changed(btd_get_dbus_connection(), path,
-				PROXIMITY_INTERFACE, "ImmediateAlertLevel");
 }
 
 static gboolean level_is_valid(const char *level)
@@ -427,6 +248,7 @@ static void property_set_link_loss_level(const GDBusPropertyTable *property,
 {
 	struct monitor *monitor = data;
 	const char *level;
+	uint8_t value;
 
 	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_STRING) {
 		g_dbus_pending_property_error(id,
@@ -452,8 +274,10 @@ static void property_set_link_loss_level(const GDBusPropertyTable *property,
 
 	write_proximity_config(monitor->device, "LinkLossAlertLevel", level);
 
-	if (monitor->attrib)
-		write_alert_level(monitor);
+	value = str2level(monitor->linklosslevel);
+	btd_gatt_write_attribute(monitor->device, monitor->linkloss,
+					&value, sizeof(value), 0,
+					linkloss_alert_written, monitor);
 
 done:
 	g_dbus_pending_property_success(id);
@@ -487,8 +311,8 @@ static void property_set_immediate_alert_level(
 		GDBusPendingPropertySet id, void *data)
 {
 	struct monitor *monitor = data;
-	struct btd_device *device = monitor->device;
 	const char *level;
+	uint8_t value;
 
 	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_STRING) {
 		g_dbus_pending_property_error(id,
@@ -526,13 +350,9 @@ static void property_set_immediate_alert_level(
 	 * If enabled, Path Loss always registers a connection callback
 	 * when the Proximity Monitor starts.
 	 */
-	if (monitor->attioid == 0)
-		monitor->attioid = btd_device_add_attio_callback(device,
-							attio_connected_cb,
-							attio_disconnected_cb,
-							monitor);
-	else if (monitor->attrib)
-		write_immediate_alert(monitor);
+	value = str2level(monitor->immediatelevel);
+	btd_gatt_write_attribute(monitor->device, monitor->immediate, &value,
+			sizeof(value), 0, immediate_alert_written, monitor);
 
 done:
 	g_dbus_pending_property_success(id);
@@ -543,7 +363,7 @@ static gboolean property_exists_immediate_alert_level(
 {
 	struct monitor *monitor = data;
 
-	if (!(monitor->enabled.findme || monitor->enabled.pathloss))
+	if (!(monitor->enabled.findme))
 		return FALSE;
 
 	return TRUE;
@@ -564,12 +384,7 @@ static gboolean property_get_signal_level(
 static gboolean property_exists_signal_level(const GDBusPropertyTable *property,
 								void *data)
 {
-	struct monitor *monitor = data;
-
-	if (!monitor->enabled.pathloss)
-		return FALSE;
-
-	return TRUE;
+	return FALSE;
 }
 
 static const GDBusPropertyTable monitor_device_properties[] = {
@@ -627,99 +442,115 @@ static struct monitor *register_monitor(struct btd_device *device)
 		return NULL;
 	}
 
-	DBG("Registered interface %s on path %s", PROXIMITY_INTERFACE, path);
+	DBG("Proximity Monitor: Registered interface %s on path %s",
+					PROXIMITY_INTERFACE, path);
 
 	return monitor;
 }
 
-static void update_monitor(struct monitor *monitor)
-{
-	if (monitor->txpower != NULL && monitor->immediate != NULL)
-		monitor->enabled.pathloss = TRUE;
-	else
-		monitor->enabled.pathloss = FALSE;
-
-	DBG("Link Loss: %s, Path Loss: %s, FindMe: %s",
-				monitor->enabled.linkloss ? "TRUE" : "FALSE",
-				monitor->enabled.pathloss ? "TRUE" : "FALSE",
-				monitor->enabled.findme ? "TRUE" : "FALSE");
-
-	if (!monitor->enabled.linkloss && !monitor->enabled.pathloss)
-		return;
-
-	if (monitor->attioid != 0)
-		return;
-
-	monitor->attioid = btd_device_add_attio_callback(monitor->device,
-							attio_connected_cb,
-							attio_disconnected_cb,
-							monitor);
-}
-
 int monitor_register_linkloss(struct btd_device *device,
-						struct enabled *enabled,
-						struct gatt_primary *linkloss)
+						struct enabled *enabled)
 {
 	struct monitor *monitor;
+	GSList *list;
+	struct btd_attribute *lls;
+	struct btd_attribute *level;
+	bt_uuid_t uuid;
+
 
 	if (!enabled->linkloss)
 		return 0;
 
+	/* Accessing Link Loss Service declaration */
+	bt_uuid16_create(&uuid, LINK_LOSS_SVC_UUID);
+	list = btd_gatt_get_services(device, &uuid);
+	if (list == NULL) {
+		DBG("Proximity Monitor: LLS missing!");
+		return -1;
+	}
+
+	lls = list->data;
+	g_slist_free(list);
+
+	/* Accessing Link Loss Alert Level declaration */
+	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
+	list = btd_gatt_get_chars_decl(device, lls, &uuid);
+	if (list == NULL) {
+		DBG("Proximity Monitor: LLS Alert Level declaration missing!");
+		return -1;
+	}
+
+	/* Accessing Immediate Alert Level value */
+	level = btd_gatt_get_char_value(device, list->data);
+	g_slist_free(list);
+	if (level == NULL) {
+		DBG("Proximity Monitor: LLS Alert Level value missing!");
+		return -1;
+	}
+
 	monitor = register_monitor(device);
 	if (monitor == NULL)
 		return -1;
 
-	monitor->linkloss = g_new0(struct att_range, 1);
-	monitor->linkloss->start = linkloss->range.start;
-	monitor->linkloss->end = linkloss->range.end;
+	monitor->linkloss = level;
 	monitor->enabled.linkloss = TRUE;
 
-	update_monitor(monitor);
-
-	return 0;
-}
-
-int monitor_register_txpower(struct btd_device *device,
-						struct enabled *enabled,
-						struct gatt_primary *txpower)
-{
-	struct monitor *monitor;
-
-	if (!enabled->pathloss)
-		return 0;
-
-	monitor = register_monitor(device);
-	if (monitor == NULL)
-		return -1;
-
-	monitor->txpower = g_new0(struct att_range, 1);
-	monitor->txpower->start = txpower->range.start;
-	monitor->txpower->end = txpower->range.end;
-
-	update_monitor(monitor);
+	DBG("Proximity Monitor Link Loss: %s, FindMe: %s",
+				monitor->enabled.linkloss ? "TRUE" : "FALSE",
+				monitor->enabled.findme ? "TRUE" : "FALSE");
 
 	return 0;
 }
 
 int monitor_register_immediate(struct btd_device *device,
-						struct enabled *enabled,
-						struct gatt_primary *immediate)
+						struct enabled *enabled)
 {
 	struct monitor *monitor;
+	GSList *list;
+	struct btd_attribute *ias;
+	struct btd_attribute *level;
+	bt_uuid_t uuid;
 
-	if (!enabled->pathloss && !enabled->findme)
+	if (!enabled->findme)
 		return 0;
+
+	/* Accessing Immediate Alert Service declaration */
+	bt_uuid16_create(&uuid, IMMEDIATE_ALERT_SVC_UUID);
+	list = btd_gatt_get_services(device, &uuid);
+	if (list == NULL) {
+		DBG("Proximity Monitor: IAS missing!");
+		return -1;
+	}
+
+	ias = list->data;
+	g_slist_free(list);
+
+	/* Accessing Immediate Alert Level declaration */
+	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
+	list = btd_gatt_get_chars_decl(device, ias, &uuid);
+	if (list == NULL) {
+		DBG("Proximity Monitor: IAS Alert Level declaration missing!");
+		return -1;
+	}
+
+	/* Accessing Immediate Alert Level value */
+	level = btd_gatt_get_char_value(device, list->data);
+	g_slist_free(list);
+	if (level == NULL) {
+		DBG("Proximity Monitor: IAS Alert Level value missing!");
+		return -1;
+	}
 
 	monitor = register_monitor(device);
 	if (monitor == NULL)
 		return -1;
 
-	monitor->immediate = g_new0(struct att_range, 1);
-	monitor->immediate->start = immediate->range.start;
-	monitor->immediate->end = immediate->range.end;
-	monitor->enabled.findme = enabled->findme;
+	monitor->immediate = level;
+	monitor->enabled.findme = TRUE;
 
-	update_monitor(monitor);
+	DBG("Proximity Monitor Link Loss: %s, FindMe: %s",
+				monitor->enabled.linkloss ? "TRUE" : "FALSE",
+				monitor->enabled.findme ? "TRUE" : "FALSE");
 
 	return 0;
 }
@@ -729,7 +560,7 @@ static void cleanup_monitor(struct monitor *monitor)
 	struct btd_device *device = monitor->device;
 	const char *path = device_get_path(device);
 
-	if (monitor->immediate != NULL || monitor->txpower != NULL)
+	if (monitor->immediate != NULL)
 		return;
 
 	if (monitor->immediateto != 0) {
@@ -739,16 +570,6 @@ static void cleanup_monitor(struct monitor *monitor)
 
 	if (monitor->linkloss != NULL)
 		return;
-
-	if (monitor->attioid != 0) {
-		btd_device_remove_attio_callback(device, monitor->attioid);
-		monitor->attioid = 0;
-	}
-
-	if (monitor->attrib != NULL) {
-		g_attrib_unref(monitor->attrib);
-		monitor->attrib = NULL;
-	}
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
 							PROXIMITY_INTERFACE);
@@ -762,24 +583,8 @@ void monitor_unregister_linkloss(struct btd_device *device)
 	if (monitor == NULL)
 		return;
 
-	g_free(monitor->linkloss);
 	monitor->linkloss = NULL;
 	monitor->enabled.linkloss = FALSE;
-
-	cleanup_monitor(monitor);
-}
-
-void monitor_unregister_txpower(struct btd_device *device)
-{
-	struct monitor *monitor;
-
-	monitor = find_monitor(device);
-	if (monitor == NULL)
-		return;
-
-	g_free(monitor->txpower);
-	monitor->txpower = NULL;
-	monitor->enabled.pathloss = FALSE;
 
 	cleanup_monitor(monitor);
 }
@@ -792,10 +597,8 @@ void monitor_unregister_immediate(struct btd_device *device)
 	if (monitor == NULL)
 		return;
 
-	g_free(monitor->immediate);
 	monitor->immediate = NULL;
 	monitor->enabled.findme = FALSE;
-	monitor->enabled.pathloss = FALSE;
 
 	cleanup_monitor(monitor);
 }

@@ -29,15 +29,9 @@ struct enabled {
 };
 
 int monitor_register_linkloss(struct btd_device *device,
-						struct enabled *enabled,
-						struct gatt_primary *linkloss);
-int monitor_register_txpower(struct btd_device *device,
-						struct enabled *enabled,
-						struct gatt_primary *txpower);
+						struct enabled *enabled);
 int monitor_register_immediate(struct btd_device *device,
-						struct enabled *enabled,
-						struct gatt_primary *immediate);
+						struct enabled *enabled);
 
 void monitor_unregister_linkloss(struct btd_device *device);
-void monitor_unregister_txpower(struct btd_device *device);
 void monitor_unregister_immediate(struct btd_device *device);
