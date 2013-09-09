@@ -36,8 +36,6 @@
 #include "attrib/att.h"
 #include "log.h"
 
-static GSList *devices = NULL;
-
 static void read_device_name_chr_cb(int err, uint8_t *value, size_t len,
 							void *user_data)
 {
@@ -205,24 +203,16 @@ static void state_changed(struct btd_service *service,
 
 static int gatt_driver_probe(struct btd_service *service)
 {
-	struct btd_device *device = btd_service_get_device(service);
-
 	DBG("Probing device");
 
 	btd_service_add_state_cb(state_changed, service);
-
-	devices = g_slist_append(devices, device);
 
 	return 0;
 }
 
 static void gatt_driver_remove(struct btd_service *service)
 {
-	struct btd_device *device = btd_service_get_device(service);
-
 	DBG("Removing device");
-
-	devices = g_slist_remove(devices, device);
 }
 
 static struct btd_profile gatt_profile = {
