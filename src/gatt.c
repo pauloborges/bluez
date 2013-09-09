@@ -2848,7 +2848,7 @@ static void service_changed_result(guint8 status, const guint8 *pdu,
 		return;
 	}
 
-	sba = adapter_get_address(adapter);
+	sba = btd_adapter_get_address(adapter);
 	dba = device_get_address(device);
 
 	checksum = g_checksum_get_string(dbsum);
@@ -2885,7 +2885,7 @@ static void checksum(struct btd_device *device, GKeyFile *kfile,
 
 		DBG("GATT Database MD5SUM: %s", checksum1);
 
-		sba = adapter_get_address(adapter);
+		sba = btd_adapter_get_address(adapter);
 		dba = device_get_address(device);
 
 		/* Assign the checksum to the connected device */
