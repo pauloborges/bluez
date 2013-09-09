@@ -294,11 +294,11 @@ void reporter_remove(struct btd_service *service)
 
 	DBG("Unregister Proximity Reporter for %s", path);
 
-	if (linkloss_levels)
-		g_hash_table_remove(linkloss_levels, device);
-
 	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
 					PROXIMITY_REPORTER_INTERFACE);
+
+	if (linkloss_levels)
+		g_hash_table_remove(linkloss_levels, device);
 }
 
 static void ias_init(void)
