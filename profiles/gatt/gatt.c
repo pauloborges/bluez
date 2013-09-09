@@ -247,7 +247,7 @@ static struct btd_profile gatt_profile = {
 	.auto_connect	= true
 };
 
-static int gatt_init(void)
+static int gatt_profile_init(void)
 {
 	DBG("Initializing GATT/GAP plugin");
 
@@ -256,7 +256,7 @@ static int gatt_init(void)
 	return 0;
 }
 
-static void gatt_exit(void)
+static void gatt_profile_exit(void)
 {
 	DBG("Finishing GATT/GAP plugin");
 
@@ -264,4 +264,4 @@ static void gatt_exit(void)
 }
 
 BLUETOOTH_PLUGIN_DEFINE(gatt, VERSION, BLUETOOTH_PLUGIN_PRIORITY_DEFAULT,
-					gatt_init, gatt_exit)
+					gatt_profile_init, gatt_profile_exit)

@@ -69,10 +69,8 @@ builtin_sources += profiles/health/mcap_lib.h profiles/health/mcap_internal.h \
 			profiles/health/hdp_util.h profiles/health/hdp_util.c
 endif
 
-if FALSE
 builtin_modules += gatt
-builtin_sources += profiles/gatt/gas.c
-endif
+builtin_sources += profiles/gatt/gatt.c
 
 if FALSE
 builtin_modules += scanparam
