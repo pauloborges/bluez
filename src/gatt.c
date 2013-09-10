@@ -610,9 +610,9 @@ static void settings_store_checksum(const bdaddr_t *src, const bdaddr_t *dst,
 						GKeyFile *kfile, const char *hash)
 {
 	if (hash)
-		g_key_file_set_string(kfile, "General", "MD5SUM", hash);
+		g_key_file_set_string(kfile, "General", "SHA1SUM", hash);
 	else
-		g_key_file_remove_key(kfile, "General", "MD5SUM", NULL);
+		g_key_file_remove_key(kfile, "General", "SHA1SUM", NULL);
 
 	settings_save(src, dst, kfile);
 }
@@ -2811,11 +2811,11 @@ static void enable_pending_ccc(GList *list, struct btd_device *device)
 
 static GChecksum *checksum_generate(GList *database)
 {
-	GChecksum *chksum = g_checksum_new(G_CHECKSUM_MD5);
+	GChecksum *chksum = g_checksum_new(G_CHECKSUM_SHA1);
 	GList *list;
 
 	/*
-	 * MD5SUM is used to check if the local attribute database
+	 * SHA1SUM is used to check if the local attribute database
 	 * has changed. Value field of the Characteristic value
 	 * attribute and the descriptors value are being ignored
 	 * by the checksum function. Since it is not possible to guess
@@ -2867,7 +2867,7 @@ static void service_changed_result(guint8 status, const guint8 *pdu,
 	checksum = g_checksum_get_string(dbsum);
 	settings_store_checksum(sba, dba, gdev->settings, checksum);
 
-	DBG("Service Changed MD5SUM stored");
+	DBG("Service Changed SHA1SUM stored");
 }
 
 static void checksum(struct btd_device *device, GKeyFile *kfile,
@@ -2892,11 +2892,11 @@ static void checksum(struct btd_device *device, GKeyFile *kfile,
 	dbsum = checksum_generate(local_attribute_db);
 
 	checksum1 = g_checksum_get_string(dbsum);
-	checksum2 = g_key_file_get_string(kfile, "General", "MD5SUM", NULL);
+	checksum2 = g_key_file_get_string(kfile, "General", "SHA1SUM", NULL);
 	if (checksum2 == NULL) {
 		const bdaddr_t *sba, *dba;
 
-		DBG("GATT Database MD5SUM: %s", checksum1);
+		DBG("GATT Database SHA1SUM: %s", checksum1);
 
 		sba = btd_adapter_get_address(adapter);
 		dba = device_get_address(device);
@@ -2908,7 +2908,7 @@ static void checksum(struct btd_device *device, GKeyFile *kfile,
 
 		/* checksum matches: ignoring */
 
-		DBG("GATT Database MD5SUM: %s matches", checksum1);
+		DBG("GATT Database SHA1SUM: %s matches", checksum1);
 	} else {
 		uint8_t opdu[ATT_DEFAULT_LE_MTU];
 		uint8_t range[4];
