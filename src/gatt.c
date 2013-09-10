@@ -67,9 +67,10 @@
 #define CCC_NOTIFICATION_BIT	(1 << 0)
 #define CCC_INDICATION_BIT	(1 << 1)
 
-#define GAP_START_HANDLE	0x0001
-#define GATT_START_HANDLE	0x0010
-#define DYNAMIC_START_HANDLE	0x0020
+#define GAP_START_HANDLE		0x0001
+#define GATT_START_HANDLE		0x0010
+#define DYNAMIC_UUID16_START_HANDLE	0x0020
+#define DYNAMIC_UUID128_START_HANDLE	0x8000
 
 /*
  * TODO: At the moment, Handle Mapping is shared between adapters.
@@ -163,7 +164,9 @@ struct gatt_device {
 
 static GList *local_attribute_db = NULL;
 static unsigned int next_notifier_id = 1;
-static uint16_t next_handle = 1;
+static uint16_t next_uuid16_handle;
+static uint16_t next_uuid128_handle = DYNAMIC_UUID128_START_HANDLE;
+static uint16_t *next_handle = NULL;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
 static GHashTable *gatt_devices = NULL;
@@ -385,7 +388,11 @@ static struct btd_attribute *new_attribute(const bt_uuid_t *type,
 
 static int local_database_add(uint16_t handle, struct btd_attribute *attr)
 {
-	if (next_handle + 1 == 0xffff)
+	uint16_t overflow;
+
+	/* Removes the most significant bit */
+	overflow = handle & ~DYNAMIC_UUID128_START_HANDLE;
+	if (overflow == 0x7fff)
 		return -ENOSPC;
 
 	attr->handle = handle;
@@ -428,14 +435,20 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 
 	bt_uuid_to_128string(uuid, uuidstr, sizeof(uuidstr));
 
+	/* Define service segment: UUID16 or UUID128? */
+	if (uuid->type == BT_UUID16)
+		next_handle = &next_uuid16_handle;
+	else
+		next_handle = &next_uuid128_handle;
+
 	handle = g_key_file_get_integer(hmapkfile, uuidstr, uuidstr, NULL);
-	if (handle < next_handle) {
+	if (handle < *next_handle) {
 		/* Colision: Handle taken already */
-		handle = next_handle;
+		handle = *next_handle;
 		hmap_store_handle(uuidstr, uuidstr, handle);
 	} else {
 		/* Re-using handle */
-		next_handle = handle;
+		*next_handle = handle;
 	}
 
 	if (local_database_add(handle, attr) < 0) {
@@ -443,7 +456,7 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 		return NULL;
 	}
 
-	next_handle++;
+	*next_handle = *next_handle + 1;
 
 	return attr;
 }
@@ -687,10 +700,10 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	att_put_uuid(*uuid, &value[3]);
 
 	char_decl = new_const_attribute(&chr_uuid, value, len);
-	if (local_database_add(next_handle, char_decl) < 0)
+	if (local_database_add(*next_handle, char_decl) < 0)
 		goto fail;
 
-	next_handle++;
+	*next_handle = *next_handle + 1;
 
 	/*
 	 * Create and add the characteristic value attribute
@@ -700,10 +713,10 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	char_value->write_sec = write_sec;
 	char_value->key_size = key_size;
 
-	if (local_database_add(next_handle, char_value) < 0)
+	if (local_database_add(*next_handle, char_value) < 0)
 		goto fail;
 
-	next_handle++;
+	*next_handle = *next_handle + 1;
 
 	/* Update characteristic value handle in characteristic declaration
 	 * attribute.
@@ -747,12 +760,12 @@ struct btd_attribute *btd_gatt_add_char_desc(bt_uuid_t *uuid,
 	attr->write_sec = write_sec;
 	attr->key_size = key_size;
 
-	if (local_database_add(next_handle, attr) < 0) {
+	if (local_database_add(*next_handle, attr) < 0) {
 		destroy_attribute(attr);
 		return NULL;
 	}
 
-	next_handle++;
+	*next_handle = *next_handle + 1;
 
 	return attr;
 }
@@ -3264,13 +3277,15 @@ void gatt_init(void)
 	 * Changed Attribute Handle on the server shall not change if
 	 * the server has a trusted relationship with any client.
 	 */
-	next_handle = GAP_START_HANDLE;
+
+	next_uuid16_handle = GAP_START_HANDLE;
+	next_handle = &next_uuid16_handle ;
 	add_gap();
 
-	next_handle = GATT_START_HANDLE;
+	next_uuid16_handle = GATT_START_HANDLE;
 	add_gatt();
 
-	next_handle = DYNAMIC_START_HANDLE;
+	next_uuid16_handle = DYNAMIC_UUID16_START_HANDLE;
 
 	gatt_dbus_manager_register();
 
