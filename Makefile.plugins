@@ -72,10 +72,8 @@ endif
 builtin_modules += gatt
 builtin_sources += profiles/gatt/gatt.c
 
-if FALSE
 builtin_modules += scanparam
 builtin_sources += profiles/scanparam/scan.c
-endif
 
 if FALSE
 builtin_modules += deviceinfo
