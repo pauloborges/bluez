@@ -168,6 +168,14 @@ static void destroy_service(void *data)
 	g_free(srv);
 }
 
+static int external_app_gid_cmp(gconstpointer a, gconstpointer b)
+{
+	const struct external_app *eapp = a;
+	const char *gid = b;
+
+	return g_strcmp0(eapp->gid, gid);
+}
+
 static void read_char_setup(DBusMessageIter *iter, void *user_data)
 {
 	uint16_t offset[] = { 0x0000 };
@@ -465,8 +473,6 @@ static struct external_app *new_external_app(DBusConnection *conn,
 	g_dbus_client_set_proxy_handlers(client, proxy_added,
 				proxy_removed, property_changed, eapp);
 
-	external_apps = g_slist_prepend(external_apps, eapp);
-
 	return eapp;
 }
 
@@ -554,9 +560,14 @@ static DBusMessage *register_services(DBusConnection *conn,
 	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
 		goto invalid;
 
+	if (g_slist_find_custom(external_apps, gid, external_app_gid_cmp))
+		return btd_error_already_exists(msg);
+
 	eapp = new_external_app(conn, dbus_message_get_sender(msg), gid);
 	if (eapp == NULL)
 		return btd_error_failed(msg, "Not enough resources");
+
+	external_apps = g_slist_prepend(external_apps, eapp);
 
 	DBG("new app %p", eapp);
 
