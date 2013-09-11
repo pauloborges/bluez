@@ -66,6 +66,7 @@ struct external_service {
 };
 
 struct external_app {
+	char *gid;
 	char *owner;
 	GSList *services;
 	GSList *prim_services;
@@ -420,6 +421,7 @@ static void external_app_disconnected(DBusConnection *conn, void *user_data)
 	if (eapp->register_timer > 0)
 		g_source_remove(eapp->register_timer);
 
+	g_free(eapp->gid);
 	g_free(eapp->owner);
 
 	g_slist_free_full(eapp->prim_services, remove_local_service);
@@ -437,7 +439,7 @@ static void external_app_disconnected(DBusConnection *conn, void *user_data)
 }
 
 static struct external_app *new_external_app(DBusConnection *conn,
-							const char *sender)
+					const char *sender, const char *gid)
 {
 	struct external_app *eapp;
 	GDBusClient *client;
@@ -458,6 +460,7 @@ static struct external_app *new_external_app(DBusConnection *conn,
 
 	eapp->owner = g_strdup(sender);
 	eapp->client = client;
+	eapp->gid = g_strdup(gid);
 
 	g_dbus_client_set_proxy_handlers(client, proxy_added,
 				proxy_removed, property_changed, eapp);
@@ -497,7 +500,7 @@ static gboolean finish_register(gpointer user_data)
 		struct external_service *esrv = list->data;
 		struct btd_attribute *attr;
 
-		attr = btd_gatt_add_service(eapp->owner, &esrv->uuid, true);
+		attr = btd_gatt_add_service(eapp->gid, &esrv->uuid, true);
 		eapp->prim_services = g_slist_append(eapp->prim_services,
 								attr);
 		DBG("new service %s", esrv->path);
@@ -520,16 +523,24 @@ static DBusMessage *register_services(DBusConnection *conn,
 {
 	struct external_app *eapp;
 	DBusMessageIter args, iter;
+	const char *gid;
 
 	DBG("Registering GATT Service");
 
 	if (dbus_message_iter_init(msg, &args) == false)
 		goto invalid;
 
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
+		goto invalid;
+
+	dbus_message_iter_get_basic(&args, &gid);
+
+	dbus_message_iter_next(&args);
+
 	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
 		goto invalid;
 
-	eapp = new_external_app(conn, dbus_message_get_sender(msg));
+	eapp = new_external_app(conn, dbus_message_get_sender(msg), gid);
 	if (eapp == NULL)
 		return btd_error_failed(msg, "Not enough resources");
 
@@ -570,7 +581,7 @@ static DBusMessage *unregister_services(DBusConnection *conn,
 
 static const GDBusMethodTable methods[] = {
 	{ GDBUS_EXPERIMENTAL_METHOD("RegisterServices",
-				GDBUS_ARGS({ "services", "ao"}), NULL,
+				GDBUS_ARGS({ "services", "sao"}), NULL,
 				register_services) },
 	{ GDBUS_EXPERIMENTAL_METHOD("UnregisterServices", NULL, NULL,
 				unregister_services) },
