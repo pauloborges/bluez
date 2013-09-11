@@ -30,7 +30,9 @@
 #include <stdlib.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <glib.h>
 
@@ -166,6 +168,7 @@ static GList *local_attribute_db = NULL;
 static unsigned int next_notifier_id = 1;
 static uint16_t next_uuid16_handle;
 static uint16_t next_uuid128_handle = DYNAMIC_UUID128_START_HANDLE;
+static uint16_t next_inner_handle;
 static uint16_t *next_handle = NULL;
 static GIOChannel *bredr_io = NULL;
 static GIOChannel *le_io = NULL;
@@ -198,13 +201,25 @@ static inline int create_filename(char *buf, size_t size, const bdaddr_t *src,
 						srcaddr, dstaddr, name);
 }
 
-static void hmap_store_handle(const char *gid, const char *id, uint16_t start)
+static void hmap_store_handle(const char *gid, const char *id, uint16_t start,
+								pid_t pid)
 {
 	char *data;
 	size_t len;
 
-	/* Writing data to Handle Mapping file: hmap */
+	/*
+	 * Writing data to Handle Mapping file: hmap
+	 * Group ID manages multiples services registered by the same
+	 * external application. For internal services, GID and ID are
+	 * the same (derived from Bluetooth UUID). SHA1 hash is used
+	 * to detect Service Changed scenarios.
+	 *
+	 * [GID] : Represents the group or application id
+	 *     ID=SHA1 : Current local database hash
+	 *     PID=x : bluetoothd process ID
+	 */
 	g_key_file_set_integer(hmapkfile, gid, id, start);
+	g_key_file_set_integer(hmapkfile, gid, "PID", pid);
 	data = g_key_file_to_data(hmapkfile, &len, NULL);
 	if (len > 0)
 		g_file_set_contents(HMAP_FILENAME, data, len, NULL);
@@ -423,6 +438,7 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 	uint16_t len = bt_uuid_len(uuid);
 	uint8_t value[len];
 	char uuidstr[MAX_LEN_UUID_STR];
+	pid_t pid1, pid2;
 	int handle;
 
 	/* Set attribute type */
@@ -442,13 +458,40 @@ struct btd_attribute *btd_gatt_add_service(bt_uuid_t *uuid, bool primary)
 		next_handle = &next_uuid128_handle;
 
 	handle = g_key_file_get_integer(hmapkfile, uuidstr, uuidstr, NULL);
-	if (handle < *next_handle) {
-		/* Colision: Handle taken already */
-		handle = *next_handle;
-		hmap_store_handle(uuidstr, uuidstr, handle);
-	} else {
-		/* Re-using handle */
+	pid2 = g_key_file_get_integer(hmapkfile, uuidstr, "PID", NULL);
+
+	pid1 = getpid();
+	if (pid2 == pid1) {
+		/*
+		 * External service exited and it is registering the
+		 * service again. Re-use the handles. For development
+		 * environment, new attributes may be added. However,
+		 * we don't want to address this. PID address the following
+		 * scenario: Considering A, B, C, D services registered,
+		 * a given application exits and registers C again.
+		 */
+
+		DBG("%s re-using inner handle: 0x%04x", uuidstr, handle);
+
+		next_handle = &next_inner_handle;
 		*next_handle = handle;
+
+	} else if (handle >= *next_handle) {
+		/* Re-using handle */
+
+		DBG("%s re-using handle: 0x%04x", uuidstr, handle);
+
+		*next_handle = handle;
+	} else {
+		/* New service or Colision (handle taken already) */
+		if (handle == 0)
+			DBG("%s handle: 0x%04x", uuidstr, *next_handle);
+		else
+			DBG("%s handle colision (0x%04x) assigning: 0x%04x",
+						uuidstr, handle, *next_handle);
+
+		handle = *next_handle;
+		hmap_store_handle(uuidstr, uuidstr, handle, pid1);
 	}
 
 	if (local_database_add(handle, attr) < 0) {
