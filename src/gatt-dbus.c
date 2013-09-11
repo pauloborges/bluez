@@ -518,6 +518,15 @@ static gboolean finish_register(gpointer user_data)
 	return FALSE;
 }
 
+static inline int is_uuid128(const char *string)
+{
+	return (strlen(string) == 36 &&
+			string[8] == '-' &&
+			string[13] == '-' &&
+			string[18] == '-' &&
+			string[23] == '-');
+}
+
 static DBusMessage *register_services(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -534,6 +543,11 @@ static DBusMessage *register_services(DBusConnection *conn,
 		goto invalid;
 
 	dbus_message_iter_get_basic(&args, &gid);
+
+	if (!is_uuid128(gid)) {
+		DBG("Application ID: invalid argument");
+		goto invalid;
+	}
 
 	dbus_message_iter_next(&args);
 
