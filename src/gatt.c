@@ -652,6 +652,13 @@ static void settings_save(const bdaddr_t *src, const bdaddr_t *dst,
 static void settings_store_checksum(const bdaddr_t *src, const bdaddr_t *dst,
 						GKeyFile *kfile, const char *hash)
 {
+	/*
+	 * General section of the device specific "settings" file is used to
+	 * store local database SHA1 hash which controls when Service Changed
+	 * should be used. The checksum is computed on every connection, if it
+	 * doesn't match with the stored value, Service Changed indication
+	 * should be sent.
+	 */
 	if (hash)
 		g_key_file_set_string(kfile, "General", "SHA1SUM", hash);
 	else
