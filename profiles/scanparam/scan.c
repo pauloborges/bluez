@@ -188,6 +188,9 @@ static struct btd_profile scan_profile = {
 	.remote_uuid = SCAN_PARAMETERS_UUID128,
 	.device_probe = scan_param_probe,
 	.device_remove = scan_param_remove,
+	.connect	= btd_gatt_connect,
+	.disconnect	= btd_gatt_disconnect,
+	.auto_connect	= false,
 };
 
 static int scan_param_init(void)
