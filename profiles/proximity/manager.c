@@ -91,6 +91,9 @@ static struct btd_profile pxp_monitor_linkloss_profile = {
 	.remote_uuid	= LINK_LOSS_UUID,
 	.device_probe	= monitor_linkloss_probe,
 	.device_remove	= monitor_linkloss_remove,
+	.connect	= btd_gatt_connect,
+	.disconnect	= btd_gatt_disconnect,
+	.auto_connect	= true,
 };
 
 static struct btd_profile pxp_monitor_immediate_profile = {
@@ -98,6 +101,9 @@ static struct btd_profile pxp_monitor_immediate_profile = {
 	.remote_uuid	= IMMEDIATE_ALERT_UUID,
 	.device_probe	= monitor_immediate_probe,
 	.device_remove	= monitor_immediate_remove,
+	.connect	= btd_gatt_connect,
+	.disconnect	= btd_gatt_disconnect,
+	.auto_connect	= false,
 };
 
 static struct btd_profile pxp_reporter_profile = {
