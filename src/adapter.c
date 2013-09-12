@@ -168,6 +168,7 @@ struct btd_adapter {
 	GSList *connections;		/* Connected devices */
 	GSList *devices;		/* Devices structure pointers */
 	GSList *auto_conn;		/* Devices on automatic connection mode */
+	int auto_ref;			/* Clients automatic connection ref count */
 	sdp_list_t *services;		/* Services associated to adapter */
 
 	gboolean initialized;
@@ -5054,8 +5055,10 @@ int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 static int add_auto_connectable(struct btd_adapter *adapter,
 					struct btd_device *device)
 {
+	__sync_fetch_and_add(&adapter->auto_ref, 1);
+
 	if (g_slist_find(adapter->auto_conn, device))
-		return -EALREADY;
+		return 0;
 
 	adapter->auto_conn = g_slist_append(adapter->auto_conn, device);
 
@@ -5067,6 +5070,9 @@ static int remove_auto_connectable(struct btd_adapter *adapter,
 {
 	if (!g_slist_find(adapter->auto_conn, device))
 		return -ENOENT;
+
+	if (__sync_sub_and_fetch(&adapter->auto_ref, 1))
+		return 0;
 
 	adapter->auto_conn = g_slist_remove(adapter->auto_conn, device);
 
