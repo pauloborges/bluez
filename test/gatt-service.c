@@ -62,6 +62,8 @@
 
 #define GATT_SERVICE_APP_ID	"3ab1b08c-6f6b-44a0-a5f0-2f0ee2506c5c"
 
+#define TIMEOUT 60*1000 /* Timeout for user response (miliseconds) */
+
 static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
 static GSList *services = NULL;
@@ -319,6 +321,7 @@ static bool register_services(DBusConnection *conn, GSList *paths)
 {
 	DBusMessage *msg;
 	DBusMessageIter iter, array;
+	DBusPendingCall *call;
 	GSList *l;
 	const char *group_id = GATT_SERVICE_APP_ID;
 
@@ -344,8 +347,15 @@ static bool register_services(DBusConnection *conn, GSList *paths)
 
 	dbus_message_iter_close_container(&iter, &array);
 
-	return g_dbus_send_message(conn, msg);
+	if (!g_dbus_send_message_with_reply(conn, msg, &call, TIMEOUT)) {
+		dbus_message_unref(msg);
+		return false;
+	}
 
+	dbus_message_unref(msg);
+	dbus_pending_call_unref(call);
+
+	return true;
 }
 
 static bool populate_service(DBusConnection *conn, const char *uuid,
