@@ -397,7 +397,7 @@ static bool populate_characteristic(DBusConnection *conn, const char *uuid,
 					CHARACTERISTIC_INTERFACE,
 					chr_methods, NULL, chr_properties,
 					chr, NULL) == FALSE) {
-		fprintf(stderr, "Couldn't register service interface\n");
+		fprintf(stderr, "Couldn't register characteristic interface\n");
 		return false;
 	}
 
