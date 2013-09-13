@@ -180,8 +180,6 @@ struct btd_device {
 	guint		cleanup_id;
 	guint		store_id;
 	unsigned int	powered_id;		/* Tracks adapter powered */
-
-	GList		*attribute_database;
 };
 
 static const uint16_t uuid_list[] = {
