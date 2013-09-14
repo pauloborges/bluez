@@ -2498,6 +2498,40 @@ void adapter_remove_profile(struct btd_adapter *adapter, gpointer p)
 		profile->adapter_remove(profile, adapter);
 }
 
+static int load_auto_conn_addrs(struct btd_adapter *adapter)
+{
+	struct mgmt_cp_load_auto_conn_addrs *cp;
+	struct mgmt_addr_info *info;
+	GSList *l;
+	int cp_size, count;
+
+	count = g_slist_length(adapter->auto_active);
+	cp_size = sizeof(*cp) + count * sizeof(*info);
+	cp = alloca(cp_size);
+
+	/*
+	 * Send entire list. If the list is empty, send the command
+	 * without arguments to clean the list in the kernel.
+	 */
+	cp->count = htobs(count);
+	info = &cp->addrs[0];
+	for (l = adapter->auto_active; l; l = g_slist_next(l)) {
+		struct btd_device *device = l->data;
+		const bdaddr_t *dba = device_get_address(device);
+
+		bacpy(&info->bdaddr, dba);
+		info->type = device_get_address_type(device);
+		info++;
+	}
+
+	if (mgmt_send(adapter->mgmt, MGMT_OP_LOAD_AUTO_CONN_ADDRS,
+				adapter->dev_id, cp_size, cp,
+				NULL, NULL, NULL) > 0)
+		return 0;
+
+	return -EIO;
+}
+
 static void adapter_add_connection(struct btd_adapter *adapter,
 						struct btd_device *device)
 {
@@ -2509,6 +2543,14 @@ static void adapter_add_connection(struct btd_adapter *adapter,
 	device_add_connection(device);
 
 	adapter->connections = g_slist_append(adapter->connections, device);
+
+	if (!g_slist_find(adapter->auto_onhold, device))
+		return;
+
+	adapter->auto_onhold = g_slist_remove(adapter->auto_onhold, device);
+	adapter->auto_active = g_slist_append(adapter->auto_active, device);
+
+	load_auto_conn_addrs(adapter);
 }
 
 static void get_connections_complete(uint8_t status, uint16_t length,
@@ -4735,40 +4777,6 @@ int adapter_bonding_attempt(struct btd_adapter *adapter, const bdaddr_t *bdaddr,
 						pair_device_timeout, data);
 
 	return 0;
-}
-
-static int load_auto_conn_addrs(struct btd_adapter *adapter)
-{
-	struct mgmt_cp_load_auto_conn_addrs *cp;
-	struct mgmt_addr_info *info;
-	GSList *l;
-	int cp_size, count;
-
-	count = g_slist_length(adapter->auto_active);
-	cp_size = sizeof(*cp) + count * sizeof(*info);
-	cp = alloca(cp_size);
-
-	/*
-	 * Send entire list. If the list is empty, send the command
-	 * without arguments to clean the list in the kernel.
-	 */
-	cp->count = htobs(count);
-	info = &cp->addrs[0];
-	for (l = adapter->auto_active; l; l = g_slist_next(l)) {
-		struct btd_device *device = l->data;
-		const bdaddr_t *dba = device_get_address(device);
-
-		bacpy(&info->bdaddr, dba);
-		info->type = device_get_address_type(device);
-		info++;
-	}
-
-	if (mgmt_send(adapter->mgmt, MGMT_OP_LOAD_AUTO_CONN_ADDRS,
-				adapter->dev_id, cp_size, cp,
-				NULL, NULL, NULL) > 0)
-		return 0;
-
-	return -EIO;
 }
 
 static void dev_disconnected(struct btd_adapter *adapter,
