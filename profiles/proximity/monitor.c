@@ -457,7 +457,6 @@ int monitor_register_linkloss(struct btd_device *device,
 	struct btd_attribute *level;
 	bt_uuid_t uuid;
 
-
 	if (!enabled->linkloss)
 		return 0;
 
