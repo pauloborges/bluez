@@ -3041,8 +3041,6 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
-	checksum(device, gdev->settings, gdev->attrib);
-
 	/*
 	 * When bonding, attribute discovery starts when
 	 * gatt_discover_attributes function is called.
@@ -3067,6 +3065,10 @@ static void connect_cb(GIOChannel *io, GError *gerr, void *user_data)
 
 	DBG("Skipping attribute discovery");
 
+	/* Refers to local database */
+	checksum(device, gdev->settings, gdev->attrib);
+
+	/* Refers to remote database */
 	enable_pending_ccc(gdev->database, device);
 
 	device_probe_profiles(device, NULL);
@@ -3137,7 +3139,11 @@ static void listen_cb(GIOChannel *io, GError *gerr, void *user_data)
 	 */
 	DBG("Skipping attribute discovery");
 
+	/* Refers to local database */
 	checksum(device, gdev->settings, gdev->attrib);
+
+	/* Refers to remote database */
+	enable_pending_ccc(gdev->database, device);
 
 	btd_device_service_foreach(device, connecting_complete, gdev);
 }
