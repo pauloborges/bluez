@@ -3119,27 +3119,27 @@ static void listen_cb(GIOChannel *io, GError *gerr, void *user_data)
 				G_IO_ERR | G_IO_HUP, channel_watch_cb,
 				device, (GDestroyNotify) channel_remove);
 
-	if (gdev->database) {
-		/* Attributes already discovered, we may continue informing
-		 * the services that the device is connected
-		 */
-		DBG("Skipping attribute discovery");
-
-		btd_device_service_foreach(device, connecting_complete, gdev);
-
-		return;
-	}
-
 	/*
 	 * Re-connecting: Trigger attribute discovery if there isn't
 	 * storage associated with this device. This approach will
 	 * keep the compatibility with the devices bonded using the
 	 * old attribute storage format.
 	 */
-
-	gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &primary_uuid,
+	if (gdev->database == NULL) {
+		gatt_foreach_by_type(gdev->attrib, 0x0001, 0xffff, &primary_uuid,
 				prim_service_create, device,
 				prim_service_complete);
+		return;
+	}
+
+	/* Attributes already discovered, we may continue informing
+	 * the services that the device is connected
+	 */
+	DBG("Skipping attribute discovery");
+
+	checksum(device, gdev->settings, gdev->attrib);
+
+	btd_device_service_foreach(device, connecting_complete, gdev);
 }
 
 
