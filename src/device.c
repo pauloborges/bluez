@@ -364,6 +364,12 @@ static void store_device_info(struct btd_device *device)
 		return;
 	}
 
+	if (device_is_le(device) && !device_is_bonded(device)) {
+		warn("Skipping store info for non-bonded LE devices %s",
+								device->path);
+		return;
+	}
+
 	device->store_id = g_idle_add(store_device_info_cb, device);
 }
 
