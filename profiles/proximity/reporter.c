@@ -262,6 +262,7 @@ int reporter_probe(struct btd_service *service)
 	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
 	uint8_t *linkloss_level, level;
+	unsigned int state_id;
 
 	g_dbus_register_interface(btd_get_dbus_connection(), path,
 				PROXIMITY_REPORTER_INTERFACE,
@@ -282,7 +283,8 @@ int reporter_probe(struct btd_service *service)
 
 	g_hash_table_insert(linkloss_levels, device, linkloss_level);
 
-	btd_service_add_state_cb(state_changed, service);
+	state_id = btd_service_add_state_cb(state_changed, service);
+	btd_service_set_user_data(service, GUINT_TO_POINTER(state_id));
 
 	return 0;
 }
@@ -291,8 +293,12 @@ void reporter_remove(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
+	unsigned int state_id;
 
 	DBG("Unregister Proximity Reporter for %s", path);
+
+	state_id = GPOINTER_TO_UINT(btd_service_get_user_data(service));
+	btd_service_remove_state_cb(state_id);
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(), path,
 					PROXIMITY_REPORTER_INTERFACE);
