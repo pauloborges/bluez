@@ -60,6 +60,9 @@ Methods		array{byte} ReadValue(uint16 offset)
 			Possible errors: org.bluez.Error.NotConnected
 					 org.bluez.Error.Failed
 
+		*** Reminder: ReadValue and WriteValue are proposed to allow work with
+		    offsets. Value property value is a cached value, and updated when
+		    PropertyChanged is emitted.
 
 Properties	string UUID [read-only]
 
@@ -93,6 +96,11 @@ Properties	string UUID [read-only]
 				"medium": Encryption, No Authentication
 				"high": Encryption, Authentication
 
+		*** Reminder: ReadSecurity and WriteSecurity helps to restrict
+		ATT error into the bluetoothd core. GATT server can additionally
+		request authentication to the user when it receives ReadValue or
+		WriteValue.
+
 		byte KeySize [read-only, optional]
 
 			Defines the minimum encryption key size when
@@ -116,6 +124,8 @@ Properties	string UUID [read-only]
 			...
 		}
 
+		*** Reminder: To be discussed
+
 ServiceManager hierarchy
 ========================
 
@@ -130,6 +140,9 @@ with the external GATT local service implementation.
 Service		org.bluez
 Interface	org.bluez.gatt.ServiceManager1
 Object path	/
+
+		*** Reminder: object path can be removed. Maybe this method could
+		be removed, if the proxy tracks InterfaceAdded properly.
 
 Methods		RegisterServices(string id)
 
