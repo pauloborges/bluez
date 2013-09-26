@@ -38,10 +38,10 @@
 #include "lib/uuid.h"
 #include "attrib/att.h"
 
-#define SERVICE_MANAGER_INTERFACE "org.bluez.gatt.ServiceManager1"
+#define SERVICE_MANAGER_INTERFACE "org.bluez.ServiceManager1"
 
-#define SERVICE_INTERFACE "org.bluez.gatt.Service1"
-#define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+#define SERVICE_INTERFACE "org.bluez.Service1"
+#define CHARACTERISTIC_INTERFACE "org.bluez.Characteristic1"
 #define ERROR_INTERFACE "org.bluez.Error"
 
 #define SERVICE_PATH "/service%d"

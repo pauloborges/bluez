@@ -45,8 +45,8 @@
 #include "gatt.h"
 #include "gatt-dbus.h"
 
-#define SERVICE_INTERFACE "org.bluez.gatt.Service1"
-#define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+#define SERVICE_INTERFACE "org.bluez.Service1"
+#define CHARACTERISTIC_INTERFACE "org.bluez.Characteristic1"
 
 #define REGISTER_TIMER         1
 
@@ -952,7 +952,7 @@ gboolean gatt_dbus_manager_register(void)
 				NULL, (GDestroyNotify) g_dbus_proxy_unref);
 
 	return g_dbus_register_interface(btd_get_dbus_connection(),
-			"/org/bluez", "org.bluez.gatt.ServiceManager1",
+			"/org/bluez", "org.bluez.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
 }
 
@@ -962,6 +962,6 @@ void gatt_dbus_manager_unregister(void)
 	proxy_hash = NULL;
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
-			"/org/bluez", "org.bluez.gatt.ServiceManager1");
+			"/org/bluez", "org.bluez.ServiceManager1");
 
 }

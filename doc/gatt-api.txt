@@ -12,7 +12,7 @@ Local Services already implemented by the core should NOT be re-declared
 as external GATT service.
 
 Service		org.bluez
-Interface	org.bluez.gatt.Service1
+Interface	org.bluez.Service1
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX
 
 Properties	string UUID [read-only]
@@ -38,7 +38,7 @@ For local GATT defined services, the object paths need to follow the
 service path hierarchy and freely defineable.
 
 Service		org.bluez
-Interface	org.bluez.gatt.Characteristic1
+Interface	org.bluez.Characteristic1
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY
 
 
@@ -138,7 +138,7 @@ for managing ATT requests translating to D-Bus messages and signals to interact
 with the external GATT local service implementation.
 
 Service		org.bluez
-Interface	org.bluez.gatt.ServiceManager1
+Interface	org.bluez.ServiceManager1
 Object path	/
 
 		*** Reminder: object path can be removed. Maybe this method could

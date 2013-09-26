@@ -34,8 +34,8 @@
 
 #include "lib/uuid.h"
 
-#define SERVICE_INTERFACE "org.bluez.gatt.Service1"
-#define CHARACTERISTIC_INTERFACE "org.bluez.gatt.Characteristic1"
+#define SERVICE_INTERFACE "org.bluez.Service1"
+#define CHARACTERISTIC_INTERFACE "org.bluez.Characteristic1"
 #define ALERT_LEVEL_CHR_UUID	"00002a06-0000-1000-8000-00805f9b34fb"
 
 static GMainLoop *main_loop;
