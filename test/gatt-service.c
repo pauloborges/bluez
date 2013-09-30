@@ -242,7 +242,7 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value },
 	{ "Permissions", "y", chr_get_perms, NULL, chr_exist_perms },
 	{ "Authenticate", "b", chr_get_auth, NULL, chr_exist_auth },
-	{ "Properties", "y", chr_get_props, NULL, chr_exist_props },
+	{ "Flags", "y", chr_get_props, NULL, chr_exist_props },
 	{ "Descriptors", "a{a{sv}}", chr_get_descriptors, chr_set_descriptors,
 						chr_exist_descriptors },
 	{ }

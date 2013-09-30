@@ -352,8 +352,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			DBG("KeySize: %d", key_size);
 		}
 
-		if (!g_dbus_proxy_get_property(proxy, "Properties", &iter)) {
-			error("Could not get Properties");
+		if (!g_dbus_proxy_get_property(proxy, "Flags", &iter)) {
+			error("Could not get Flags");
 			return;
 		}
 
@@ -842,7 +842,7 @@ static const GDBusPropertyTable chr_properties[] = {
 					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
 	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value,
 					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
-	{ "Properties", "y", chr_get_props, NULL, chr_exist_props,
+	{ "Flags", "y", chr_get_props, NULL, chr_exist_props,
 					G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },
 	{ "Descriptors", "a{a{sv}}", chr_get_descriptors, chr_set_descriptors,
 		chr_exist_descriptors, G_DBUS_PROPERTY_FLAG_EXPERIMENTAL },

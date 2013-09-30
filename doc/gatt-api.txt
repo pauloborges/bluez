@@ -107,7 +107,7 @@ Properties	string UUID [read-only]
 			ReadSecurity and/or WriteSecurity are set to "medium"
 			or "high".
 
-		byte Properties [read-only, optional]
+		byte Flags [read-only, optional]
 
 			Bit field which determines how the Characteristic Value
 			can be used. See Core spec page 1898, "Table 3.5:
