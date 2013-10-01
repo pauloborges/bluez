@@ -92,9 +92,6 @@ struct btd_attribute {
 	bt_uuid_t type;
 	btd_attr_read_t read_cb;
 	btd_attr_write_t write_cb;
-	int read_sec;
-	int write_sec;
-	int key_size;
 	GHashTable *notifiers;
 	uint16_t value_len;
 	uint8_t value[0];
@@ -730,9 +727,7 @@ static void write_ccc_cb(struct btd_device *device,
 
 struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 					btd_attr_read_t read_cb,
-					btd_attr_write_t write_cb,
-					int read_sec, int write_sec,
-					int key_size)
+					btd_attr_write_t write_cb)
 {
 	struct btd_attribute *char_decl = NULL, *char_value = NULL,
 						*char_desc = NULL;
@@ -764,9 +759,6 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	 * Create and add the characteristic value attribute
 	 */
 	char_value = new_attribute(uuid, read_cb, write_cb);
-	char_value->read_sec = read_sec;
-	char_value->write_sec = write_sec;
-	char_value->key_size = key_size;
 
 	if (local_database_add(*next_handle, char_value) < 0)
 		goto fail;
@@ -781,8 +773,7 @@ struct btd_attribute *btd_gatt_add_char(bt_uuid_t *uuid, uint8_t properties,
 	if (properties & (ATT_CHAR_PROPER_NOTIFY | ATT_CHAR_PROPER_INDICATE)) {
 		bt_uuid16_create(&char_type, GATT_CLIENT_CHARAC_CFG_UUID);
 		char_desc = btd_gatt_add_char_desc(&char_type, read_ccc_cb,
-					write_ccc_cb, read_sec, write_sec,
-					key_size);
+					write_ccc_cb);
 		if (char_desc == NULL)
 			goto fail;
 
@@ -805,15 +796,11 @@ fail:
 
 struct btd_attribute *btd_gatt_add_char_desc(bt_uuid_t *uuid,
 				btd_attr_read_t read_cb,
-				btd_attr_write_t write_cb,
-				int read_sec, int write_sec, int key_size)
+				btd_attr_write_t write_cb)
 {
 	struct btd_attribute *attr;
 
 	attr = new_attribute(uuid, read_cb, write_cb);
-	attr->read_sec = read_sec;
-	attr->write_sec = write_sec;
-	attr->key_size = key_size;
 
 	if (local_database_add(*next_handle, attr) < 0) {
 		destroy_attribute(attr);
@@ -1750,13 +1737,12 @@ static void add_gap(void)
 	/* Declaration and Value: <<Device Name>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_DEVICE_NAME);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ, read_local_name_cb,
-				NULL, BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+									NULL);
 
 	/* Declaration and Value: <<Appearance>>*/
 	bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
 	attr = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ,
-				read_local_appearance_cb,
-				NULL, BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+				read_local_appearance_cb, NULL);
 	end = attr->handle;
 
 	register_sdp_record("Generic Access Profile",
@@ -1778,8 +1764,7 @@ static void add_gatt(void)
 	/* Declaration and Value: <<Service Changed>> */
 	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
 	svc_changed = btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_INDICATE,
-					NULL, NULL, BT_SECURITY_LOW,
-					BT_SECURITY_LOW, 0);
+					NULL, NULL);
 
 	/*
 	 * attr contains the reference to the attribute value, add
@@ -1809,52 +1794,6 @@ static void channel_remove(gpointer user_data)
 		g_attrib_cancel_all(gdev->attrib);
 		gdev->attrib = NULL;
 	}
-}
-
-static uint8_t check_attribute_security(struct btd_attribute *attr,
-						GAttrib *attrib,
-						uint16_t opcode)
-{
-	int op_sec_level, chan_sec_level;
-	int key_size;
-
-	switch (opcode) {
-	case ATT_OP_READ_BY_TYPE_REQ:
-	case ATT_OP_READ_REQ:
-	case ATT_OP_READ_BLOB_REQ:
-	case ATT_OP_READ_MULTI_REQ:
-	case ATT_OP_READ_BY_GROUP_REQ:
-		op_sec_level = attr->read_sec;
-		break;
-	case ATT_OP_WRITE_REQ:
-	case ATT_OP_WRITE_CMD:
-	case ATT_OP_PREP_WRITE_REQ:
-	case ATT_OP_EXEC_WRITE_REQ:
-	case ATT_OP_SIGNED_WRITE_CMD:
-		op_sec_level = attr->write_sec;
-		break;
-	default:
-		return 0;
-	}
-
-	if (op_sec_level == BT_SECURITY_LOW)
-		return 0;
-
-	chan_sec_level = g_attrib_get_sec_level(attrib);
-
-	if (chan_sec_level < op_sec_level) {
-		if (op_sec_level == BT_SECURITY_HIGH)
-			return ATT_ECODE_AUTHENTICATION;
-		else
-			return ATT_ECODE_INSUFF_ENC;
-	}
-
-	key_size = g_attrib_get_key_size(attrib);
-
-	if (key_size < attr->key_size)
-		return ATT_ECODE_INSUFF_ENCR_KEY_SIZE;
-
-	return 0;
 }
 
 static void read_by_type_result(int err, uint8_t *value, size_t vlen,
@@ -1968,10 +1907,6 @@ static void read_by_type(struct btd_device *device, GAttrib *attrib,
 		/* Checking attribute consistency */
 		if (attr->value_len == 0 && attr->read_cb == NULL)
 			continue;
-
-		status = check_attribute_security(attr, attrib, ipdu[0]);
-		if (status)
-			break;
 
 		trans->match = g_list_append(trans->match, attr);
 	}
@@ -2212,7 +2147,6 @@ static void read_request(struct btd_device *device, GAttrib *attrib,
 	GList *list;
 	struct btd_attribute *attr;
 	struct att_transaction *trans;
-	uint8_t status;
 
 	if (dec_read_req(ipdu, ilen, &handle) == 0) {
 		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_PDU);
@@ -2227,12 +2161,6 @@ static void read_request(struct btd_device *device, GAttrib *attrib,
 	}
 
 	attr = list->data;
-
-	status = check_attribute_security(attr, attrib, ipdu[0]);
-	if (status) {
-		send_error(attrib, ATT_OP_READ_REQ, attr->handle, status);
-		return;
-	}
 
 	if (!validate_att_operation(list, ATT_OP_READ_REQ)) {
 		send_error(attrib, ATT_OP_READ_REQ, attr->handle,
@@ -2468,7 +2396,6 @@ static void write_cmd(struct btd_device *device, GAttrib *attrib,
 	struct btd_attribute *attr;
 	size_t vlen;
 	uint8_t value[g_attrib_get_mtu(attrib)];
-	uint8_t status;
 
 	if (dec_write_cmd(ipdu, ilen, &handle, value, &vlen) == 0)
 		return;
@@ -2482,10 +2409,6 @@ static void write_cmd(struct btd_device *device, GAttrib *attrib,
 	attr = list->data;
 
 	if (attr->write_cb == NULL)
-		return;
-
-	status = check_attribute_security(attr, attrib, ipdu[0]);
-	if (status)
 		return;
 
 	if (!validate_att_operation(list, ATT_OP_WRITE_CMD))
@@ -2527,7 +2450,6 @@ static void write_request(struct btd_device *device, GAttrib *attrib,
 	size_t vlen;
 	uint16_t handle;
 	uint8_t value[g_attrib_get_mtu(attrib)];
-	uint8_t status;
 
 	if (dec_write_req(ipdu, ilen, &handle, value, &vlen) == 0) {
 		send_error(attrib, ipdu[0], 0x0000, ATT_ECODE_INVALID_PDU);
@@ -2545,12 +2467,6 @@ static void write_request(struct btd_device *device, GAttrib *attrib,
 
 	if (attr->write_cb == NULL) {
 		send_error(attrib, ipdu[0], handle, ATT_ECODE_WRITE_NOT_PERM);
-		return;
-	}
-
-	status = check_attribute_security(attr, attrib, ipdu[0]);
-	if (status) {
-		send_error(attrib, ATT_OP_WRITE_REQ, attr->handle, status);
 		return;
 	}
 

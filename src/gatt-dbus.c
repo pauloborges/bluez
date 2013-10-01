@@ -54,9 +54,6 @@ struct external_characteristic {
 	char *path;
 	bt_uuid_t uuid;
 	uint8_t properties;
-	int read_sec;
-	int write_sec;
-	int key_size;
 	GDBusProxy *proxy;
 };
 
@@ -131,17 +128,6 @@ static void service_iface_destroy(gpointer user_data)
 
 	g_free(iface->uuid);
 	g_free(iface);
-}
-
-
-static int seclevel_string2int(const char *level)
-{
-	if (strcmp("high", level) == 0)
-		return BT_SECURITY_HIGH;
-	else if (strcmp("medium", level) == 0)
-		return BT_SECURITY_MEDIUM;
-	else
-		return BT_SECURITY_LOW;
 }
 
 static void destroy_char(void *user_data)
@@ -319,38 +305,12 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
 		struct external_characteristic *echr;
-		const char *security;
-		int read_sec = BT_SECURITY_LOW, write_sec = BT_SECURITY_LOW;
-		uint8_t properties, key_size = 0;
-		gboolean ret;
+		uint8_t properties;
 
 		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
 			return;
 
 		dbus_message_iter_get_basic(&iter, &uuid);
-
-		ret = g_dbus_proxy_get_property(proxy, "ReadSecurity", &iter);
-		if (ret && dbus_message_iter_get_arg_type(&iter)
-						== DBUS_TYPE_STRING) {
-			dbus_message_iter_get_basic(&iter, &security);
-			DBG("ReadSecurity: %s", security);
-			read_sec = seclevel_string2int(security);
-		}
-
-		ret = g_dbus_proxy_get_property(proxy, "WriteSecurity", &iter);
-		if (ret && dbus_message_iter_get_arg_type(&iter)
-						== DBUS_TYPE_STRING) {
-			dbus_message_iter_get_basic(&iter, &security);
-			DBG("WriteSecurity: %s", security);
-			write_sec = seclevel_string2int(security);
-		}
-
-		if ((read_sec != BT_SECURITY_LOW ||
-			write_sec != BT_SECURITY_LOW) &&
-			g_dbus_proxy_get_property(proxy, "KeySize", &iter)) {
-			dbus_message_iter_get_basic(&iter, &key_size);
-			DBG("KeySize: %d", key_size);
-		}
 
 		if (!g_dbus_proxy_get_property(proxy, "Flags", &iter)) {
 			error("Could not get Flags");
@@ -368,9 +328,6 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 		echr->path = g_strdup(path);
 		bt_string_to_uuid(&echr->uuid, uuid);
 		echr->properties = properties;
-		echr->read_sec = read_sec;
-		echr->write_sec = write_sec;
-		echr->key_size = key_size;
 		echr->proxy = g_dbus_proxy_ref(proxy);
 
 		eapp->chrs = g_slist_append(eapp->chrs, echr);
@@ -487,8 +444,7 @@ static void register_external_chars(gpointer a, gpointer b)
 
 	attr = btd_gatt_add_char(&echr->uuid, echr->properties,
 					read_external_char_cb,
-					write_external_char_cb, echr->read_sec,
-					echr->write_sec, echr->key_size);
+					write_external_char_cb);
 
 	g_hash_table_insert(proxy_hash, attr, g_dbus_proxy_ref(echr->proxy));
 

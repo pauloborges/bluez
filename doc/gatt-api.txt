@@ -76,37 +76,6 @@ Properties	string UUID [read-only]
 			value will be cached by bluetoothd and updated when
 			the PropertyChanged is emitted.
 
-		string ReadSecurity [read-only, optional]
-
-			Defines the minimum security level requirement to
-			read this characteristic. Applied to GATT local
-			services implementations only. Default value is "low".
-			Possible values:
-				"low": No Encryption, No Authentication
-				"medium": Encryption, No Authentication
-				"high": Encryption, Authentication
-
-		string WriteSecurity [read-only, optional]
-
-			Defines the minimum security level requirement to
-			write this characteristic. Applied to GATT sever
-			implementations only. Default value is "low".
-			Possible values:
-				"low": No Encryption, No Authentication
-				"medium": Encryption, No Authentication
-				"high": Encryption, Authentication
-
-		*** Reminder: ReadSecurity and WriteSecurity helps to restrict
-		ATT error into the bluetoothd core. GATT server can additionally
-		request authentication to the user when it receives ReadValue or
-		WriteValue.
-
-		byte KeySize [read-only, optional]
-
-			Defines the minimum encryption key size when
-			ReadSecurity and/or WriteSecurity are set to "medium"
-			or "high".
-
 		byte Flags [read-only, optional]
 
 			Bit field which determines how the Characteristic Value

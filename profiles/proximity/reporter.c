@@ -320,8 +320,7 @@ static void ias_init(void)
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
 	immediate_alert_level = btd_gatt_add_char(&uuid,
 					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
-					NULL, write_ias_al_cb, BT_SECURITY_LOW,
-					BT_SECURITY_LOW, 0);
+					NULL, write_ias_al_cb);
 
 	btd_gatt_dump_local_attribute_database();
 }
@@ -394,8 +393,7 @@ static void lls_init(void)
 	bt_uuid16_create(&uuid, ALERT_LEVEL_CHR_UUID);
 	linkloss_alert_level = btd_gatt_add_char(&uuid,
 				ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_WRITE,
-				read_lls_al_cb, write_lls_al_cb,
-				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+				read_lls_al_cb, write_lls_al_cb);
 
 	btd_gatt_dump_local_attribute_database();
 }

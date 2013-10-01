@@ -155,16 +155,14 @@ static void register_current_time_service(void)
 	/* CT Time characteristic */
 	bt_uuid16_create(&uuid, CT_TIME_CHR_UUID);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_NOTIFY,
-				current_time_read, NULL,
-				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+				current_time_read, NULL);
 
 	/* FIXME: Missing notification tracking */
 
 	/* Local Time Information characteristic */
 	bt_uuid16_create(&uuid, LOCAL_TIME_INFO_CHR_UUID);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ,
-				local_time_info_read, NULL,
-				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+				local_time_info_read, NULL);
 }
 
 static void time_update_control(struct btd_device *device,
@@ -221,14 +219,12 @@ static void register_ref_time_update_service(void)
 	/* Time Update control point */
 	bt_uuid16_create(&uuid, TIME_UPDATE_CTRL_CHR_UUID);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
-				NULL, time_update_control,
-				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+				NULL, time_update_control);
 
 	/* Time Update status */
 	bt_uuid16_create(&uuid, TIME_UPDATE_STAT_CHR_UUID);
 	btd_gatt_add_char(&uuid, ATT_CHAR_PROPER_READ,
-				time_update_status, NULL,
-				BT_SECURITY_LOW, BT_SECURITY_LOW, 0);
+				time_update_status, NULL);
 }
 
 static int time_init(void)
