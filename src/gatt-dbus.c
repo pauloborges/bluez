@@ -574,45 +574,21 @@ static const GDBusPropertyTable service_properties[] = {
 static void read_value_response(int err, uint8_t *value, size_t len,
 					void *user_data)
 {
-	DBusMessage *reply, *msg = user_data;
-	DBusMessageIter iter, array;
-
-	if (err) {
-		switch (err) {
-		case ECOMM:
-			reply = btd_error_not_connected(msg);
-			break;
-		default:
-			reply = btd_error_failed(msg, strerror(err));
-		}
-
-		goto done;
-	}
-
-	reply = dbus_message_new_method_return(msg);
-
-	dbus_message_iter_init_append(reply, &iter);
-
-	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
-					DBUS_TYPE_BYTE_AS_STRING, &array);
-	dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
-						&value, len);
-
-	dbus_message_iter_close_container(&iter, &array);
-
-done:
-	g_dbus_send_message(btd_get_dbus_connection(), reply);
-}
-
-static DBusMessage *remote_chr_read_value(DBusConnection *conn,
-					DBusMessage *msg, void *user_data)
-{
 	struct char_iface *iface = user_data;
 
-	btd_gatt_read_attribute(iface->device, iface->attr,
-				read_value_response, dbus_message_ref(msg));
+	if (err) {
+		DBG("Read remote failed: %s(%d)", strerror(err), err);
+		return;
+	}
 
-	return NULL;
+	if (iface->value)
+		g_free(iface->value);
+
+	iface->value = g_memdup(value, len);
+	iface->vlen = len;
+
+	g_dbus_emit_property_changed(btd_get_dbus_connection(), iface->path,
+					CHARACTERISTIC_INTERFACE, "Value");
 }
 
 static void write_value_response(int err, void *user_data)
@@ -638,13 +614,6 @@ static void write_value_response(int err, void *user_data)
 	}
 }
 
-static const GDBusMethodTable chr_methods[] = {
-	{ GDBUS_EXPERIMENTAL_ASYNC_METHOD("ReadValue",
-				GDBUS_ARGS({"offset", "q"}),
-				GDBUS_ARGS({"value", "ay"}),
-				remote_chr_read_value) },
-};
-
 static gboolean chr_get_uuid(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
@@ -664,9 +633,17 @@ static gboolean chr_get_value(const GDBusPropertyTable *property,
 	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
 					DBUS_TYPE_BYTE_AS_STRING, &array);
 
+	/*
+	 * Limitation: Returns empty array if value was never read.
+	 * Get method call can't be asynchronous. PropertiesChanged
+	 * will be sent later when the read operation returns.
+	 */
 	if (iface->value)
 		dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
 						&iface->value, iface->vlen);
+	else
+		btd_gatt_read_attribute(iface->device, iface->attr,
+						read_value_response, iface);
 
 	dbus_message_iter_close_container(iter, &array);
 
@@ -830,7 +807,7 @@ char *gatt_dbus_characteristic_register(struct btd_device *device,
 
 	ret = g_dbus_register_interface(btd_get_dbus_connection(), path,
 					CHARACTERISTIC_INTERFACE,
-					chr_methods, NULL, chr_properties,
+					NULL, NULL, chr_properties,
 					iface, char_iface_destroy);
 
 	if (ret == FALSE) {
