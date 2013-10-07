@@ -69,12 +69,12 @@ static void append_array_variant(DBusMessageIter *iter, int type, void *val,
 		dbus_message_iter_append_fixed_array(&array, type, val,
 							n_elements);
 	} else if (type == DBUS_TYPE_STRING || type == DBUS_TYPE_OBJECT_PATH) {
-		const char ***str_array = val;
+		const char **str_array = val;
 		int i;
 
 		for (i = 0; i < n_elements; i++)
 			dbus_message_iter_append_basic(&array, type,
-							&((*str_array)[i]));
+							str_array[i]);
 	}
 
 	dbus_message_iter_close_container(&variant, &array);
