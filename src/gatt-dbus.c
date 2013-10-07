@@ -97,9 +97,6 @@ struct external_read_data {
 
 struct external_write_data {
 	btd_attr_write_result_t func;
-	uint8_t *value;
-	size_t vlen;
-	uint16_t offset;
 	void *user_data;
 };
 
@@ -222,25 +219,7 @@ static void read_external_char_cb(struct btd_device *device,
 					g_dbus_proxy_get_path(proxy));
 }
 
-static void write_char_setup(DBusMessageIter *iter, void *user_data)
-{
-	DBusMessageIter array;
-	struct external_write_data *wdata = user_data;
-
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, &wdata->offset);
-
-	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
-					DBUS_TYPE_BYTE_AS_STRING,
-					&array);
-
-	if (!dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
-					&wdata->value, wdata->vlen))
-		DBG("Could not append value to D-Bus message");
-
-	dbus_message_iter_close_container(iter, &array);
-}
-
-static void write_char_reply(DBusMessage *msg, void *user_data)
+static void write_char_reply(const DBusError *error, void *user_data)
 {
 	struct external_write_data *wdata = user_data;
 
@@ -260,23 +239,13 @@ static void write_external_char_cb(struct btd_device *device,
 
 	wdata = g_new0(struct external_write_data, 1);
 	wdata->func = result;
-	wdata->value = value;
-	wdata->vlen = len;
-	wdata->offset = offset;
 	wdata->user_data = user_data;
 
 	proxy = g_hash_table_lookup(proxy_hash, attr);
 
-	if (!g_dbus_proxy_method_call(proxy, "WriteValue",
-					write_char_setup,
-					write_char_reply,
-					wdata,
-					g_free)) {
-		error("Could not call WriteValue D-Bus method");
-		result(ATT_ECODE_IO, user_data);
-		g_free(wdata);
-		return;
-	}
+	g_dbus_proxy_set_property_array(proxy, "Value", DBUS_TYPE_BYTE,
+						value, len, write_char_reply,
+						wdata, g_free);
 
 	DBG("Server: Write characteristic callback %s",
 					g_dbus_proxy_get_path(proxy));
