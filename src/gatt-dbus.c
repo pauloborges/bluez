@@ -617,61 +617,25 @@ static DBusMessage *remote_chr_read_value(DBusConnection *conn,
 
 static void write_value_response(int err, void *user_data)
 {
-	DBusMessage *reply, *msg = user_data;
+	GDBusPendingPropertySet id = GPOINTER_TO_UINT(user_data);
 
-	if (err) {
-		switch (err) {
-		case ECOMM:
-			reply = btd_error_not_connected(msg);
-			break;
-		default:
-			reply = btd_error_failed(msg, strerror(err));
-		}
-
-		goto done;
+	if (err == 0) {
+		g_dbus_pending_property_success(id);
+		return;
 	}
 
-	reply = dbus_message_new_method_return(msg);
-
-done:
-	g_dbus_send_message(btd_get_dbus_connection(), reply);
-}
-
-static DBusMessage *remote_chr_write_value(DBusConnection *conn,
-					DBusMessage *msg, void *user_data)
-{
-	struct char_iface *iface = user_data;
-	DBusMessageIter args, iter;
-	const uint8_t *value;
-	uint16_t offset;
-	int len;
-
-	if (dbus_message_iter_init(msg, &args) == false)
-		goto invalid;
-
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_UINT16)
-		goto invalid;
-
-	dbus_message_iter_get_basic(&args, &offset);
-
-	dbus_message_iter_next(&args);
-
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
-		goto invalid;
-
-	dbus_message_iter_recurse(&args, &iter);
-
-	dbus_message_iter_get_fixed_array(&iter, &value, &len);
-
-	btd_gatt_write_attribute(iface->device, iface->attr,
-					(uint8_t *) value, len,
-					offset, write_value_response,
-					dbus_message_ref(msg));
-
-	return NULL;
-
-invalid:
-	return btd_error_invalid_args(msg);
+	switch (err) {
+	case ECOMM:
+		g_dbus_pending_property_error(id,
+				ERROR_INTERFACE ".NotConnected",
+				"Not Connected");
+		break;
+	default:
+		g_dbus_pending_property_error(id,
+				ERROR_INTERFACE ".Failed",
+				strerror(err));
+		break;
+	}
 }
 
 static const GDBusMethodTable chr_methods[] = {
@@ -679,9 +643,6 @@ static const GDBusMethodTable chr_methods[] = {
 				GDBUS_ARGS({"offset", "q"}),
 				GDBUS_ARGS({"value", "ay"}),
 				remote_chr_read_value) },
-	{ GDBUS_EXPERIMENTAL_ASYNC_METHOD("WriteValue",
-				GDBUS_ARGS({"offset", "q"}, {"value", "ay"}),
-				NULL, remote_chr_write_value) },
 };
 
 static gboolean chr_get_uuid(const GDBusPropertyTable *property,
@@ -716,8 +677,29 @@ static void chr_set_value(const GDBusPropertyTable *property,
 				DBusMessageIter *iter,
 				GDBusPendingPropertySet id, void *user_data)
 {
-	g_dbus_pending_property_error(id, ERROR_INTERFACE ".Failed",
-							"Not Supported");
+	struct char_iface *iface = user_data;
+	DBusMessageIter array;
+	const uint8_t *value;
+	int len;
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY)
+		goto invalid;
+
+	dbus_message_iter_recurse(iter, &array);
+
+	dbus_message_iter_get_fixed_array(&array, &value, &len);
+
+	btd_gatt_write_attribute(iface->device, iface->attr,
+					(uint8_t *) value, len,
+					0, write_value_response,
+					GUINT_TO_POINTER(id));
+
+	return;
+
+invalid:
+	g_dbus_pending_property_error(id,
+				ERROR_INTERFACE ".InvalidArguments",
+				"Invalid arguments in method call");
 }
 
 static gboolean chr_exist_value(const GDBusPropertyTable *property,
