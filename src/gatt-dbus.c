@@ -159,64 +159,40 @@ static int external_app_gid_cmp(gconstpointer a, gconstpointer b)
 	return g_strcmp0(eapp->gid, gid);
 }
 
-static void read_char_setup(DBusMessageIter *iter, void *user_data)
-{
-	uint16_t offset[] = { 0x0000 };
-
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, offset);
-}
-
-static void read_char_reply(DBusMessage *msg, void *user_data)
-{
-	struct external_read_data *rdata = user_data;
-	DBusMessageIter args, iter;
-	const uint8_t *value;
-	int len;
-
-	if (dbus_message_iter_init(msg, &args) == false)
-		goto invalid;
-
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
-		goto invalid;
-
-	dbus_message_iter_recurse(&args, &iter);
-	dbus_message_iter_get_fixed_array(&iter, &value, &len);
-
-	rdata->func(0, (uint8_t *) value, len, rdata->user_data);
-
-	return;
-
-invalid:
-	rdata->func(ATT_ECODE_IO, NULL, 0, rdata->user_data);
-	DBG("Invalid parameters");
-}
-
 static void read_external_char_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
+	DBusMessageIter iter, array;
 	GDBusProxy *proxy;
-	struct external_read_data *rdata;
+	uint8_t *value;
+	int len;
 
-	rdata = g_new0(struct external_read_data, 1);
-	rdata->func = result;
-	rdata->user_data = user_data;
-
+	/*
+	 * Remote device is trying to read the informed attribute,
+	 * "Value" should be read from the proxy. GDBusProxy tracks
+	 * properties changes automatically, it is not necessary to
+	 * get the value directly from the GATT server.
+	 */
 	proxy = g_hash_table_lookup(proxy_hash, attr);
 
-	if (!g_dbus_proxy_method_call(proxy, "ReadValue",
-						read_char_setup,
-						read_char_reply,
-						rdata,
-						g_free)) {
-		error("Could not call ReadValue dbus method");
-		result(ATT_ECODE_IO, NULL, 0, user_data);
-		g_free(rdata);
+	if (!g_dbus_proxy_get_property(proxy, "Value", &iter)) {
+		result(EPERM, NULL, 0, user_data);
 		return;
 	}
 
-	DBG("Server: Read characteristic callback %s",
-					g_dbus_proxy_get_path(proxy));
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_ARRAY) {
+		DBG("External service inconsistent!");
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
+
+	dbus_message_iter_recurse(&iter, &array);
+	dbus_message_iter_get_fixed_array(&array, &value, &len);
+
+	DBG("attribute: %p read %d bytes", attr, len);
+
+	result(0, (uint8_t *) value, len, user_data);
 }
 
 static void write_char_reply(const DBusError *error, void *user_data)
