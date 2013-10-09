@@ -42,27 +42,7 @@ Interface	org.bluez.Characteristic1
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY
 
 
-Methods		array{byte} ReadValue(uint16 offset)
-
-			This method reads the characteristic value attribute
-			from the given characteristic. Always reads the value
-			from the remote device (or external server).
-
-			Possible errors: org.bluez.Error.NotConnected
-					 org.bluez.Error.Failed
-
-		void WriteValue(uint16 offset, array{byte} buf)
-
-			This method writes the characteristic value attribute
-			for the given remote characteristic or informs the
-			external server that a new value has been written.
-
-			Possible errors: org.bluez.Error.NotConnected
-					 org.bluez.Error.Failed
-
-		*** Reminder: ReadValue and WriteValue are proposed to allow work with
-		    offsets. Value property value is a cached value, and updated when
-		    PropertyChanged is emitted.
+Methods
 
 Properties	string UUID [read-only]
 
@@ -70,7 +50,7 @@ Properties	string UUID [read-only]
 			represents the UUID of a local external characteristic
 			or remote GATT characteristic.
 
-		array{byte} Value [read-write, optional]: Not implemented
+		array{byte} Value [read-write, optional]
 
 			Cached Value of the characteristic, if present, the
 			value will be cached by bluetoothd and updated when
