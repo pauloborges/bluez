@@ -154,8 +154,29 @@ static void chr_set_value(const GDBusPropertyTable *property,
 				DBusMessageIter *iter,
 				GDBusPendingPropertySet id, void *user_data)
 {
-	g_dbus_pending_property_error(id, ERROR_INTERFACE ".Failed",
-								"Not Supported");
+	struct characteristic *chr = user_data;
+	DBusMessageIter array;
+	uint8_t *value;
+	int len;
+
+	fprintf(stdout, "Set(\"Value\", ...)\n");
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY) {
+		fprintf(stderr, "Invalid value for Set(\"Value\"...)\n");
+		g_dbus_pending_property_error(id,
+					ERROR_INTERFACE ".InvalidArguments",
+					"Invalid arguments in method call");
+		return;
+	}
+
+	dbus_message_iter_recurse(iter, &array);
+	dbus_message_iter_get_fixed_array(&array, &value, &len);
+
+	g_free(chr->value);
+	chr->value = g_memdup(value, len);
+	chr->vlen = len;
+
+	g_dbus_pending_property_success(id);
 }
 
 static gboolean chr_exist_value(const GDBusPropertyTable *property,
@@ -250,50 +271,6 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ }
 };
 
-static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
-								void *user_data)
-{
-	struct characteristic *chr = user_data;
-	DBusMessageIter args, iter;
-	uint8_t *value;
-	uint16_t offset;
-	int len;
-
-	dbus_message_iter_init(msg, &args);
-
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_UINT16) {
-		fprintf(stderr, "Invalid offset for WriteValue\n");
-		goto invalid;
-	}
-
-	dbus_message_iter_get_basic(&args, &offset);
-
-	dbus_message_iter_next(&args);
-
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY) {
-		fprintf(stderr, "Invalid value for WriteValue\n");
-		goto invalid;
-	}
-
-	dbus_message_iter_recurse(&args, &iter);
-	dbus_message_iter_get_fixed_array(&iter, &value, &len);
-
-	g_free(chr->value);
-	chr->value = g_memdup(value, len);
-	chr->vlen = len;
-
-invalid:
-	/* FIXME: issue D-Bus error on invalid input */
-	return dbus_message_new_method_return(msg);
-}
-
-static const GDBusMethodTable chr_methods[] = {
-	{ GDBUS_METHOD("WriteValue",
-				GDBUS_ARGS({"offset", "q"}, {"value", "ay"}),
-				NULL, chr_write_value) },
-	{ }
-};
-
 static bool register_services(DBusConnection *conn, GSList *paths)
 {
 	DBusMessage *msg;
@@ -382,7 +359,7 @@ static bool populate_characteristic(DBusConnection *conn, const char *uuid,
 
 	if (g_dbus_register_interface(conn, chr_path,
 					CHARACTERISTIC_INTERFACE,
-					chr_methods, NULL, chr_properties,
+					NULL, NULL, chr_properties,
 					chr, NULL) == FALSE) {
 		fprintf(stderr, "Couldn't register characteristic interface\n");
 		return false;
