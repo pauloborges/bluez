@@ -137,6 +137,8 @@ static gboolean chr_get_value(const GDBusPropertyTable *property,
 	struct characteristic *chr = data;
 	DBusMessageIter array;
 
+	fprintf(stdout, "Get(\"Value\")\n");
+
 	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
 					DBUS_TYPE_BYTE_AS_STRING, &array);
 
@@ -248,28 +250,6 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ }
 };
 
-static DBusMessage *chr_read_value(DBusConnection *conn, DBusMessage *msg,
-							void *user_data)
-{
-	struct characteristic *chr = user_data;
-	DBusMessageIter iter, array;
-	DBusMessage *reply;
-
-	reply = dbus_message_new_method_return(msg);
-
-	dbus_message_iter_init_append(reply, &iter);
-
-	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
-					DBUS_TYPE_BYTE_AS_STRING, &array);
-
-	dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
-						&chr->value, chr->vlen);
-
-	dbus_message_iter_close_container(&iter, &array);
-
-	return reply;
-}
-
 static DBusMessage *chr_write_value(DBusConnection *conn, DBusMessage *msg,
 								void *user_data)
 {
@@ -308,9 +288,6 @@ invalid:
 }
 
 static const GDBusMethodTable chr_methods[] = {
-	{ GDBUS_METHOD("ReadValue", GDBUS_ARGS({"offset", "q"}),
-				GDBUS_ARGS({"value", "ay"}),
-				chr_read_value) },
 	{ GDBUS_METHOD("WriteValue",
 				GDBUS_ARGS({"offset", "q"}, {"value", "ay"}),
 				NULL, chr_write_value) },
