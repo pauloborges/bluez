@@ -459,7 +459,7 @@ struct btd_attribute *btd_gatt_add_service(const char *gid, bt_uuid_t *uuid,
 	pid2 = g_key_file_get_integer(hmapkfile, gid, "PID", NULL);
 
 	pid1 = getpid();
-	if (pid2 == pid1) {
+	if (pid2 == pid1 && handle != 0) {
 		/*
 		 * External service exited and it is registering the
 		 * service again. Re-use the handles. For development
