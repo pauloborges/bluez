@@ -78,32 +78,7 @@ static uint8_t alert_level_to_uint(char *level)
 	return 0x00;
 }
 
-static void write_char_setup(DBusMessageIter *iter, void *user_data)
-{
-	DBusMessageIter array;
-	uint8_t *value;
-	uint16_t offset;
-
-	value = g_new0(uint8_t, 1);
-	*value = alert_level_to_uint(opt_alert_level);
-	offset = 0;
-
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT16, &offset);
-
-	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
-						DBUS_TYPE_BYTE_AS_STRING,
-						&array);
-
-	if (!dbus_message_iter_append_fixed_array(&array, DBUS_TYPE_BYTE,
-							&value, sizeof(*value)))
-		g_printerr("Could not append value to D-Bus message\n");
-
-	dbus_message_iter_close_container(iter, &array);
-
-	g_free(value);
-}
-
-static void write_char_reply(DBusMessage *msg, void *user_data)
+static void write_char_reply(const DBusError *error, void *user_data)
 {
 	g_printerr("Immediate Alert Level set to %s\n", opt_alert_level);
 	g_main_loop_quit(main_loop);
@@ -113,6 +88,8 @@ static void change_alert_level(gpointer data, gpointer user_data)
 {
 	struct characteristic *chr = data;
 	const char *uuid;
+	uint8_t value = alert_level_to_uint(opt_alert_level);
+	const uint8_t *ptr = &value;
 	DBusMessageIter iter;
 
 	if (!g_str_has_prefix(chr->path, ias_path))
@@ -133,11 +110,8 @@ static void change_alert_level(gpointer data, gpointer user_data)
 
 	g_printerr("Found IAS Alert Level characteristic: %s\n", chr->path);
 
-	if (!g_dbus_proxy_method_call(chr->proxy, "WriteValue",
-					write_char_setup, write_char_reply,
-					NULL, NULL)) {
-		g_printerr("Could not call WriteValue D-Bus method\n");
-	}
+	g_dbus_proxy_set_property_array(chr->proxy, "Value", DBUS_TYPE_BYTE,
+			&ptr, 1, write_char_reply, NULL, NULL);
 }
 
 static gboolean write_imm_alert(gpointer user_data)
