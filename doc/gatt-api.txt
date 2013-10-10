@@ -128,6 +128,8 @@ Methods		RegisterApplication(object application, dict options)
 			must match the same value that has been used
 			on registration.
 
+			Possible errors: org.bluez.Error.DoesNotExist
+
 Service Agent hierarchy
 =====================
 
