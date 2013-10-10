@@ -1816,6 +1816,63 @@ static void cmd_static_addr(struct mgmt *mgmt, uint16_t index,
 	}
 }
 
+static void add_conn_param_rsp(uint8_t status, uint16_t len, const void *param,
+							void *user_data)
+{
+	if (status != 0)
+		fprintf(stderr, "Add connection parameter failed "
+						"with status 0x%02x (%s)\n",
+						status, mgmt_errstr(status));
+	else
+		printf("Connection parameter added successfully\n");
+
+	g_main_loop_quit(event_loop);
+}
+
+static void add_conn_param_usage(void)
+{
+	printf("Usage: btmgmt add-conn-param <address> <address type> "
+		"<auto_connect> <min_conn_interval> <max_conn_interval>\n");
+
+	printf("<address type> values: 0 (BR/EDR), 1 (LE Public) and "
+							"2 (LE random)\n");
+
+	printf("<auto_connect> values: 0 (disabled), 1 (always) and "
+							"2 (link loss)\n");
+
+	printf("Connection intervals values are specified in milliseconds\n");
+}
+
+static void cmd_add_conn_param(struct mgmt *mgmt, uint16_t index, int argc,
+								char **argv)
+{
+	struct mgmt_cp_add_conn_param cp;
+	uint16_t min, max;
+
+	if (argc != 6) {
+		add_conn_param_usage();
+		exit(EXIT_FAILURE);
+	}
+
+	if (index == MGMT_INDEX_NONE)
+		index = 0;
+
+	min = atoi(argv[4]) / 1.25;
+	max = atoi(argv[5]) / 1.25;
+
+	str2ba(argv[1], &cp.addr.bdaddr);
+	cp.addr.type = atoi(argv[2]);
+	cp.auto_connect = atoi(argv[3]);
+	cp.min_conn_interval = htobs(min);
+	cp.max_conn_interval = htobs(max);
+
+	if (mgmt_send(mgmt, MGMT_OP_ADD_CONN_PARAM, index, sizeof(cp), &cp,
+					add_conn_param_rsp, NULL, NULL) == 0) {
+		fprintf(stderr, "Unable to send add_conn_param cmd\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
 static struct {
 	char *cmd;
 	void (*func)(struct mgmt *mgmt, uint16_t index, int argc, char **argv);
@@ -1852,6 +1909,7 @@ static struct {
 	{ "clr-uuids",	cmd_clr_uuids,	"Clear UUIDs",			},
 	{ "did",	cmd_did,	"Set Device ID",		},
 	{ "static-addr",cmd_static_addr,"Set static address",		},
+	{ "add-conn-param", cmd_add_conn_param, "Add conn parameter",	},
 	{ NULL, NULL, 0 }
 };
 
