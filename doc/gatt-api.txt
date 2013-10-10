@@ -56,11 +56,15 @@ Properties	string UUID [read-only]
 			value will be cached by bluetoothd and updated when
 			the PropertyChanged is emitted.
 
-		byte Flags [read-only, optional]
+		array{string} Flags [read-only, optional]
 
-			Bit field which determines how the Characteristic Value
-			can be used. See Core spec page 1898, "Table 3.5:
-			Characteristic Properties bit field"
+			Defines how the Characteristic Value can be used. See
+			Core spec page 1898, "Table 3.5: Characteristic
+			Properties bit field". Allowed values: "broadcast",
+			"read", "write-without-response", "write", "notify",
+			"indicate", "authenticated-signed-writes",
+			"reliable-write", and "writable-auxiliaries".
+
 
 Characteristic Descriptors hierarchy
 ====================================
