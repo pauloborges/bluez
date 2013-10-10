@@ -343,6 +343,11 @@ struct mgmt_cp_add_conn_param {
 	uint16_t max_conn_interval;
 } __packed;
 
+#define MGMT_OP_REMOVE_CONN_PARAM	0x002E
+struct mgmt_cp_remove_conn_param {
+	struct mgmt_addr_info addr;
+} __packed;
+
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {
 	uint16_t opcode;
