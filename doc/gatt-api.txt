@@ -118,6 +118,9 @@ Methods		RegisterApplication(object application, dict options)
 			bus connection id define the identification of the
 			application registering a GATT based service.
 
+			Possible errors: org.bluez.Error.InvalidArguments
+					 org.bluez.Error.AlreadyExists
+
 		UnregisterApplication(object application)
 
 			This unregisters the application that has been
