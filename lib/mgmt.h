@@ -335,10 +335,12 @@ struct mgmt_cp_set_scan_params {
 	uint16_t window;
 } __packed;
 
-#define MGMT_OP_LOAD_AUTO_CONN_ADDRS	0x002C
-struct mgmt_cp_load_auto_conn_addrs {
-	uint16_t count;
-	struct mgmt_addr_info addrs[0];
+#define MGMT_OP_ADD_CONN_PARAM		0x002D
+struct mgmt_cp_add_conn_param {
+	struct mgmt_addr_info addr;
+	uint8_t auto_connect;
+	uint16_t min_conn_interval;
+	uint16_t max_conn_interval;
 } __packed;
 
 #define MGMT_EV_CMD_COMPLETE		0x0001

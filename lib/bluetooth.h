@@ -382,6 +382,13 @@ static inline void btoh128(const uint128_t *src, uint128_t *dst)
 #define hton128(x, y) ntoh128(x, y)
 #define htob128(x, y) btoh128(x, y)
 
+/* Auto connection options */
+enum {
+	BT_AUTO_CONN_DISABLED,
+	BT_AUTO_CONN_ALWAYS,
+	BT_AUTO_CONN_LINK_LOSS,
+};
+
 #ifdef __cplusplus
 }
 #endif
