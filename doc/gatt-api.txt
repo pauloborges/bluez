@@ -86,7 +86,7 @@ with the external GATT local service implementation.
 
 Service		org.bluez
 Interface	org.bluez.ServiceManager1
-Object path	/
+Object path	/org/bluez
 
 Methods		RegisterApplication(object application, dict options)
 
