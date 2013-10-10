@@ -73,8 +73,6 @@ Properties	string UUID [read-only]
 			...
 		}
 
-		*** Reminder: To be discussed
-
 ServiceManager hierarchy
 ========================
 
@@ -89,9 +87,6 @@ with the external GATT local service implementation.
 Service		org.bluez
 Interface	org.bluez.ServiceManager1
 Object path	/
-
-		*** Reminder: object path can be removed. Maybe this method could
-		be removed, if the proxy tracks InterfaceAdded properly.
 
 Methods		RegisterServices(string id)
 
