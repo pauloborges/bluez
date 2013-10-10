@@ -50,7 +50,7 @@ Properties	string UUID [read-only]
 			represents the UUID of a local external characteristic
 			or remote GATT characteristic.
 
-		array{byte} Value [read-write, optional]
+		array{byte} Value [read-write]
 
 			Cached Value of the characteristic, if present, the
 			value will be cached by bluetoothd and updated when
@@ -80,7 +80,7 @@ Properties	string UUID [read-only]
 			It represents the UUID of a local external descriptor or
 			remote descriptor.
 
-		array{byte} Value [read-write, optional]
+		array{byte} Value [read-write]
 
 			Raw characteristic descriptor value. For external GATT
 			services, value changes should be reported through
