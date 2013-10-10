@@ -159,6 +159,58 @@ static int external_app_gid_cmp(gconstpointer a, gconstpointer b)
 	return g_strcmp0(eapp->gid, gid);
 }
 
+static uint32_t property_string2bit(const char *proper)
+{
+	/* Regular Properties: See core spec page 1898 */
+	if (strcmp("broadcast", proper) == 0)
+		return 1 << 0;
+	else if (strcmp("read", proper) == 0)
+		return 1 << 1;
+	else if (strcmp("write-without-response", proper) == 0)
+		return 1 << 2;
+	else if (strcmp("write", proper) == 0)
+		return 1 << 3;
+	else if (strcmp("notify", proper) == 0)
+		return 1 << 4;
+	else if (strcmp("indicate", proper) == 0)
+		return 1 << 5;
+	else if (strcmp("authenticated-signed-writes", proper) == 0)
+		return 1 << 6;
+
+	/* Extended Properties section. See core spec page 1900 */
+	else if (strcmp("reliable-write", proper) == 0)
+		return 1 << 8;
+	else if (strcmp("writable-auxiliaries", proper) == 0)
+		return 1 << 9;
+	else
+		return 0;
+}
+
+static uint32_t flags_get_value(DBusMessageIter *iter)
+{
+	DBusMessageIter istr;
+	uint32_t proper_bitmask = 0;
+	const char *proper;
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY) {
+		error("Invalid type for Properties");
+		return 0;
+	}
+
+	dbus_message_iter_recurse(iter, &istr);
+
+	do {
+		if (dbus_message_iter_get_arg_type(&istr) !=
+				DBUS_TYPE_STRING)
+			break;
+
+		dbus_message_iter_get_basic(&istr, &proper);
+		proper_bitmask |= property_string2bit(proper);
+	} while (dbus_message_iter_next(&istr));
+
+	return proper_bitmask;
+}
+
 static void read_external_char_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
@@ -193,6 +245,36 @@ static void read_external_char_cb(struct btd_device *device,
 	DBG("attribute: %p read %d bytes", attr, len);
 
 	result(0, (uint8_t *) value, len, user_data);
+}
+
+static void read_extended_properties_cb(struct btd_device *device,
+				struct btd_attribute *attr,
+				btd_attr_read_result_t result, void *user_data)
+{
+	DBusMessageIter iter;
+	GDBusProxy *proxy;
+	uint32_t proper_bitmask;
+
+	proxy = g_hash_table_lookup(proxy_hash, attr);
+
+	if (!g_dbus_proxy_get_property(proxy, "Flags", &iter)) {
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
+
+	proper_bitmask = flags_get_value(&iter);
+
+	/*
+	 * Remove Properties bit field (8-bits) and leave
+	 * Extended Properties bit field (16-bits). For API
+	 * simplification "Flags" DBus Property represents
+	 * both values.
+	 */
+
+	proper_bitmask = proper_bitmask >> 8;
+
+	result(0, (uint8_t *) &proper_bitmask, sizeof(proper_bitmask),
+								user_data);
 }
 
 static void write_char_reply(const DBusError *error, void *user_data)
@@ -250,7 +332,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 
 	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) == 0) {
 		struct external_characteristic *echr;
-		uint8_t properties;
+		uint32_t proper_bitmask;
 
 		if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
 			return;
@@ -262,17 +344,19 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 			return;
 		}
 
-		if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_BYTE) {
-			error("Invalid type for Properties");
-			return;
-		}
+		proper_bitmask = flags_get_value(&iter);
+		DBG("property: 0x%04x", proper_bitmask);
 
-		dbus_message_iter_get_basic(&iter, &properties);
+		/* Set Extended Properties bit if necessary */
+		if (proper_bitmask >> 8)
+			proper_bitmask |= 1 << 7;
 
 		echr = g_new0(struct external_characteristic, 1);
 		echr->path = g_strdup(path);
 		bt_string_to_uuid(&echr->uuid, uuid);
-		echr->properties = properties;
+
+		/* Keep the less significant byte only */
+		echr->properties = proper_bitmask;
 		echr->proxy = g_dbus_proxy_ref(proxy);
 
 		eapp->chrs = g_slist_append(eapp->chrs, echr);
@@ -383,6 +467,7 @@ static void register_external_chars(gpointer a, gpointer b)
 	struct external_characteristic *echr = a;
 	struct btd_attribute *attr;
 	const char *path = b;
+	bt_uuid_t uuid;
 
 	if (!g_str_has_prefix(echr->path, path))
 		return;
@@ -392,6 +477,16 @@ static void register_external_chars(gpointer a, gpointer b)
 					write_external_char_cb);
 
 	g_hash_table_insert(proxy_hash, attr, g_dbus_proxy_ref(echr->proxy));
+
+	/* Extended Properties bit set? */
+	if (echr->properties & (1 << 7)) {
+		bt_uuid16_create(&uuid, GATT_CHARAC_EXT_PROPER_UUID);
+		attr = btd_gatt_add_char_desc(&uuid,
+					read_extended_properties_cb, NULL);
+
+		g_hash_table_insert(proxy_hash, attr,
+					g_dbus_proxy_ref(echr->proxy));
+	}
 
 	DBG("new char %s", echr->path);
 }
