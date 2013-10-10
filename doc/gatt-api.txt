@@ -106,3 +106,15 @@ Methods		RegisterApplication(object application, dict options)
 			previously registered. The object path parameter
 			must match the same value that has been used
 			on registration.
+
+Service Agent hierarchy
+=====================
+
+Service		org.bluez
+Interface	org.bluez.ServiceAgent1
+Object path	freely definable
+
+Methods		void Release()
+
+			Release this agent. At this point, it will not be used
+			by BlueZ anymore and can be destroyed by the owner.
