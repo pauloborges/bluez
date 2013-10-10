@@ -88,7 +88,7 @@ Service		org.bluez
 Interface	org.bluez.ServiceManager1
 Object path	/
 
-Methods		RegisterServices(string id)
+Methods		RegisterApplication(object application, dict options)
 
 			Registers remote application services exported under
 			the interface Service1. Characteristics objects must
@@ -96,10 +96,13 @@ Methods		RegisterServices(string id)
 			interface Characteristic1. D-Bus Object Manager is
 			used to fetch the exported objects.
 
-			"id": Unique application identifier used to track
-			applications and attribute handle allocation. UUID
-			128-bit string format should be used to associate
-			it with one service or a group of services exported
-			by a single application.
+			"application" object path together with the D-Bus system
+			bus connection id define the identification of the
+			application registering a GATT based service.
 
-		UnregisterAllServices(): Not implemented
+		UnregisterApplication(object application)
+
+			This unregisters the application that has been
+			previously registered. The object path parameter
+			must match the same value that has been used
+			on registration.
