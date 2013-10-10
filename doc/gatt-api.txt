@@ -62,16 +62,34 @@ Properties	string UUID [read-only]
 			can be used. See Core spec page 1898, "Table 3.5:
 			Characteristic Properties bit field"
 
-		array{dict} Descriptors [read-write, optional]: Not implemented
+Characteristic Descriptors hierarchy
+====================================
 
-		{
-			"uuid": string [mandatory]
-			"value": array{byte} [mandatory]
-			"permissions": byte [optional]
-		}
-		{
-			...
-		}
+Local or remote GATT characteristic descriptors hierarchy.
+
+Service		org.bluez
+Interface	org.bluez.Descriptor1
+Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY/descriptorZZZ
+
+
+Methods
+
+Properties	string UUID [read-only]
+
+			UUID-128 string format of the characteristic descriptor.
+			It represents the UUID of a local external descriptor or
+			remote descriptor.
+
+		array{byte} Value [read-write, optional]
+
+			Raw characteristic descriptor value. For external GATT
+			services, value changes should be reported through
+			DBus Properties changes.
+
+		Permissions [read-only]: To be defined
+
+			Defines read/write authentication and authorization
+			requirements.
 
 ServiceManager hierarchy
 ========================
