@@ -1873,6 +1873,43 @@ static void cmd_add_conn_param(struct mgmt *mgmt, uint16_t index, int argc,
 	}
 }
 
+static void remove_conn_param_rsp(uint8_t status, uint16_t len,
+					const void *param, void *user_data)
+{
+	if (status != 0)
+		fprintf(stderr, "Remove connection parameter failed "
+						"with status 0x%02x (%s)\n",
+						status, mgmt_errstr(status));
+	else
+		printf("Connection parameter removed successfully\n");
+
+	g_main_loop_quit(event_loop);
+}
+
+static void cmd_remove_conn_param(struct mgmt *mgmt, uint16_t index, int argc,
+								char **argv)
+{
+	struct mgmt_cp_remove_conn_param cp;
+
+	if (argc != 3) {
+		printf("Usage: btmgmt remove-conn-param <address> "
+							"<address type>\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (index == MGMT_INDEX_NONE)
+		index = 0;
+
+	str2ba(argv[1], &cp.addr.bdaddr);
+	cp.addr.type = atoi(argv[2]);
+
+	if (mgmt_send(mgmt, MGMT_OP_REMOVE_CONN_PARAM, index, sizeof(cp), &cp,
+				remove_conn_param_rsp, NULL, NULL) == 0) {
+		fprintf(stderr, "Unable to send remove_conn_param cmd\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
 static struct {
 	char *cmd;
 	void (*func)(struct mgmt *mgmt, uint16_t index, int argc, char **argv);
@@ -1910,6 +1947,7 @@ static struct {
 	{ "did",	cmd_did,	"Set Device ID",		},
 	{ "static-addr",cmd_static_addr,"Set static address",		},
 	{ "add-conn-param", cmd_add_conn_param, "Add conn parameter",	},
+	{ "remove-conn-param", cmd_remove_conn_param, "Remove conn parameter",	},
 	{ NULL, NULL, 0 }
 };
 
