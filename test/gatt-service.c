@@ -86,9 +86,49 @@ struct characteristic {
 	int features;
 	uint8_t perms;
 	bool auth;
-	uint8_t props;
+	char **props;
 	GSList *descriptors;
 };
+
+const char *properties[] = {
+	"broadcast",
+	"read",
+	"write-without-response",
+	"write",
+	"notify",
+	"indicate",
+	"authenticated-signed-writes",
+	NULL
+};
+const char *extproperties[] = {
+	"reliable-write",
+	"writable-auxiliaries",
+	NULL
+};
+
+static char **properties2string(uint8_t proper, uint16_t extproper)
+{
+	char **propers = g_malloc0(25 * sizeof(char *));
+	int i, num = 0;
+
+	for (i = 0; properties[i]; i++) {
+		if (!(proper & (1 << i)))
+			continue;
+
+		propers[num] = g_strdup(properties[i]);
+		num++;
+	}
+
+	for (i = 0; extproperties[i]; i++) {
+		if (!(extproper & (1 << i)))
+			continue;
+
+		propers[num] = g_strdup(extproperties[i]);
+		num++;
+	}
+
+	return propers;
+}
 
 static gboolean service_get_uuid(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
@@ -210,8 +250,17 @@ static gboolean chr_get_props(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
 	struct characteristic *chr = data;
+	DBusMessageIter array;
+	int i;
 
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_BYTE, &chr->props);
+	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
+					DBUS_TYPE_STRING_AS_STRING, &array);
+
+	for (i = 0; chr->props[i]; i++)
+		dbus_message_iter_append_basic(&array,
+					DBUS_TYPE_STRING, &chr->props[i]);
+
+	dbus_message_iter_close_container(iter, &array);
 
 	return TRUE;
 }
@@ -265,7 +314,7 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value },
 	{ "Permissions", "y", chr_get_perms, NULL, chr_exist_perms },
 	{ "Authenticate", "b", chr_get_auth, NULL, chr_exist_auth },
-	{ "Flags", "y", chr_get_props, NULL, chr_exist_props },
+	{ "Flags", "as", chr_get_props, NULL, chr_exist_props },
 	{ "Descriptors", "a{a{sv}}", chr_get_descriptors, chr_set_descriptors,
 						chr_exist_descriptors },
 	{ }
@@ -353,7 +402,7 @@ static bool populate_characteristic(DBusConnection *conn, const char *uuid,
 
 	chr->value = g_new0(uint8_t, 1);
 	chr->vlen = sizeof(uint8_t);
-	chr->props = props;
+	chr->props = properties2string(props, 0);
 
 	chr->features = CHAR_FEATURE_PROP_VALUE;
 
