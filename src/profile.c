@@ -637,10 +637,17 @@ struct btd_profile_custom_property {
 	void *user_data;
 };
 
+struct profile_parameters {
+	uint16_t flags;			/* Reconnection behaviour */
+	uint16_t conn_interval_min;
+	uint16_t conn_interval_max;
+};
+
 static GSList *custom_props = NULL;
 
 static GSList *profiles = NULL;
 static GSList *ext_profiles = NULL;
+static GHashTable *parameters = NULL;
 
 void btd_profile_foreach(void (*func)(struct btd_profile *p, void *data),
 								void *data)
@@ -2434,11 +2441,35 @@ bool btd_profile_remove_custom_prop(const char *uuid, const char *name)
 	return false;
 }
 
+bool btd_profile_set_parameters(const char *uuid, uint16_t flags,
+				uint16_t conn_ival_min, uint16_t conn_ival_max)
+{
+	struct profile_parameters *params;
+
+	if (conn_ival_min > conn_ival_max)
+		return false;
+
+	params = g_hash_table_lookup(parameters, uuid);
+	if (params == NULL) {
+		params = g_new0(struct profile_parameters, 1);
+		g_hash_table_insert(parameters, g_strdup(uuid), params);
+	}
+
+	params->flags = flags;
+	params->conn_interval_min = conn_ival_min;
+	params->conn_interval_max = conn_ival_max;
+
+	return true;
+}
+
 void btd_profile_init(void)
 {
 	g_dbus_register_interface(btd_get_dbus_connection(),
 				"/org/bluez", "org.bluez.ProfileManager1",
 				methods, NULL, NULL, NULL, NULL);
+
+	parameters = g_hash_table_new_full(g_str_hash, g_str_equal,
+							g_free, g_free);
 }
 
 void btd_profile_cleanup(void)
@@ -2466,6 +2497,9 @@ void btd_profile_cleanup(void)
 
 	g_slist_free_full(custom_props, free_property);
 	custom_props = NULL;
+
+	g_hash_table_destroy(parameters);
+	parameters = NULL;
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 				"/org/bluez", "org.bluez.ProfileManager1");

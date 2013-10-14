@@ -70,5 +70,13 @@ bool btd_profile_add_custom_prop(const char *uuid, const char *type,
 					void *user_data);
 bool btd_profile_remove_custom_prop(const char *uuid, const char *name);
 
+enum {
+	AUTO_CONN_FLAG_DISABLED,
+	AUTO_CONN_FLAG_ALWAYS,
+	AUTO_CONN_FLAG_ONLINK_LOSS,
+};
+bool btd_profile_set_parameters(const char *uuid, uint16_t flags,
+				uint16_t conn_ival_min, uint16_t conn_ival_max);
+
 void btd_profile_init(void);
 void btd_profile_cleanup(void);

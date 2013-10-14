@@ -2368,6 +2368,8 @@ free:
 
 	closedir(dir);
 
+	/* FIXME: For each profile & device set scan parameters */
+
 	load_link_keys(adapter, keys.keys, main_opts.debug_keys);
 	g_slist_free_full(keys.keys, g_free);
 
