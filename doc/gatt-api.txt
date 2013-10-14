@@ -51,6 +51,11 @@ Properties	string UUID [read-only]
 			a local external characteristic or remote GATT
 			characteristic.
 
+		object Service [read-only]
+
+			Object path of the GATT service the characteristc
+			belongs to.
+
 		array{byte} Value [read-write]
 
 			Cached Value of the characteristic. If present, the
@@ -86,6 +91,11 @@ Properties	string UUID [read-only]
 
 			128-bit descriptor UUID. It represents the UUID of a
 			local external descriptor or remote descriptor.
+
+		object Characteristic [read-only]
+
+			Object path of the GATT characteristc the descriptor
+			belongs to.
 
 		array{byte} Value [read-write]
 
