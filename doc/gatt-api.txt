@@ -1,15 +1,23 @@
 BlueZ D-Bus GATT API description
 ********************************
 
+GATT local and remote services share the same high-level D-Bus API. Local
+refers to local GATT based service exported by a BlueZ plugin or an external
+application. Remote refers to GATT services exported by the peer.
+
+BlueZ acts as a proxy, translating ATT operations to D-Bus method calls and
+Properties (or the opposite). Support for D-Bus Object Manager is mandatory for
+external services to allow seamless GATT declarations (Service, Characteristic
+and Descriptors) discovery.
 
 Service hierarchy
 =================
 
-GATT remote and local service representation. Object path for local
-services are freely definable.
+GATT remote and local service representation. Object path for local services
+is freely definable.
 
-Local Services already implemented by the core should NOT be re-declared
-as external GATT service.
+External local services should register the services using ServiceManager1
+registration method and must implement ServiceAgent1 interface.
 
 Service		org.bluez
 Interface	org.bluez.Service1
@@ -17,53 +25,52 @@ Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX
 
 Properties	string UUID [read-only]
 
-			UUID-128 string format of the GATT based service. It
-			represents the UUID of a local external service or
-			remote GATT service.
+			128-bit UUID of the GATT based service. It represents
+			the UUID of a local external service or remote GATT
+			service.
 
 		array{object} Includes [read-only]: Not implemented
 
-			Array of objects paths representing the included
+			Array of object paths representing the included
 			services of this service.
 
 
 Characteristic hierarchy
 ========================
 
-GATT local and remote services share the same high-level D-Bus API.
-Some properties are applied to local implementations only, especially
-the properties related to security.
-
-For local GATT defined services, the object paths need to follow the
-service path hierarchy and freely defineable.
+For local GATT defined services, the object paths need to follow the service
+path hierarchy and are freely definable.
 
 Service		org.bluez
 Interface	org.bluez.Characteristic1
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY
 
-
-Methods
-
 Properties	string UUID [read-only]
 
-			UUID-128 string format of the GATT characteristic. It
-			represents the UUID of a local external characteristic
-			or remote GATT characteristic.
+			128-bit characteristic UUID. It represents the UUID of
+			a local external characteristic or remote GATT
+			characteristic.
 
 		array{byte} Value [read-write]
 
-			Cached Value of the characteristic, if present, the
-			value will be cached by bluetoothd and updated when
-			the PropertyChanged is emitted.
+			Cached Value of the characteristic. If present, the
+			value will be cached by bluetoothd and updated when the
+			PropertiesChanged signal is emitted.
+
+			External services must emit this signal when the
+			characteristic supports notification/indication, so
+			that clients can be notified of the new value.
 
 		array{string} Flags [read-only, optional]
 
-			Defines how the Characteristic Value can be used. See
+			Defines how the characteristic value can be used. See
 			Core spec page 1898, "Table 3.5: Characteristic
-			Properties bit field". Allowed values: "broadcast",
-			"read", "write-without-response", "write", "notify",
-			"indicate", "authenticated-signed-writes",
-			"reliable-write", and "writable-auxiliaries".
+			Properties bit field" and page 1900, "Table 3.8:
+			Characteristic Extended Properties bit field". Allowed
+			values: "broadcast", "read", "write-without-response",
+			"write", "notify", "indicate",
+			"authenticated-signed-writes", "reliable-write", and
+			"writable-auxiliaries".
 
 
 Characteristic Descriptors hierarchy
@@ -75,36 +82,30 @@ Service		org.bluez
 Interface	org.bluez.Descriptor1
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY/descriptorZZZ
 
-
-Methods
-
 Properties	string UUID [read-only]
 
-			UUID-128 string format of the characteristic descriptor.
-			It represents the UUID of a local external descriptor or
-			remote descriptor.
+			128-bit descriptor UUID. It represents the UUID of a
+			local external descriptor or remote descriptor.
 
 		array{byte} Value [read-write]
 
 			Raw characteristic descriptor value. For external GATT
 			services, value changes should be reported through
-			DBus Properties changes.
+			PropertiesChanged signal.
 
-		Permissions [read-only]: To be defined
+		string Permissions [read-only]: To be defined
 
 			Defines read/write authentication and authorization
 			requirements.
 
-ServiceManager hierarchy
-========================
+Service Manager hierarchy
+=========================
 
 ServiceManager allows external applications to register GATT based services.
 Services should follow the API for Service and Characteristic described above.
 
-For GATT local services, services and characteristics definitions are fetched
-automatically by BlueZ using D-Bus Object Manager. BlueZ core is responsible
-for managing ATT requests translating to D-Bus messages and signals to interact
-with the external GATT local service implementation.
+For GATT local services, services and characteristics definitions are
+discovered automatically using D-Bus Object Manager.
 
 Service		org.bluez
 Interface	org.bluez.ServiceManager1
@@ -113,13 +114,13 @@ Object path	/org/bluez
 Methods		RegisterApplication(object application, dict options)
 
 			Registers remote application services exported under
-			the interface Service1. Characteristics objects must
-			be hierarchical to its service and it must use the
+			the interface Service1. Characteristic objects must
+			be hierarchical to their service and must use the
 			interface Characteristic1. D-Bus Object Manager is
 			used to fetch the exported objects.
 
 			"application" object path together with the D-Bus system
-			bus connection id define the identification of the
+			bus connection ID define the identification of the
 			application registering a GATT based service.
 
 			Possible errors: org.bluez.Error.InvalidArguments
@@ -135,7 +136,7 @@ Methods		RegisterApplication(object application, dict options)
 			Possible errors: org.bluez.Error.DoesNotExist
 
 Service Agent hierarchy
-=====================
+=======================
 
 Service		org.bluez
 Interface	org.bluez.ServiceAgent1
