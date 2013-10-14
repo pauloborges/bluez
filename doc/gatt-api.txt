@@ -20,7 +20,7 @@ External local services should register the services using ServiceManager1
 registration method and must implement ServiceAgent1 interface.
 
 Service		org.bluez
-Interface	org.bluez.Service1
+Interface	org.bluez.Service1 [Experimental]
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX
 
 Properties	string UUID [read-only]
@@ -42,7 +42,7 @@ For local GATT defined services, the object paths need to follow the service
 path hierarchy and are freely definable.
 
 Service		org.bluez
-Interface	org.bluez.Characteristic1
+Interface	org.bluez.Characteristic1 [Experimental]
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY
 
 Properties	string UUID [read-only]
@@ -84,7 +84,7 @@ Characteristic Descriptors hierarchy
 Local or remote GATT characteristic descriptors hierarchy.
 
 Service		org.bluez
-Interface	org.bluez.Descriptor1
+Interface	org.bluez.Descriptor1 [Experimental]
 Object path	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX/serviceXX/charYYYY/descriptorZZZ
 
 Properties	string UUID [read-only]
@@ -118,7 +118,7 @@ For GATT local services, services and characteristics definitions are
 discovered automatically using D-Bus Object Manager.
 
 Service		org.bluez
-Interface	org.bluez.ServiceManager1
+Interface	org.bluez.ServiceManager1 [Experimental]
 Object path	/org/bluez
 
 Methods		RegisterApplication(object application, dict options)
@@ -149,7 +149,7 @@ Service Agent hierarchy
 =======================
 
 Service		org.bluez
-Interface	org.bluez.ServiceAgent1
+Interface	org.bluez.ServiceAgent1 [Experimental]
 Object path	freely definable
 
 Methods		void Release()
