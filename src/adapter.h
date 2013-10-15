@@ -204,10 +204,6 @@ int btd_adapter_add_remote_oob_data(struct btd_adapter *adapter,
 int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 							const bdaddr_t *bdaddr);
 
-int btd_adapter_set_auto_connectable(struct btd_adapter *adapter,
-					struct btd_device *device,
-					gboolean autocn);
-
 int btd_adapter_gatt_server_start(struct btd_adapter *adapter);
 void btd_adapter_gatt_server_stop(struct btd_adapter *adapter);
 

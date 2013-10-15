@@ -50,15 +50,8 @@ static struct enabled enabled  = {
 static int monitor_linkloss_probe(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
-	struct btd_adapter *adapter = device_get_adapter(device);
-	int ret;
 
-	ret = monitor_register_linkloss(device, &enabled);
-
-	if (enabled.linkloss && ret == 0)
-		btd_adapter_set_auto_connectable(adapter, device, TRUE);
-
-	return ret;
+	return monitor_register_linkloss(device, &enabled);
 }
 
 static int monitor_immediate_probe(struct btd_service *service)
@@ -71,12 +64,8 @@ static int monitor_immediate_probe(struct btd_service *service)
 static void monitor_linkloss_remove(struct btd_service *service)
 {
 	struct btd_device *device = btd_service_get_device(service);
-	struct btd_adapter *adapter = device_get_adapter(device);
 
 	monitor_unregister_linkloss(device);
-
-	if (enabled.linkloss)
-		btd_adapter_set_auto_connectable(adapter, device, FALSE);
 }
 
 static void monitor_immediate_remove(struct btd_service *service)

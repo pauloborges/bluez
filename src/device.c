@@ -777,40 +777,6 @@ static void dev_property_set_trusted(const GDBusPropertyTable *property,
 	set_trust(id, b, data);
 }
 
-static void dev_property_set_auto(const GDBusPropertyTable *property,
-					DBusMessageIter *value,
-					GDBusPendingPropertySet id, void *data)
-{
-	struct btd_device *device = data;
-	struct btd_adapter *adapter = device_get_adapter(device);
-	dbus_bool_t b;
-	int err;
-
-	if (dbus_message_iter_get_arg_type(value) != DBUS_TYPE_BOOLEAN) {
-		g_dbus_pending_property_error(id,
-					ERROR_INTERFACE ".InvalidArguments",
-					"Invalid arguments in method call");
-		return;
-	}
-
-	dbus_message_iter_get_basic(value, &b);
-	err = btd_adapter_set_auto_connectable(adapter, device, b);
-
-	switch (-err) {
-	case 0:
-		g_dbus_pending_property_success(id);
-		break;
-	case EINVAL:
-		g_dbus_pending_property_error(id, ERROR_INTERFACE ".Failed",
-					"Kernel lacks Auto Connection support");
-		break;
-	default:
-		g_dbus_pending_property_error(id, ERROR_INTERFACE ".Failed",
-								strerror(-err));
-		break;
-	}
-}
-
 static gboolean dev_property_get_blocked(const GDBusPropertyTable *property,
 					DBusMessageIter *iter, void *data)
 {
@@ -1871,7 +1837,6 @@ static const GDBusPropertyTable device_properties[] = {
 					dev_property_exists_icon },
 	{ "Paired", "b", dev_property_get_paired },
 	{ "Trusted", "b", dev_property_get_trusted, dev_property_set_trusted },
-	{ "AutoConnect", "b", NULL, dev_property_set_auto },
 	{ "Blocked", "b", dev_property_get_blocked, dev_property_set_blocked },
 	{ "LegacyPairing", "b", dev_property_get_legacy },
 	{ "RSSI", "n", dev_property_get_rssi, NULL, dev_property_exists_rssi },
