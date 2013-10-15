@@ -108,20 +108,21 @@ Properties	string UUID [read-only]
 			Defines read/write authentication and authorization
 			requirements.
 
-Service Manager hierarchy
-=========================
+Application Manager hierarchy
+=============================
 
-ServiceManager allows external applications to register GATT based services.
-Services should follow the API for Service and Characteristic described above.
+Application Manager allows external applications to register GATT based
+services. Services should follow the API for Service and Characteristic
+described above.
 
 For GATT local services, services and characteristics definitions are
 discovered automatically using D-Bus Object Manager.
 
 Service		org.bluez
-Interface	org.bluez.ServiceManager1 [Experimental]
+Interface	org.bluez.ApplicationManager1 [Experimental]
 Object path	/org/bluez
 
-Methods		RegisterApplication(object application, dict options)
+Methods		RegisterAgent(object application, dict options)
 
 			Registers remote application services exported under
 			the interface Service1. Characteristic objects must
@@ -133,10 +134,30 @@ Methods		RegisterApplication(object application, dict options)
 			bus connection ID define the identification of the
 			application registering a GATT based service.
 
+			Possible options:
+
+				array{object} Services:
+
+					Object paths of the GATT based
+					services that the application wants
+					to export.
+
+				string Id:
+
+					Application identification used to
+					provide handle re-allocation.
+
+				array{string} UUIDs:
+
+					Informs which remote UUIDs the
+					application wants to track. When
+					the connection is established the
+					Application Agent will be notified.
+
 			Possible errors: org.bluez.Error.InvalidArguments
 					 org.bluez.Error.AlreadyExists
 
-		UnregisterApplication(object application)
+		UnregisterAgent(object application)
 
 			This unregisters the application that has been
 			previously registered. The object path parameter
@@ -145,11 +166,11 @@ Methods		RegisterApplication(object application, dict options)
 
 			Possible errors: org.bluez.Error.DoesNotExist
 
-Service Agent hierarchy
-=======================
+Application Agent hierarchy
+===========================
 
-Service		org.bluez
-Interface	org.bluez.ServiceAgent1 [Experimental]
+Service		unique name
+Interface	org.bluez.ApplicationAgent1 [Experimental]
 Object path	freely definable
 
 Methods		void Release()
