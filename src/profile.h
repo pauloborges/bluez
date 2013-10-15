@@ -78,5 +78,8 @@ enum {
 bool btd_profile_set_parameters(const char *uuid, uint16_t flags,
 				uint16_t conn_ival_min, uint16_t conn_ival_max);
 
+int btd_profile_get_parameters(const char *uuid, uint16_t *flags,
+			uint16_t *conn_ival_min, uint16_t *conn_ival_max);
+
 void btd_profile_init(void);
 void btd_profile_cleanup(void);

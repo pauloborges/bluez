@@ -2462,6 +2462,27 @@ bool btd_profile_set_parameters(const char *uuid, uint16_t flags,
 	return true;
 }
 
+int btd_profile_get_parameters(const char *uuid, uint16_t *flags,
+			uint16_t *conn_ival_min, uint16_t *conn_ival_max)
+{
+	struct profile_parameters *params;
+
+	params = g_hash_table_lookup(parameters, uuid);
+	if (params == NULL)
+		return -ENOENT;
+
+	if (flags)
+		*flags = params->flags;
+
+	if (conn_ival_min)
+		*conn_ival_min = params->conn_interval_min;
+
+	if (conn_ival_max)
+		*conn_ival_max = params->conn_interval_max;
+
+	return 0;
+}
+
 void btd_profile_init(void)
 {
 	g_dbus_register_interface(btd_get_dbus_connection(),
