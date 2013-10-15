@@ -129,6 +129,15 @@ static void load_config_file(GKeyFile *config)
 
 int proximity_manager_init(GKeyFile *config)
 {
+	/*
+	 * Ref. Proximity Profile SPEC page 17.
+	 * Table 5.3: Recommended Connection Interval Values
+	 * Minimum Connection Interval 50ms (50/1.25)
+	 * Maximum Connection Interval 70ms (70/1.25)
+	 */
+	btd_profile_set_parameters(LINK_LOSS_UUID, AUTO_CONN_FLAG_ONLINK_LOSS,
+								40, 56);
+
 	load_config_file(config);
 
 	if (btd_profile_register(&pxp_monitor_linkloss_profile) < 0)
