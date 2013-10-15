@@ -2570,6 +2570,8 @@ add_uuids:
 						DEVICE_INTERFACE, "UUIDs");
 
 	device_svc_resolved(device, 0);
+
+	adapter_set_device_params(device_get_adapter(device), device);
 }
 
 static void store_sdp_record(GKeyFile *key_file, sdp_record_t *rec)

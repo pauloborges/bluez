@@ -2290,6 +2290,74 @@ static void load_ltks(struct btd_adapter *adapter, GSList *keys)
 						load_ltks_timeout, adapter);
 }
 
+static int compute_parameters(GSList *uuids, uint8_t *flags,
+				uint16_t *conn_ival_min, uint16_t *conn_ival_max)
+{
+	GSList *list;
+	uint16_t pflags = 0, pmin = 0xffff, pmax = 0xffff;
+
+	for (list = uuids; list; list = g_slist_next(list)) {
+		const char *uuid = list->data;
+		uint16_t tmp_flags, tmp_min, tmp_max;
+
+		if (btd_profile_get_parameters(uuid, &tmp_flags,
+						&tmp_min, &tmp_max) < 0)
+			continue;
+
+		pflags = pflags | tmp_flags;
+
+		if (tmp_min < pmin)
+			pmin = tmp_min;
+
+		if (tmp_max < pmax)
+			pmax = tmp_max;
+	}
+
+	if (pflags == 0 || pmax <= pmin)
+		return -ENOENT;
+
+	*flags = pflags;
+	*conn_ival_min = pmin;
+	*conn_ival_max = pmax;
+
+	return 0;
+}
+
+int adapter_set_device_params(struct btd_adapter *adapter,
+						struct btd_device *device)
+{
+	struct mgmt_cp_add_conn_param cp;
+	uint16_t conn_ival_min, conn_ival_max;
+	uint8_t flags;
+	char address[18];
+	const bdaddr_t *dba;
+
+	if (device_is_le(device) && device_is_bonded(device) == FALSE)
+		return -EPERM;
+
+	if (compute_parameters(device_get_uuids(device), &flags,
+				&conn_ival_min, &conn_ival_max) < 0)
+		return -EPERM;
+
+	dba = device_get_address(device);
+	cp.addr.type = device_get_address_type(device);
+	bacpy(&cp.addr.bdaddr, dba);
+	cp.auto_connect = flags;
+	cp.min_conn_interval = conn_ival_min;
+	cp.max_conn_interval = conn_ival_max;
+
+	ba2str(dba, address);
+	DBG("Setting device(%s) parameters min: 0x%04x max: 0x%04x",
+					address, conn_ival_min, conn_ival_max);
+
+	if (mgmt_send(adapter->mgmt, MGMT_OP_ADD_CONN_PARAM,
+				adapter->dev_id, sizeof(cp), &cp,
+				NULL, NULL, NULL) > 0)
+		return 0;
+
+	return -EIO;
+}
+
 static void load_devices(struct btd_adapter *adapter)
 {
 	char filename[PATH_MAX + 1];
@@ -2367,8 +2435,6 @@ free:
 	}
 
 	closedir(dir);
-
-	/* FIXME: For each profile & device set scan parameters */
 
 	load_link_keys(adapter, keys.keys, main_opts.debug_keys);
 	g_slist_free_full(keys.keys, g_free);
