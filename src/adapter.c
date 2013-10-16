@@ -167,6 +167,7 @@ struct btd_adapter {
 	bool pincode_requested;		/* PIN requested during last bonding */
 	GSList *connections;		/* Connected devices */
 	GSList *devices;		/* Devices structure pointers */
+	GSList *auto_conn;		/* Devices with connection params set */
 	sdp_list_t *services;		/* Services associated to adapter */
 
 	gboolean initialized;
@@ -1024,6 +1025,25 @@ static void service_auth_cancel(struct service_auth *auth)
 	g_free(auth);
 }
 
+static void remove_conn_params(struct btd_adapter *adapter,
+						struct btd_device *device)
+{
+	struct mgmt_cp_remove_conn_param cp;
+	const bdaddr_t *dba;
+
+	if (g_slist_find(adapter->auto_conn, device) == NULL)
+		return;
+
+	adapter->auto_conn = g_slist_remove(adapter->auto_conn, device);
+
+	dba = device_get_address(device);
+	cp.addr.type = device_get_address_type(device);
+	bacpy(&cp.addr.bdaddr, dba);
+
+	mgmt_send(adapter->mgmt, MGMT_OP_REMOVE_CONN_PARAM, adapter->dev_id,
+					sizeof(cp), &cp, NULL, NULL, NULL);
+}
+
 static void adapter_remove_device(struct btd_adapter *adapter,
 						struct btd_device *dev)
 {
@@ -1032,7 +1052,6 @@ static void adapter_remove_device(struct btd_adapter *adapter,
 	adapter->devices = g_slist_remove(adapter->devices, dev);
 	adapter->discovery_found = g_slist_remove(adapter->discovery_found,
 									dev);
-
 	adapter->connections = g_slist_remove(adapter->connections, dev);
 
 	l = adapter->auths->head;
@@ -1051,6 +1070,7 @@ static void adapter_remove_device(struct btd_adapter *adapter,
 		service_auth_cancel(auth);
 	}
 
+	remove_conn_params(adapter, dev);
 	device_remove(dev, TRUE);
 }
 
@@ -2352,10 +2372,12 @@ int adapter_set_device_params(struct btd_adapter *adapter,
 
 	if (mgmt_send(adapter->mgmt, MGMT_OP_ADD_CONN_PARAM,
 				adapter->dev_id, sizeof(cp), &cp,
-				NULL, NULL, NULL) > 0)
-		return 0;
+				NULL, NULL, NULL) == 0)
+		return -EIO;
 
-	return -EIO;
+	adapter->auto_conn = g_slist_append(adapter->auto_conn, device);
+
+	return 0;
 }
 
 static void load_devices(struct btd_adapter *adapter)
