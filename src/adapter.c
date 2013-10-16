@@ -2355,7 +2355,7 @@ int adapter_set_device_params(struct btd_adapter *adapter,
 	if (device_is_le(device) && device_is_bonded(device) == FALSE)
 		return -EPERM;
 
-	if (compute_parameters(device_get_uuids(device), &flags,
+	if (compute_parameters(btd_device_get_uuids(device), &flags,
 				&conn_ival_min, &conn_ival_max) < 0)
 		return -EPERM;
 

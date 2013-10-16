@@ -1637,6 +1637,8 @@ static int connect_le(struct btd_device *device)
 	memset(&addr, 0, sizeof(addr));
 	addr.l2_family = AF_BLUETOOTH;
 	bacpy(&addr.l2_bdaddr, btd_adapter_get_address(adapter));
+	addr.l2_bdaddr_type = BDADDR_LE_PUBLIC;
+	addr.l2_cid = htobs(ATT_CID);
 
 	if (bind(sk, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
 		close(sk);
