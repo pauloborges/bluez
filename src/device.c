@@ -1621,7 +1621,7 @@ static gboolean pair_error_cb(GIOChannel *io, GIOCondition cond,
 	return FALSE;
 }
 
-static int connect_le(struct btd_device *device, GError **gerr)
+static int connect_le(struct btd_device *device)
 {
 	struct btd_adapter *adapter = device->adapter;
 	GIOChannel *io;
@@ -1724,12 +1724,9 @@ static DBusMessage *pair_device(DBusConnection *conn, DBusMessage *msg,
 	 * this in the ATT connect callback)
 	 */
 	if (device_is_le(device) && !device_is_connected(device)) {
-		GError *gerr = NULL;
-
-		if (connect_le(device, &gerr) < 0) {
-			reply = btd_error_failed(msg, gerr->message);
-			g_error_free(gerr);
-		}
+		err = connect_le(device);
+		if (err < 0)
+			reply = btd_error_failed(msg, strerror(-err));
 	} else {
 		err = adapter_create_bonding(adapter, &device->bdaddr,
 				device->bdaddr_type, io_cap);
@@ -1737,8 +1734,10 @@ static DBusMessage *pair_device(DBusConnection *conn, DBusMessage *msg,
 			reply = btd_error_failed(msg, strerror(-err));
 	}
 
-	if (reply)
-		bonding_request_free(device->bonding);
+	if (reply == NULL)
+		return NULL;
+
+	bonding_request_free(device->bonding);
 
 	return reply;
 }
