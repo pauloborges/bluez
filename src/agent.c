@@ -30,11 +30,8 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
 
 #include <bluetooth/bluetooth.h>
-#include <bluetooth/sdp.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
