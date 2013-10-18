@@ -31,13 +31,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <sys/ioctl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <dirent.h>
 
 #include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
