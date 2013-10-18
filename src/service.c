@@ -29,10 +29,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <stdbool.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <errno.h>
 
 #include <bluetooth/bluetooth.h>
