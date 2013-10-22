@@ -102,6 +102,7 @@ struct external_write_data {
 
 static GSList *external_apps = NULL;
 static GHashTable *proxy_hash = NULL;
+static GHashTable *object_hash = NULL;
 
 static void char_iface_destroy(gpointer user_data)
 {
@@ -399,11 +400,37 @@ static void proxy_removed(GDBusProxy *proxy, void *user_data)
 static void property_changed(GDBusProxy *proxy, const char *name,
 					DBusMessageIter *iter, void *user_data)
 {
-	const char *interface;
+	struct btd_attribute *attr;
+	DBusMessageIter array;
+	const char *interface, *path;
+	uint8_t *value;
+	int len;
 
 	interface = g_dbus_proxy_get_interface(proxy);
 
-	DBG("iface %s", interface);
+	if (g_strcmp0(interface, CHARACTERISTIC_INTERFACE) != 0)
+		return;
+
+	if (!g_dbus_proxy_get_property(proxy, "Value", iter))
+		return;
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY)
+		return;
+
+	dbus_message_iter_recurse(iter, &array);
+	dbus_message_iter_get_fixed_array(&array, &value, &len);
+
+	path = g_dbus_proxy_get_path(proxy);
+	attr = g_hash_table_lookup(object_hash, path);
+	if (attr == NULL)
+		return;
+
+	/*
+	 * Let the core to manage notifications and indications
+	 * for offline and connected devices.
+	 */
+	btd_gatt_write_attribute(NULL, attr, (uint8_t *) value, len,
+							0, NULL, NULL);
 }
 
 static void external_app_disconnected(DBusConnection *conn, void *user_data)
@@ -477,6 +504,7 @@ static void register_external_chars(gpointer a, gpointer b)
 					write_external_char_cb);
 
 	g_hash_table_insert(proxy_hash, attr, g_dbus_proxy_ref(echr->proxy));
+	g_hash_table_insert(object_hash, g_strdup(echr->path), attr);
 
 	/* Extended Properties bit set? */
 	if (echr->properties & (1 << 7)) {
@@ -906,6 +934,9 @@ gboolean gatt_dbus_manager_register(void)
 	proxy_hash = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 				NULL, (GDestroyNotify) g_dbus_proxy_unref);
 
+	object_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
+						NULL, (GDestroyNotify) g_free);
+
 	return g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.ServiceManager1",
 			methods, NULL, NULL, NULL, NULL);
@@ -915,6 +946,9 @@ void gatt_dbus_manager_unregister(void)
 {
 	g_hash_table_destroy(proxy_hash);
 	proxy_hash = NULL;
+
+	g_hash_table_destroy(object_hash);
+	object_hash = NULL;
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 			"/org/bluez", "org.bluez.ServiceManager1");
