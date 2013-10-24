@@ -205,6 +205,10 @@ static void read_external_char_cb(struct btd_device *device,
 	 * get the value directly from the GATT server.
 	 */
 	proxy = g_hash_table_lookup(proxy_hash, attr);
+	if (proxy == NULL) {
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
 
 	if (!g_dbus_proxy_get_property(proxy, "Value", &iter)) {
 		result(EPERM, NULL, 0, user_data);
@@ -234,6 +238,10 @@ static void read_extended_properties_cb(struct btd_device *device,
 	uint32_t proper_bitmask;
 
 	proxy = g_hash_table_lookup(proxy_hash, attr);
+	if (proxy == NULL) {
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
 
 	if (!g_dbus_proxy_get_property(proxy, "Flags", &iter)) {
 		result(EPERM, NULL, 0, user_data);
@@ -273,11 +281,15 @@ static void write_external_char_cb(struct btd_device *device,
 	GDBusProxy *proxy;
 	struct external_write_data *wdata;
 
+	proxy = g_hash_table_lookup(proxy_hash, attr);
+	if (proxy == NULL) {
+		result(EPERM, user_data);
+		return;
+	}
+
 	wdata = g_new0(struct external_write_data, 1);
 	wdata->func = result;
 	wdata->user_data = user_data;
-
-	proxy = g_hash_table_lookup(proxy_hash, attr);
 
 	g_dbus_proxy_set_property_array(proxy, "Value", DBUS_TYPE_BYTE,
 						value, len, write_char_reply,
@@ -307,6 +319,7 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 static void proxy_removed(GDBusProxy *proxy, void *user_data)
 {
 	struct external_app *eapp = user_data;
+	struct btd_attribute *attr;
 	const char *interface, *path;
 
 	interface = g_dbus_proxy_get_interface(proxy);
@@ -315,6 +328,18 @@ static void proxy_removed(GDBusProxy *proxy, void *user_data)
 	DBG("path %s iface %s", path, interface);
 
 	eapp->proxies = g_slist_remove(eapp->proxies, proxy);
+
+	/*
+	 * When the external application leaves the bus or unregister a given
+	 * object (service or characteristic) its proxy object needs  to be
+	 * removed from the hash tables. Further incomming ATT requests will
+	 * get permission denied if the Proxy object is not found.
+	 */
+	attr = g_hash_table_lookup(object_hash, proxy);
+	if (attr)
+		g_hash_table_remove(proxy_hash, attr);
+
+	g_hash_table_remove(object_hash, proxy);
 }
 
 static void property_changed(GDBusProxy *proxy, const char *name,
