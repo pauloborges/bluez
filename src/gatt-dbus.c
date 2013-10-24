@@ -77,11 +77,6 @@ struct char_iface {
 	unsigned int watch;		/* Tracks value changed */
 };
 
-struct external_read_data {
-	btd_attr_read_result_t func;
-	void *user_data;
-};
-
 struct external_write_data {
 	btd_attr_write_result_t func;
 	void *user_data;
