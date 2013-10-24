@@ -45,14 +45,16 @@
 #include "gatt.h"
 #include "gatt-dbus.h"
 
-#define SERVICE_INTERFACE "org.bluez.Service1"
-#define CHARACTERISTIC_INTERFACE "org.bluez.Characteristic1"
+#define SERVICE_INTERFACE		"org.bluez.Service1"
+#define CHARACTERISTIC_INTERFACE	"org.bluez.Characteristic1"
+#define APP_MANAGER_INTERFACE		"org.bluez.ApplicationManager1"
 
 #define REGISTER_TIMER         1
 
 struct external_app {
 	char *gid;
 	char *owner;
+	char *path;
 	GSList *prim_services;
 	GDBusClient *client;
 	GSList *proxies;
@@ -124,12 +126,12 @@ static void remove_local_service(void *data)
 	btd_gatt_remove_service(attr);
 }
 
-static int external_app_gid_cmp(gconstpointer a, gconstpointer b)
+static int external_app_path_cmp(gconstpointer a, gconstpointer b)
 {
 	const struct external_app *eapp = a;
-	const char *gid = b;
+	const char *path = b;
 
-	return g_strcmp0(eapp->gid, gid);
+	return g_strcmp0(eapp->path, path);
 }
 
 static uint32_t property_string2bit(const char *proper)
@@ -383,6 +385,7 @@ static void external_app_disconnected(DBusConnection *conn, void *user_data)
 
 	g_free(eapp->gid);
 	g_free(eapp->owner);
+	g_free(eapp->path);
 
 	g_slist_free_full(eapp->prim_services, remove_local_service);
 
@@ -568,35 +571,72 @@ static inline int is_uuid128(const char *string)
 			string[23] == '-');
 }
 
-static DBusMessage *register_services(DBusConnection *conn,
+static int parse_options(DBusMessageIter *opts, const char **gid)
+{
+	bool has_gid = false;
+
+	while (dbus_message_iter_get_arg_type(opts) == DBUS_TYPE_DICT_ENTRY) {
+		DBusMessageIter value, entry;
+		const char *key;
+		int type;
+
+		dbus_message_iter_recurse(opts, &entry);
+		dbus_message_iter_get_basic(&entry, &key);
+
+		dbus_message_iter_next(&entry);
+		dbus_message_iter_recurse(&entry, &value);
+
+		type = dbus_message_iter_get_arg_type(&value);
+		if (g_strcmp0("GID", key) == 0) {
+			if (type != DBUS_TYPE_STRING)
+				return -EINVAL;
+
+			dbus_message_iter_get_basic(&value, gid);
+			has_gid = true;
+		} else {
+			DBG("RegisterAgent: unknown %s option", key);
+			return -EINVAL;
+		}
+
+		dbus_message_iter_next(opts);
+	}
+
+	return (has_gid ? 0 : -EINVAL);
+}
+
+static DBusMessage *register_agent(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
 	struct external_app *eapp;
-	DBusMessageIter args;
-	const char *gid;
+	DBusMessageIter iter, opts;
+	const char *gid, *path;
 
 	DBG("Registering GATT Service");
 
-	if (dbus_message_iter_init(msg, &args) == false)
+	if (dbus_message_iter_init(msg, &iter) == false)
 		goto invalid;
 
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_OBJECT_PATH)
 		goto invalid;
 
-	dbus_message_iter_get_basic(&args, &gid);
+	dbus_message_iter_get_basic(&iter, &path);
+
+	if (g_slist_find_custom(external_apps, path, external_app_path_cmp))
+		return btd_error_already_exists(msg);
+
+	dbus_message_iter_next(&iter);
+	dbus_message_iter_recurse(&iter, &opts);
+
+	if (dbus_message_iter_get_arg_type(&opts) != DBUS_TYPE_DICT_ENTRY)
+		goto invalid;
+
+	if (parse_options(&opts, &gid) < 0)
+		goto invalid;
 
 	if (!is_uuid128(gid)) {
 		DBG("Application ID: invalid argument");
 		goto invalid;
 	}
-
-	dbus_message_iter_next(&args);
-
-	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY)
-		goto invalid;
-
-	if (g_slist_find_custom(external_apps, gid, external_app_gid_cmp))
-		return btd_error_already_exists(msg);
 
 	eapp = new_external_app(conn, dbus_message_get_sender(msg), gid);
 	if (eapp == NULL)
@@ -604,7 +644,7 @@ static DBusMessage *register_services(DBusConnection *conn,
 
 	external_apps = g_slist_prepend(external_apps, eapp);
 
-	DBG("new app %p", eapp);
+	DBG("New app %p: %s (%s)", eapp, path, gid);
 
 	eapp->register_timer = g_timeout_add_seconds(REGISTER_TIMER,
 							finish_register, eapp);
@@ -615,18 +655,20 @@ invalid:
 	return btd_error_invalid_args(msg);
 }
 
-static DBusMessage *unregister_services(DBusConnection *conn,
+static DBusMessage *unregister_agent(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
 	return dbus_message_new_method_return(msg);
 }
 
 static const GDBusMethodTable methods[] = {
-	{ GDBUS_EXPERIMENTAL_METHOD("RegisterServices",
-				GDBUS_ARGS({ "services", "sao"}), NULL,
-				register_services) },
-	{ GDBUS_EXPERIMENTAL_METHOD("UnregisterServices", NULL, NULL,
-				unregister_services) },
+	{ GDBUS_EXPERIMENTAL_METHOD("RegisterAgent",
+				GDBUS_ARGS({ "agent", "o"},
+						{ "options", "a{sv}"}),
+				NULL, register_agent) },
+	{ GDBUS_EXPERIMENTAL_METHOD("UnregisterAgent",
+				GDBUS_ARGS({"agent", "o"}),
+				NULL, unregister_agent) },
 	{ }
 };
 
@@ -928,7 +970,7 @@ gboolean gatt_dbus_manager_register(void)
 	object_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	return g_dbus_register_interface(btd_get_dbus_connection(),
-			"/org/bluez", "org.bluez.ServiceManager1",
+			"/org/bluez", APP_MANAGER_INTERFACE,
 			methods, NULL, NULL, NULL, NULL);
 }
 
@@ -941,6 +983,5 @@ void gatt_dbus_manager_unregister(void)
 	object_hash = NULL;
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
-			"/org/bluez", "org.bluez.ServiceManager1");
-
+			"/org/bluez", APP_MANAGER_INTERFACE);
 }
