@@ -374,28 +374,21 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 							0, NULL, NULL);
 }
 
-static void external_app_disconnected(DBusConnection *conn, void *user_data)
+static void external_app_watch_destroy(gpointer user_data)
 {
 	struct external_app *eapp = user_data;
 
-	DBG("app %p", eapp);
+	external_apps = g_slist_remove(external_apps, eapp);
 
 	if (eapp->register_timer > 0)
 		g_source_remove(eapp->register_timer);
 
+	g_slist_free_full(eapp->prim_services, remove_local_service);
+	g_dbus_client_unref(eapp->client);
+
 	g_free(eapp->gid);
 	g_free(eapp->owner);
 	g_free(eapp->path);
-
-	g_slist_free_full(eapp->prim_services, remove_local_service);
-
-	if (eapp->watch > 0)
-		g_dbus_remove_watch(btd_get_dbus_connection(), eapp->watch);
-
-	g_dbus_client_unref(eapp->client);
-
-	external_apps = g_slist_remove(external_apps, eapp);
-
 	g_free(eapp);
 }
 
@@ -412,7 +405,7 @@ static struct external_app *new_external_app(DBusConnection *conn,
 	eapp = g_new0(struct external_app, 1);
 
 	eapp->watch = g_dbus_add_disconnect_watch(btd_get_dbus_connection(),
-				sender, external_app_disconnected, eapp, NULL);
+			sender, NULL, eapp, external_app_watch_destroy);
 	if (eapp->watch == 0) {
 		g_dbus_client_unref(client);
 		g_free(eapp);
@@ -464,10 +457,10 @@ static int register_external_characteristic(GDBusProxy *proxy)
 		return -EINVAL;
 
 	/* Attribute to Proxy hash table */
-	g_hash_table_insert(proxy_hash, attr, proxy);
+	g_hash_table_insert(proxy_hash, attr, g_dbus_proxy_ref(proxy));
 
 	/* Proxy to attribute hash table */
-	g_hash_table_insert(object_hash, proxy, attr);
+	g_hash_table_insert(object_hash, g_dbus_proxy_ref(proxy), attr);
 
 	/* Extended Properties bit set? */
 	if (has_extended) {
@@ -658,6 +651,29 @@ invalid:
 static DBusMessage *unregister_agent(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
+	struct external_app *eapp = user_data;
+	DBusMessageIter iter;
+	const char *path;
+	GSList *list;
+
+	DBG("Unregistering GATT Service");
+
+	if (dbus_message_iter_init(msg, &iter) == false)
+		return btd_error_invalid_args(msg);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_OBJECT_PATH)
+		return btd_error_invalid_args(msg);
+
+	dbus_message_iter_get_basic(&iter, &path);
+
+	list = g_slist_find_custom(external_apps, path, external_app_path_cmp);
+	if (list == NULL)
+		return btd_error_does_not_exist(msg);
+
+	eapp = list->data;
+	if (g_strcmp0(dbus_message_get_sender(msg), eapp->owner) != 0)
+		return btd_error_does_not_exist(msg);
+
 	return dbus_message_new_method_return(msg);
 }
 
@@ -966,8 +982,10 @@ void gatt_dbus_characteristic_unregister(const char *path)
 gboolean gatt_dbus_manager_register(void)
 {
 
-	proxy_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
-	object_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
+	proxy_hash = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+				NULL, (GDestroyNotify) g_dbus_proxy_unref);
+	object_hash = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+				(GDestroyNotify) g_dbus_proxy_unref, NULL);
 
 	return g_dbus_register_interface(btd_get_dbus_connection(),
 			"/org/bluez", APP_MANAGER_INTERFACE,
