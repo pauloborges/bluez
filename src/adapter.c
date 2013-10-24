@@ -3749,14 +3749,14 @@ static void update_found_devices(struct btd_adapter *adapter,
 		error("Error parsing EIR data: %s (%d)", strerror(-err), -err);
 		return;
 	}
-
+#if 0
 	/* Avoid creating LE device if it's not discoverable */
 	if (bdaddr_type != BDADDR_BREDR &&
 			!(eir_data.flags & (EIR_LIM_DISC | EIR_GEN_DISC))) {
 		eir_data_free(&eir_data);
 		return;
 	}
-
+#endif
 	ba2str(bdaddr, addr);
 
 	list = g_slist_find_custom(adapter->devices, bdaddr, device_bdaddr_cmp);
