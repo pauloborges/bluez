@@ -25,6 +25,7 @@
 #include <config.h>
 #endif
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -39,6 +40,7 @@
 #include "attrib/att.h"
 
 #define APP_MANAGER_INTERFACE "org.bluez.ApplicationManager1"
+#define APP_AGENT_INTERFACE "org.bluez.ApplicationAgent1"
 
 #define SERVICE_INTERFACE "org.bluez.Service1"
 #define CHARACTERISTIC_INTERFACE "org.bluez.Characteristic1"
@@ -67,6 +69,8 @@
 static GMainLoop *main_loop;
 static DBusConnection *dbus_conn;
 static GSList *services = NULL;
+
+static const char *agent_path = "/gatt/example/app/agent";
 
 struct service {
 	char *uuid;
@@ -320,6 +324,21 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ }
 };
 
+static DBusMessage *agent_release(DBusConnection *conn,
+				DBusMessage *msg, void *user_data)
+{
+	fprintf(stderr, "Terminating...\n");
+
+	g_main_loop_quit(main_loop);
+
+	return NULL;
+}
+
+static const GDBusMethodTable agent_methods[] = {
+	{ GDBUS_NOREPLY_METHOD("Release", NULL, NULL, agent_release) },
+	{ }
+};
+
 static bool register_agent(DBusConnection *conn, GSList *paths)
 {
 	DBusMessage *msg;
@@ -327,7 +346,6 @@ static bool register_agent(DBusConnection *conn, GSList *paths)
 	DBusPendingCall *call;
 	const char *gid_key = "GID";
 	const char *gid_val = GATT_SERVICE_APP_ID;
-	const char *app_path = "/gatt/example/app";
 
 	msg = dbus_message_new_method_call("org.bluez", "/org/bluez",
 				APP_MANAGER_INTERFACE, "RegisterAgent");
@@ -338,7 +356,8 @@ static bool register_agent(DBusConnection *conn, GSList *paths)
 
 	dbus_message_iter_init_append(msg, &iter);
 
-	dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &app_path);
+	dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH,
+							&agent_path);
 
 	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &dict);
 
@@ -534,8 +553,16 @@ int main(int argc, char *argv[])
 	GDBusClient *client;
 	guint signal;
 
-	main_loop = g_main_loop_new(NULL, FALSE);
 	dbus_conn = g_dbus_setup_bus(DBUS_BUS_SYSTEM, NULL, NULL);
+
+	if (g_dbus_register_interface(dbus_conn, agent_path,
+					APP_AGENT_INTERFACE, agent_methods,
+					NULL, NULL, NULL, NULL) == FALSE) {
+		perror("Can't register Application Agent");
+		return -EIO;
+	}
+
+	main_loop = g_main_loop_new(NULL, FALSE);
 
 	client = g_dbus_client_new(dbus_conn, "org.bluez", "/org/bluez");
 
