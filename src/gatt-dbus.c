@@ -105,9 +105,6 @@ static void char_iface_destroy(gpointer user_data)
 {
 	struct char_iface *iface = user_data;
 
-	if (proxy_hash)
-		g_hash_table_remove(proxy_hash, iface->attr);
-
 	if (iface->watch)
 		btd_gatt_remove_notifier(iface->attr, iface->watch);
 
