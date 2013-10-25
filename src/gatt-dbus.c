@@ -48,6 +48,7 @@
 #define SERVICE_INTERFACE		"org.bluez.Service1"
 #define CHARACTERISTIC_INTERFACE	"org.bluez.Characteristic1"
 #define APP_MANAGER_INTERFACE		"org.bluez.ApplicationManager1"
+#define APP_AGENT_INTERFACE		"org.bluez.ApplicationAgent1"
 
 #define REGISTER_TIMER         1
 
@@ -332,6 +333,10 @@ static void proxy_removed(GDBusProxy *proxy, void *user_data)
 	 * removed from the hash tables. Further incomming ATT requests will
 	 * get permission denied if the Proxy object is not found.
 	 */
+
+	if (object_hash == NULL && proxy_hash == NULL)
+		return;
+
 	attr = g_hash_table_lookup(object_hash, proxy);
 	if (attr)
 		g_hash_table_remove(proxy_hash, attr);
@@ -393,7 +398,8 @@ static void external_app_watch_destroy(gpointer user_data)
 }
 
 static struct external_app *new_external_app(DBusConnection *conn,
-					const char *sender, const char *gid)
+					const char *sender, const char *path,
+					const char *gid)
 {
 	struct external_app *eapp;
 	GDBusClient *client;
@@ -415,6 +421,7 @@ static struct external_app *new_external_app(DBusConnection *conn,
 	eapp->owner = g_strdup(sender);
 	eapp->client = client;
 	eapp->gid = g_strdup(gid);
+	eapp->path = g_strdup(path);
 
 	g_dbus_client_set_proxy_handlers(client, proxy_added,
 				proxy_removed, property_changed, eapp);
@@ -631,7 +638,7 @@ static DBusMessage *register_agent(DBusConnection *conn,
 		goto invalid;
 	}
 
-	eapp = new_external_app(conn, dbus_message_get_sender(msg), gid);
+	eapp = new_external_app(conn, dbus_message_get_sender(msg), path, gid);
 	if (eapp == NULL)
 		return btd_error_failed(msg, "Not enough resources");
 
@@ -992,6 +999,23 @@ gboolean gatt_dbus_manager_register(void)
 			methods, NULL, NULL, NULL, NULL);
 }
 
+static void agent_release(gpointer a, gpointer b)
+{
+	struct external_app *eapp = a;
+	DBusMessage *msg;
+
+	DBG("Releasing agent: %s %s", eapp->owner, eapp->path);
+
+	msg = dbus_message_new_method_call(eapp->owner, eapp->path,
+					APP_AGENT_INTERFACE, "Release");
+	if (msg == NULL) {
+		error("Couldn't allocate D-Bus message");
+		return;
+	}
+
+	g_dbus_send_message(btd_get_dbus_connection(), msg);
+}
+
 void gatt_dbus_manager_unregister(void)
 {
 	g_hash_table_destroy(proxy_hash);
@@ -1002,4 +1026,6 @@ void gatt_dbus_manager_unregister(void)
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 			"/org/bluez", APP_MANAGER_INTERFACE);
+
+	g_slist_foreach(external_apps, agent_release, NULL);
 }
