@@ -431,6 +431,54 @@ static struct external_app *new_external_app(DBusConnection *conn,
 	return eapp;
 }
 
+static void read_external_desc_cb(struct btd_device *device,
+				struct btd_attribute *attr,
+				btd_attr_read_result_t result, void *user_data)
+{
+	// TODO Implement read_external_desc_cb.
+}
+
+static void write_external_desc_cb(struct btd_device *device,
+				struct btd_attribute *attr, uint8_t *value,
+				size_t len, uint16_t offset,
+				btd_attr_write_result_t result, void *user_data)
+{
+	// TODO Implement write_external_desc_cb.
+}
+
+static int register_external_descriptor(GDBusProxy *proxy)
+{
+	DBusMessageIter iter;
+	const char *uuid, *path;
+	bt_uuid_t btuuid;
+	struct btd_attribute *char_desc;
+
+	if (!g_dbus_proxy_get_property(proxy, "UUID", &iter))
+		return -EINVAL;
+
+	dbus_message_iter_get_basic(&iter, &uuid);
+
+	if (bt_string_to_uuid(&btuuid, uuid) < 0)
+		return -EINVAL;
+
+	char_desc = btd_gatt_add_char_desc(&btuuid, read_external_desc_cb,
+						write_external_desc_cb);
+
+	if (char_desc == NULL)
+		return -EINVAL;
+
+	/* Attribute to Proxy hash table */
+	g_hash_table_insert(proxy_hash, char_desc, g_dbus_proxy_ref(proxy));
+
+	/* Proxy to attribute hash table */
+	g_hash_table_insert(object_hash, g_dbus_proxy_ref(proxy), char_desc);
+
+	path = g_dbus_proxy_get_path(proxy);
+	DBG("External descriptor: %s", path);
+
+	return 0;
+}
+
 static int register_external_characteristic(GDBusProxy *proxy)
 {
 	DBusMessageIter iter;
@@ -513,8 +561,9 @@ static int register_external_service(GDBusProxy *proxy, const char *gid)
 static gboolean finish_register(gpointer user_data)
 {
 	struct external_app *eapp = user_data;
-	GSList *list1, *list2, *services = NULL, *chars = NULL;
-	const char *spath, *cpath, *interface;
+	GSList *list1, *list2, *list3;
+	GSList *services = NULL, *chars = NULL, *descs = NULL;
+	const char *spath, *cpath, *dpath, *interface;
 	GDBusProxy *proxy;
 
 	eapp->register_timer = 0;
@@ -525,13 +574,15 @@ static gboolean finish_register(gpointer user_data)
 
 		interface = g_dbus_proxy_get_interface(proxy);
 
-		if (g_strcmp0(CHARACTERISTIC_INTERFACE, interface) == 0)
+		if (g_strcmp0(DESCRIPTOR_INTERFACE, interface) == 0)
+			descs = g_slist_append(descs, proxy);
+		else if (g_strcmp0(CHARACTERISTIC_INTERFACE, interface) == 0)
 			chars = g_slist_append(chars, proxy);
 		else
 			services = g_slist_append(services, proxy);
 	}
 
-	/* For each service register its characteristics */
+	/* For each service register its characteristics and the characteristics descriptors */
 	for (list1 = services; list1; list1 = g_slist_next(list1)) {
 		proxy = list1->data;
 
@@ -554,6 +605,22 @@ static gboolean finish_register(gpointer user_data)
 				DBG("Inconsistent external characteristic: %s",
 									cpath);
 				continue;
+			}
+
+			for (list3 = descs; list3; list3 = g_slist_next(list3)) {
+				proxy = list3->data;
+
+				dpath = g_dbus_proxy_get_path(proxy);
+
+				if (!g_str_has_prefix(dpath, cpath))
+					continue;
+
+				if (register_external_descriptor(proxy) < 0) {
+					DBG("Inconsistent external characteristic: %s",
+										dpath);
+					continue;
+				}
+
 			}
 		}
 	}
