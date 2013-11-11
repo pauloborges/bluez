@@ -449,10 +449,22 @@ static gboolean desc_exist_perms(const GDBusPropertyTable *property,
 	return FALSE;
 }
 
+static gboolean desc_get_chr(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	struct descriptor *desc = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_OBJECT_PATH,
+							&desc->chr_path);
+
+	return TRUE;
+}
+
 static const GDBusPropertyTable desc_properties[] = {
 	{ "UUID", "s", desc_get_uuid },
 	{ "Value", "ay", desc_get_value, desc_set_value, desc_exist_value },
 	{ "Permissions", "s", desc_get_perms, NULL, desc_exist_perms },
+	{ "Characteristic", "o", desc_get_chr },
 	{ }
 };
 
@@ -469,6 +481,7 @@ static bool populate_descriptor(DBusConnection *conn, const char *uuid,
 	desc = g_new0(struct descriptor, 1);
 
 	desc->uuid = g_strdup(uuid);
+	desc->chr_path = g_strdup(chr_path);
 
 	if (g_dbus_register_interface(conn, desc_path,
 					DESCRIPTOR_INTERFACE,
