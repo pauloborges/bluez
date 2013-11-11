@@ -47,6 +47,7 @@
 
 #define SERVICE_INTERFACE		"org.bluez.Service1"
 #define CHARACTERISTIC_INTERFACE	"org.bluez.Characteristic1"
+#define DESCRIPTOR_INTERFACE		"org.bluez.Descriptor1"
 #define APP_MANAGER_INTERFACE		"org.bluez.ApplicationManager1"
 #define APP_AGENT_INTERFACE		"org.bluez.ApplicationAgent1"
 
@@ -308,7 +309,8 @@ static void proxy_added(GDBusProxy *proxy, void *user_data)
 	DBG("path %s iface %s", path, interface);
 
 	if ((g_strcmp0(interface, CHARACTERISTIC_INTERFACE) != 0) &&
-		(g_strcmp0(interface, SERVICE_INTERFACE) != 0))
+		(g_strcmp0(interface, SERVICE_INTERFACE) != 0) &&
+		(g_strcmp0(interface, DESCRIPTOR_INTERFACE) != 0))
 		return;
 
 	eapp->proxies = g_slist_append(eapp->proxies, proxy);
