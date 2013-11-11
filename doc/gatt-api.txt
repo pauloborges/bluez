@@ -53,7 +53,7 @@ Properties	string UUID [read-only]
 
 		object Service [read-only]
 
-			Object path of the GATT service the characteristc
+			Object path of the GATT service the characteristic
 			belongs to.
 
 		array{byte} Value [read-write]
@@ -94,7 +94,7 @@ Properties	string UUID [read-only]
 
 		object Characteristic [read-only]
 
-			Object path of the GATT characteristc the descriptor
+			Object path of the GATT characteristic the descriptor
 			belongs to.
 
 		array{byte} Value [read-write]
