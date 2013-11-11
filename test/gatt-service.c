@@ -94,6 +94,7 @@ struct characteristic {
 	bool auth;
 	char **props;
 	GSList *descriptors;
+	char *srv_path;
 };
 
 struct descriptor {
@@ -323,6 +324,17 @@ static gboolean chr_exist_descriptors(const GDBusPropertyTable *property,
 	return chr->descriptors != NULL;
 }
 
+static gboolean chr_get_service(const GDBusPropertyTable *property,
+					DBusMessageIter *iter, void *data)
+{
+	struct characteristic *chr = data;
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_OBJECT_PATH,
+							&chr->srv_path);
+
+	return TRUE;
+}
+
 static const GDBusPropertyTable chr_properties[] = {
 	{ "UUID", "s", chr_get_uuid },
 	{ "Value", "ay", chr_get_value, chr_set_value, chr_exist_value },
@@ -331,6 +343,7 @@ static const GDBusPropertyTable chr_properties[] = {
 	{ "Flags", "as", chr_get_props, NULL, chr_exist_props },
 	{ "Descriptors", "a{a{sv}}", chr_get_descriptors, chr_set_descriptors,
 						chr_exist_descriptors },
+	{ "Service", "o", chr_get_service },
 	{ }
 };
 
@@ -537,6 +550,7 @@ static bool populate_characteristic(DBusConnection *conn, const char *uuid,
 	chr->value = g_new0(uint8_t, 1);
 	chr->vlen = sizeof(uint8_t);
 	chr->props = properties2string(props, 0);
+	chr->srv_path = g_strdup(service_path);
 
 	chr->features = CHAR_FEATURE_PROP_VALUE;
 
