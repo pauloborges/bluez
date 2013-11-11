@@ -411,7 +411,8 @@ static bool populate_service(DBusConnection *conn, const char *uuid,
 }
 
 static bool populate_characteristic(DBusConnection *conn, const char *uuid,
-					uint8_t props, const char *service_path)
+					uint8_t props, const char *service_path,
+					char **path)
 {
 	struct characteristic *chr;
 	char chr_path[64];
@@ -438,12 +439,15 @@ static bool populate_characteristic(DBusConnection *conn, const char *uuid,
 		return false;
 	}
 
+	*path = g_strdup(chr_path);
+
 	return true;
 }
 
 static void create_services(DBusConnection *conn)
 {
 	const char *service_path;
+	char *chr_path;
 
 	/* Immediate Alert Service (IAS) */
 
@@ -452,7 +456,7 @@ static void create_services(DBusConnection *conn)
 
 	if (!populate_characteristic(conn, ALERT_LEVEL_CHR_UUID16,
 					ATT_CHAR_PROPER_WRITE_WITHOUT_RESP,
-					service_path))
+					service_path, &chr_path))
 		return;
 
 	services = g_slist_append(services, g_strdup(service_path));
@@ -464,10 +468,12 @@ static void create_services(DBusConnection *conn)
 
 	if (!populate_characteristic(conn, ALERT_LEVEL_CHR_UUID16,
 				ATT_CHAR_PROPER_READ | ATT_CHAR_PROPER_WRITE,
-				service_path))
+				service_path, &chr_path))
 		return;
 
 	services = g_slist_append(services, g_strdup(service_path));
+
+	g_free(chr_path);
 }
 
 static void connect_handler(DBusConnection *conn, void *user_data)
