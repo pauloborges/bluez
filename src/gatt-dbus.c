@@ -435,7 +435,40 @@ static void read_external_desc_cb(struct btd_device *device,
 				struct btd_attribute *attr,
 				btd_attr_read_result_t result, void *user_data)
 {
-	// TODO Implement read_external_desc_cb.
+	DBusMessageIter iter, array;
+	GDBusProxy *proxy;
+	uint8_t *value;
+	int len;
+
+	/*
+	 * Remote device is trying to read the informed attribute,
+	 * "Value" should be read from the proxy. GDBusProxy tracks
+	 * properties changes automatically, it is not necessary to
+	 * get the value directly from the GATT server.
+	 */
+	proxy = g_hash_table_lookup(proxy_hash, attr);
+	if (proxy == NULL) {
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
+
+	if (!g_dbus_proxy_get_property(proxy, "Value", &iter)) {
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_ARRAY) {
+		DBG("External service inconsistent!");
+		result(EPERM, NULL, 0, user_data);
+		return;
+	}
+
+	dbus_message_iter_recurse(&iter, &array);
+	dbus_message_iter_get_fixed_array(&array, &value, &len);
+
+	DBG("attribute: %p read %d bytes", attr, len);
+
+	result(0, (uint8_t *) value, len, user_data);
 }
 
 static void write_external_desc_cb(struct btd_device *device,
