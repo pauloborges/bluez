@@ -51,6 +51,7 @@ static int encryption = 0;
 static int secure = 0;
 static int master = 0;
 static int linger = 0;
+static int busy_wait = 0;
 
 static char *rfcomm_state[] = {
 	"unknown",
@@ -263,6 +264,7 @@ static void run_cmdline(struct pollfd *p, sigset_t *sigs, char *devname,
 				waitpid(pid, &status, 0);
 				break;
 			}
+			usleep(busy_wait);
 		}
 		break;
 	}
@@ -407,6 +409,7 @@ static void cmd_connect(int ctl, int dev, bdaddr_t *bdaddr, int argc, char **arg
 		p.revents = 0;
 		if (ppoll(&p, 1, NULL, &sigs) > 0)
 			break;
+		usleep(busy_wait);
 	}
 
 	printf("Disconnected\n");
@@ -567,6 +570,7 @@ static void cmd_listen(int ctl, int dev, bdaddr_t *bdaddr, int argc, char **argv
 			p.revents = 0;
 			if (ppoll(&p, 1, NULL, &sigs) > 0)
 				break;
+			usleep(busy_wait);
 		}
 	} else
 		run_cmdline(&p, &sigs, devname, argc - 2, argv + 2);
@@ -660,6 +664,7 @@ static void usage(void)
 		"\t-S, --secure                   Secure connection\n"
 		"\t-M, --master                   Become the master of a piconet\n"
 		"\t-L, --linger [seconds]         Set linger timeout\n"
+		"\t-B, --busy-wait [microseconds] Set the busy loop wait time\n"
 		"\t-a                             Show all devices (default)\n"
 		"\n");
 
@@ -682,6 +687,7 @@ static struct option main_options[] = {
 	{ "secure",	0, 0, 'S' },
 	{ "master",	0, 0, 'M' },
 	{ "linger",	1, 0, 'L' },
+	{ "busy-wait",	1, 0, 'B' },
 	{ 0, 0, 0, 0 }
 };
 
@@ -692,7 +698,7 @@ int main(int argc, char *argv[])
 
 	bacpy(&bdaddr, BDADDR_ANY);
 
-	while ((opt = getopt_long(argc, argv, "+i:rahAESML:", main_options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "+i:rahAESML:B:", main_options, NULL)) != -1) {
 		switch(opt) {
 		case 'i':
 			if (strncmp(optarg, "hci", 3) == 0)
@@ -731,6 +737,10 @@ int main(int argc, char *argv[])
 
 		case 'L':
 			linger = atoi(optarg);
+			break;
+
+		case 'B':
+			busy_wait = atoi(optarg);
 			break;
 
 		default:
