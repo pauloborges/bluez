@@ -328,7 +328,7 @@ static gboolean characteristics_write(gpointer user_data)
 	}
 
 	if (opt_value == NULL || opt_value[0] == '\0') {
-		g_printerr("A value is required\n");
+		g_printerr("A value is required. Please specify one with the --value option.\n");
 		goto error;
 	}
 
